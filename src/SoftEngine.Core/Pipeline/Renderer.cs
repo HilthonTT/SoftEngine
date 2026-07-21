@@ -19,7 +19,7 @@ public sealed class Renderer : IRenderer
 
     public RenderStats Stats { get; } = new();
 
-    public void Render(Scene scene, IPainter painter)
+    public void Render(Scene scene, IPainter? painter)
     {
         FrameBuffer surface = scene.Surface;
         ICamera camera = scene.Camera;

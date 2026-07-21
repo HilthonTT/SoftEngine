@@ -6,5 +6,5 @@ public interface ICamera
 {
     Matrix4x4 ViewMatrix { get; }
 
-    Vector3 Position { get; }
+    Vector3 Position { get; set; }
 }

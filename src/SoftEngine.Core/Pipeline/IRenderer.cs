@@ -10,5 +10,5 @@ public interface IRenderer
 
     RenderStats Stats { get; }
 
-    void Render(Scene scene, IPainter painter);
+    void Render(Scene scene, IPainter? painter);
 }
