@@ -16,7 +16,7 @@ public sealed class VertexBuffer : IDisposable
 
     public IMesh? Mesh { get; set; }
 
-    public Vertices[] Vertices { get; } = [];
+    public Vertices[] Vertices { get; }
 
     public int Size { get; }
 

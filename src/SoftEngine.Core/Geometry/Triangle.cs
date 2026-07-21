@@ -5,8 +5,6 @@ namespace SoftEngine.Core.Geometry;
 
 public readonly struct Triangle(int p0, int p1, int p2)
 {
-    public int[] IX { get; } = [p0, p1, p2];
-
     public int I0 { get; } = p0;
 
     public int I1 { get; } = p1;
@@ -75,12 +73,16 @@ public readonly struct Triangle(int p0, int p1, int p2)
 
     public readonly void TransformProjection(VertexBuffer vbx, Matrix4x4 projectionMatrix)
     {
-        foreach (int v in IX)
+        TransformProjectionVertex(vbx, I0, projectionMatrix);
+        TransformProjectionVertex(vbx, I1, projectionMatrix);
+        TransformProjectionVertex(vbx, I2, projectionMatrix);
+    }
+
+    private static void TransformProjectionVertex(VertexBuffer vbx, int v, Matrix4x4 projectionMatrix)
+    {
+        if (vbx.Vertices[v].Proj == Vector4.Zero)
         {
-            if (vbx.Vertices[v].Proj == Vector4.Zero)
-            {
-                vbx.Vertices[v] = vbx.Vertices[v].SetProj(Vector4.Transform(vbx.Vertices[v].View, projectionMatrix));
-            }
+            vbx.Vertices[v] = vbx.Vertices[v].SetProj(Vector4.Transform(vbx.Vertices[v].View, projectionMatrix));
         }
     }
 
@@ -89,17 +91,21 @@ public readonly struct Triangle(int p0, int p1, int p2)
         Matrix4x4 worldMatrix = vertexBuffer.WorldMatrix;
         Vector3[] normVertices = vertexBuffer.Mesh?.NormVertices ?? [];
 
-        foreach (int v in IX)
-        {
-            if (vertexBuffer.Vertices[v].Norm == Vector3.Zero)
-            {
-                vertexBuffer.Vertices[v] = vertexBuffer.Vertices[v].SetNorm(Vector3.TransformNormal(normVertices[v], worldMatrix));
-            }
+        TransformWorldVertex(vertexBuffer, I0, normVertices, worldMatrix);
+        TransformWorldVertex(vertexBuffer, I1, normVertices, worldMatrix);
+        TransformWorldVertex(vertexBuffer, I2, normVertices, worldMatrix);
+    }
 
-            if (vertexBuffer.Vertices[v].World == Vector3.Zero)
-            {
-                vertexBuffer.Vertices[v] = vertexBuffer.Vertices[v].SetWorld(Vector3.Transform(vertexBuffer.Vertices[v].World, worldMatrix));
-            }
+    private static void TransformWorldVertex(VertexBuffer vertexBuffer, int v, Vector3[] normVertices, Matrix4x4 worldMatrix)
+    {
+        if (vertexBuffer.Vertices[v].Norm == Vector3.Zero)
+        {
+            vertexBuffer.Vertices[v] = vertexBuffer.Vertices[v].SetNorm(Vector3.TransformNormal(normVertices[v], worldMatrix));
+        }
+
+        if (vertexBuffer.Vertices[v].World == Vector3.Zero)
+        {
+            vertexBuffer.Vertices[v] = vertexBuffer.Vertices[v].SetWorld(Vector3.Transform(vertexBuffer.Vertices[v].World, worldMatrix));
         }
     }
 

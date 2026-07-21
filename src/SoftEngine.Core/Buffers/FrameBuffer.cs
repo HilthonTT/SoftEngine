@@ -28,9 +28,9 @@ public sealed class FrameBuffer(int width, int height)
         // Using height - 1 to prevent overflow by -1 and 1 NDC coordinates
         float y = -_heightMinus1By2 * (vector.Y / vector.W - 1);
 
-        float z = Depth * vector.X / vector.W;
+        float z = Depth * vector.Z / vector.W;
 
-        return new Vector3(x, y ,z);
+        return new Vector3(x, y, z);
     }
 
     public void Clear()

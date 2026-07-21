@@ -1,17 +1,27 @@
-﻿namespace SoftEngine.Core.Diagnostics;
+using System.Runtime.CompilerServices;
 
-public sealed class ColorRGB
+namespace SoftEngine.Core.Diagnostics;
+
+/// <summary>
+/// A packed 32-bit ARGB colour. A value type so it can be produced per pixel in the
+/// shader hot path without allocating on the managed heap.
+/// </summary>
+public readonly struct ColorRGB
 {
     private const int ARGBAlphaShift = 24;
     private const int ARGBRedShift = 16;
     private const int ARGBGreenShift = 8;
     private const int ARGBBlueShift = 0;
 
-    private readonly long _value;
+    private readonly uint _value;
 
     public ColorRGB(byte r, byte g, byte b)
     {
-        _value = (unchecked((uint)(r << ARGBRedShift | g << ARGBGreenShift | b << ARGBBlueShift | 255 << ARGBAlphaShift))) & 0xffffffff;
+        _value = unchecked((uint)(
+            r << ARGBRedShift |
+            g << ARGBGreenShift |
+            b << ARGBBlueShift |
+            255 << ARGBAlphaShift));
     }
 
     public byte R => (byte)((_value >> ARGBRedShift) & 0xFF);
@@ -22,6 +32,7 @@ public sealed class ColorRGB
 
     public int Color => (int)_value;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ColorRGB operator *(float f, ColorRGB color) =>
         new((byte)(f * color.R), (byte)(f * color.G), (byte)(f * color.B));
 
