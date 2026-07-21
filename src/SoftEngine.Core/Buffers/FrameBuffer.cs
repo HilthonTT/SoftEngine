@@ -6,12 +6,19 @@ namespace SoftEngine.Core.Buffers;
 
 public sealed class FrameBuffer(int width, int height)
 {
-    // TODO: Build a true Z buffer based on the Zfar/Znear planes instead of a fixed int.MaxValue range.
-    private const int Depth = int.MaxValue;
+    // Number of quantization steps used to store normalized device depth (0 at the near plane,
+    // 1 at the far plane) across the full positive int range.
+    private const int DepthResolution = int.MaxValue;
 
     private readonly int[] _zBuffer = new int[width * height];
     private readonly float _widthMinus1By2 = (width - 1) / 2;
     private readonly float _heightMinus1By2 = (height - 1) / 2;
+
+    // Device depth as a function of the view-space distance w: depth = _depthScale - _depthBias / w.
+    // Derived from the active projection's clip planes via SetDepthRange, so the buffer is defined
+    // by the near/far planes rather than a fixed range. Overwritten before the first pixel is drawn.
+    private float _depthScale = 1f;
+    private float _depthBias;
 
     public RenderStats? Stats { get; set; }
 
@@ -21,6 +28,17 @@ public sealed class FrameBuffer(int width, int height)
 
     public int Height { get; set; } = height;
 
+    /// <summary>
+    /// Defines the depth mapping from the active projection's clip planes. Device depth is 0 at
+    /// <paramref name="zNear"/> and 1 at <paramref name="zFar"/>, and stays linear in 1/w so it
+    /// interpolates correctly in screen space. Call once per frame before rasterizing.
+    /// </summary>
+    public void SetDepthRange(float zNear, float zFar)
+    {
+        _depthScale = zFar / (zFar - zNear);
+        _depthBias = zFar * zNear / (zFar - zNear);
+    }
+
     public Vector3 ToScreen3(Vector4 vector)
     {
         // Using width - 1 to prevent overflow by -1 and 1 NDC coordinates
@@ -29,7 +47,8 @@ public sealed class FrameBuffer(int width, int height)
         // Using height - 1 to prevent overflow by -1 and 1 NDC coordinates
         float y = -_heightMinus1By2 * (vector.Y / vector.W - 1);
 
-        float z = Depth * vector.Z / vector.W;
+        // Normalized device depth from the near/far planes, quantized to the buffer resolution.
+        float z = DepthResolution * (_depthScale - _depthBias / vector.W);
 
         return new Vector3(x, y, z);
     }
@@ -37,7 +56,7 @@ public sealed class FrameBuffer(int width, int height)
     public void Clear()
     {
         Array.Fill(Screen, 0);
-        Array.Fill(_zBuffer, Depth);
+        Array.Fill(_zBuffer, DepthResolution);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

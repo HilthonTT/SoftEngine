@@ -1,8 +1,4 @@
-﻿using System.Drawing.Printing;
-using System.Xml.Linq;
-using static System.Net.Mime.MediaTypeNames;
-
-namespace SoftEngine.WinForms;
+﻿namespace SoftEngine.WinForms;
 
 public sealed partial class MainScreen
 {
@@ -243,7 +239,7 @@ public sealed partial class MainScreen
         Margin = new Padding(4, 3, 4, 3);
         MinimumSize = new Size(505, 379);
         Name = "MainScreen";
-        Text = "Soft3D4Net";
+        Text = "SoftEngine";
         groupBox1.ResumeLayout(false);
         groupBox1.PerformLayout();
         groupBox2.ResumeLayout(false);

@@ -30,6 +30,9 @@ public sealed class Renderer : IRenderer
         Stats.Clear();
         Stats.PaintTime();
 
+        // Match the depth buffer to the projection's clip planes for this frame.
+        surface.SetDepthRange(projection.ZNear, projection.ZFar);
+
         surface.Clear();
         Stats.CalculationTime();
 

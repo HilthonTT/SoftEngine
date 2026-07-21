@@ -1,10 +1,8 @@
-﻿using System;
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 
 namespace SoftEngine.WinForms.Controls;
 
-// Slider
 
 public sealed partial class Slider : UserControl 
 {

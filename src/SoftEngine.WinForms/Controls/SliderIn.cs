@@ -72,6 +72,8 @@ public sealed partial class SliderIn : Control
                 case Orientation.Vertical:
                     Value = Math.Min(Max, Math.Max(Min, yValueHit - ((e.Y - _yHit) * PixelStep)));
                     break;
+                default:
+                    break;
             };
         }
     }
@@ -84,10 +86,11 @@ public sealed partial class SliderIn : Control
                 _xHit = e.X;
                 _xValueHit = Value;
                 break;
-
             case Orientation.Vertical:
                 _yHit = e.Y;
                 yValueHit = Value;
+                break;
+            default:
                 break;
         }
     }
@@ -122,31 +125,42 @@ public sealed partial class SliderIn : Control
         switch(Orientation) 
         {
             case Orientation.Horizontal:
-                for(var i = Min; i <= Max; i += TickEvery) {
+                for (float i = Min; i <= Max; i += TickEvery)
+                {
                     var x = Transform(i);
                     g.DrawLine(Pens.DarkGray, new PointF(x, 0), new PointF(x, 3));
                 }
 
-                for(var i = Min; i <= Max; i += NumberEvery) {
+                for (float i = Min; i <= Max; i += NumberEvery)
+                {
                     var label = $"{i}";
                     var x = Transform(i);
-                    g.DrawString(label, f, Brushes.Gray, x, 12, new StringFormat { Alignment = StringAlignment.Center });
+                    var format = new StringFormat
+                    {
+                        Alignment = StringAlignment.Center,
+                    };
+                    g.DrawString(label, f, Brushes.Gray, x, 12, format);
                 }
                 DrawIndexH(Transform(Value), g);
                 break;
 
             case Orientation.Vertical:
-                for(var i = Min; i <= Max; i += TickEvery) 
+                for (float i = Min; i <= Max; i += TickEvery)
                 {
                     var y = Transform(i);
                     g.DrawLine(Pens.DarkGray, new PointF(0, y), new PointF(5, y));
                 }
 
-                for(var i = Min; i <= Max; i += NumberEvery) 
+                for (float i = Min; i <= Max; i += NumberEvery)
                 {
                     var label = $"{i}";
                     var y = Transform(i);
-                    g.DrawString(label, f, Brushes.Gray, 12, y - 1, new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
+                    var format = new StringFormat 
+                    {
+                        Alignment = StringAlignment.Center, 
+                        LineAlignment = StringAlignment.Center 
+                    };
+                    g.DrawString(label, f, Brushes.Gray, 12, y - 1, format);
                 }
 
                 DrawIndexV(Transform(Value), g);
@@ -156,19 +170,20 @@ public sealed partial class SliderIn : Control
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public float TickEvery { get; set; } = 10;
+
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public float NumberEvery { get; set; } = 20;
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public float Value 
     {
-        get 
+        get
         {
             return _value;
         }
-        set 
+        set
         {
-            if (PropertyChangedHelper.ChangeValue(ref _value, value)) 
+            if (PropertyChangedHelper.ChangeValue(ref _value, value))
             {
                 ValueChanged?.Invoke(this, EventArgs.Empty);
                 Invalidate();
@@ -179,13 +194,13 @@ public sealed partial class SliderIn : Control
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public float PixelStep
     {
-        get 
+        get
         {
             return _pixelStep;
         }
-        set 
+        set
         {
-            if (PropertyChangedHelper.ChangeValue(ref _pixelStep, value)) 
+            if (PropertyChangedHelper.ChangeValue(ref _pixelStep, value))
             {
                 PixelStepChanged?.Invoke(this, EventArgs.Empty);
                 Invalidate();
