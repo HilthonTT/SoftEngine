@@ -1,0 +1,22 @@
+﻿using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Geometry;
+
+namespace SoftEngine.Core.Rasterization.Painters;
+
+public sealed class ClassicPainter : IPainter
+{
+    public void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice)
+    {
+        ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
+
+        Triangle t = vertexBuffer.Mesh.Triangles[triangleIndice];
+        (Vertices a, Vertices b, Vertices c) = (vertexBuffer.Vertices[t.I0], vertexBuffer.Vertices[t.I1], vertexBuffer.Vertices[t.I2]);
+
+        ScanlineRasterizer.Fill(
+           surface,
+           surface.ToScreen3(a.Proj), surface.ToScreen3(b.Proj), surface.ToScreen3(c.Proj),
+           default(EmptyVarying), default, default,
+           new SolidColorShader(color));
+    }
+}

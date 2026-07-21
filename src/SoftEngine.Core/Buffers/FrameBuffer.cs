@@ -4,33 +4,21 @@ using System.Runtime.CompilerServices;
 
 namespace SoftEngine.Core.Buffers;
 
-public sealed class FrameBuffer
+public sealed class FrameBuffer(int width, int height)
 {
     private const int Depth = int.MaxValue;
 
-    private readonly int[] _zBuffer = [];
-    private readonly float _widthMinus1By2;
-    private readonly float _heightMinus1By2;
-
-    public FrameBuffer(int width, int height)
-    {
-        Screen = new int[width * height];
-        _zBuffer = new int[width * height];
-
-        Width = width;
-        Height = height;
-
-        _widthMinus1By2 = (width - 1) / 2;
-        _heightMinus1By2 = (height - 1) / 2;
-    }
+    private readonly int[] _zBuffer = new int[width * height];
+    private readonly float _widthMinus1By2 = (width - 1) / 2;
+    private readonly float _heightMinus1By2 = (height - 1) / 2;
 
     public RenderStats? Stats { get; set; }
 
-    public int[] Screen { get; set; } = [];
+    public int[] Screen { get; set; } = new int[width * height];
 
-    public int Width { get; set; }
+    public int Width { get; set; } = width;
 
-    public int Height { get; set; }
+    public int Height { get; set; } = height;
 
     public Vector3 ToScreen3(Vector4 vector)
     {
@@ -85,13 +73,19 @@ public sealed class FrameBuffer
         var x0 = (int)p0.X; var y0 = (int)p0.Y; var z0 = (int)p0.Z;
         var x1 = (int)p1.X; var y1 = (int)p1.Y; var z1 = (int)p1.Z;
 
-        var dx = Math.Abs(x1 - x0); var dy = Math.Abs(y1 - y0); var dz = Math.Abs(z1 - z0);
+        var dx = System.Math.Abs(x1 - x0); 
+        var dy = System.Math.Abs(y1 - y0); 
+        var dz = System.Math.Abs(z1 - z0);
 
-        var sx = x0 < x1 ? 1 : -1; var sy = y0 < y1 ? 1 : -1; var sz = z0 < z1 ? 1 : -1;
+        var sx = x0 < x1 ? 1 : -1; 
+        var sy = y0 < y1 ? 1 : -1; 
+        var sz = z0 < z1 ? 1 : -1;
 
-        var ex = 0; var ey = 0; var ez = 0;
+        var ex = 0; 
+        var ey = 0; 
+        var ez = 0;
 
-        var dmax = Math.Max(dx, dy);
+        var dmax = System.Math.Max(dx, dy);
 
         int i = 0;
         while (i++ < dmax)

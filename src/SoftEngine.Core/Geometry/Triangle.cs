@@ -84,7 +84,7 @@ public readonly struct Triangle(int p0, int p1, int p2)
         }
     }
 
-   public readonly void TransformWorld(VertexBuffer vertexBuffer)
+    public readonly void TransformWorld(VertexBuffer vertexBuffer)
     {
         Matrix4x4 worldMatrix = vertexBuffer.WorldMatrix;
         Vector3[] normVertices = vertexBuffer.Mesh?.NormVertices ?? [];
@@ -101,5 +101,19 @@ public readonly struct Triangle(int p0, int p1, int p2)
                 vertexBuffer.Vertices[v] = vertexBuffer.Vertices[v].SetWorld(Vector3.Transform(vertexBuffer.Vertices[v].World, worldMatrix));
             }
         }
+    }
+
+    public readonly bool IsFacingBack(VertexBuffer vertexBuffer)
+    {
+        var (v0, v1, v2) = (vertexBuffer.Vertices[I0].View, vertexBuffer.Vertices[I1].View, vertexBuffer.Vertices[I2].View);
+
+        // Calculate the centroid without division, since dividing by 3 doesn't affect the sign .
+        var centroid = v0 + v1 + v2;
+        // Compute the triangle's unnormalized normal
+        var normal = Vector3.Cross(v1 - v0, v2 - v0);
+
+        // The sign of the dot product is unchanged by normalization,
+        // so no need to normalize centroid or normal.
+        return Vector3.Dot(centroid, normal) >= 0;
     }
 }
