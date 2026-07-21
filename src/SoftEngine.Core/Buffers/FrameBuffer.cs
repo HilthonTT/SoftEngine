@@ -70,8 +70,12 @@ public sealed class FrameBuffer(int width, int height)
 
     public void DrawLine(Vector3 p0, Vector3 p1, ColorRGB color)
     {
-        var x0 = (int)p0.X; var y0 = (int)p0.Y; var z0 = (int)p0.Z;
-        var x1 = (int)p1.X; var y1 = (int)p1.Y; var z1 = (int)p1.Z;
+        var x0 = (int)p0.X;
+        var y0 = (int)p0.Y;
+        var z0 = (int)p0.Z;
+        var x1 = (int)p1.X;
+        var y1 = (int)p1.Y; 
+        var z1 = (int)p1.Z;
 
         var dx = System.Math.Abs(x1 - x0); 
         var dy = System.Math.Abs(y1 - y0); 
