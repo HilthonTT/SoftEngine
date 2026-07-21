@@ -1,0 +1,66 @@
+name: Bug report
+description: Report something that renders incorrectly, crashes, or behaves unexpectedly.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to file a bug! Please fill out the sections below.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: How can we reproduce it? Include the model/demo and shading mode if relevant.
+      placeholder: |
+        1. Launch the app
+        2. Double-click "Spheres"
+        3. Select Gouraud shading
+        4. See ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the exact exception text/stack trace if it crashed, and a screenshot if it renders wrong.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Rasterization / shading
+        - Pipeline / culling / clipping
+        - Camera / projection
+        - Geometry / model import
+        - WinForms app / UI
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS version and `dotnet --version`.
+      placeholder: Windows 11 26100, .NET 10.0.302
+    validations:
+      required: true

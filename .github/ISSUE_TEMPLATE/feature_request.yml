@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest a new capability or improvement for the engine or app.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do that isn't possible or is awkward today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the feature or change you'd like. Reference existing types/files where it fits if you can.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Rasterization / shading
+        - Pipeline / culling / clipping
+        - Camera / projection
+        - Geometry / model import
+        - WinForms app / UI
+        - Performance
+        - Other
+    validations:
+      required: true

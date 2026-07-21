@@ -1,37 +1,97 @@
 # SoftEngine
 
-A software 3D rendering engine written in C# — the full pipeline (transforms, projection, culling, rasterization) runs on the CPU rather than the GPU, with no graphics API dependency.
+A **software 3D rasterizer** written in C#. The entire pipeline — model transforms, projection, culling, clipping, scanline rasterization, z-buffering and shading — runs on the CPU with no GPU or graphics-API dependency. A WinForms front-end renders live into a bitmap so you can orbit models, switch shading modes, and watch per-frame render statistics.
 
-> **Status:** early-stage / work in progress. The core math and pipeline building blocks exist, but there is not yet a runnable sample application or a triangle rasterizer — see [Roadmap](#roadmap).
+## What it does
 
-## Features
+- Loads and renders 3D models (Collada `.dae`) and procedural primitives in real time.
+- Rasterizes triangles with a generic scanline filler and a depth (z) buffer.
+- Supports several shading modes — wireframe, solid, flat, and Gouraud — selectable at runtime.
+- Provides an interactive arc-ball camera, gizmos (world axes, ground grid), and a live stats overlay.
 
-- **Mesh model** — `IMesh`/`Mesh` with vertices, triangle indices, per-triangle colors, and automatic vertex-normal calculation ([`Geometry/`](src/SoftEngine.Core/Geometry))
-- **Primitives** — `Cube` and a recursively-subdivided `IcoSphere` ([`Geometry/Primitives/`](src/SoftEngine.Core/Geometry/Primitives))
-- **Scene graph** — `IWorld`/`SimpleWorld` holding meshes and lights ([`Scenes/`](src/SoftEngine.Core/Scenes))
-- **Camera & projection** — `ICamera` view matrix and a `PerspectiveProjection` built on `System.Numerics.Matrix4x4` ([`Scenes/Cameras/`](src/SoftEngine.Core/Scenes/Cameras), [`Scenes/Projections/`](src/SoftEngine.Core/Scenes/Projections))
-- **Lighting** — `PointLight` and Lambertian (N·L) shading ([`Scenes/Lights/`](src/SoftEngine.Core/Scenes/Lights), [`Shading/LambertLighting.cs`](src/SoftEngine.Core/Shading/LambertLighting.cs))
-- **Vertex pipeline** — a pooled `VertexBuffer` carrying world/view/projected/normal data per vertex, plus per-triangle frustum and far-plane culling ([`Buffers/`](src/SoftEngine.Core/Buffers), [`Geometry/Triangle.cs`](src/SoftEngine.Core/Geometry/Triangle.cs))
-- **Frame buffer** — a `FrameBuffer` with an int color buffer, z-buffer, NDC-to-screen mapping, and a 3D Bresenham line drawer ([`Buffers/FrameBuffer.cs`](src/SoftEngine.Core/Buffers/FrameBuffer.cs))
-- **Diagnostics** — `RenderStats` tracks triangle/pixel counts and per-frame calculation vs. paint timing ([`Diagnostics/RenderStats.cs`](src/SoftEngine.Core/Diagnostics/RenderStats.cs))
+## Shading modes
+
+| Mode | Painter | Description |
+| --- | --- | --- |
+| **None** | — | Geometry only (combine with the wireframe overlay to see edges). |
+| **Classic** | `ClassicPainter` | Flat per-triangle base color, no lighting. |
+| **Flat** | `FlatPainter` | One Lambert (N·L) intensity per triangle from its centroid normal. |
+| **Gouraud** | `GouraudPainter` | Per-vertex Lambert intensity interpolated across the triangle. |
+
+A `WireFramePainter` overlay (Liang–Barsky homogeneous line clipping) can be drawn on top of any mode.
+
+## Rendering pipeline
+
+```
+model ──worldMatrix──▶ world ──viewMatrix──▶ view ──projectionMatrix──▶ clip ──/w──▶ NDC ──▶ screen
+```
+
+Per frame, the `Renderer` ([`Pipeline/Renderer.cs`](src/SoftEngine.Core/Pipeline/Renderer.cs)):
+
+1. Clears the color and z-buffers.
+2. Transforms each mesh's vertices into view space (pooled `VertexBuffer` per mesh).
+3. Rejects triangles behind the far plane, back-facing triangles (optional culling), and triangles outside the view frustum.
+4. Projects survivors into clip space, maps to screen space, and hands them to the active painter.
+5. Draws optional gizmos (XZ grid, world axes).
+
+The rasterizer ([`Rasterization/ScanlineRasterizer.cs`](src/SoftEngine.Core/Rasterization/ScanlineRasterizer.cs)) sorts a triangle's vertices by Y, splits it at the middle vertex, and walks two half-triangles, interpolating depth plus an arbitrary *varying* payload. Painters only supply a **varying** type and a **shader** — both are `struct` generics, so the JIT devirtualizes and inlines the per-pixel shade call with no allocation on the hot path.
+
+## Interactive app
+
+The WinForms app ([`SoftEngine.WinForms`](src/SoftEngine.WinForms)) renders the scene into a 32-bpp bitmap that is blitted to a `Panel3D`.
+
+| Control | Action |
+| --- | --- |
+| **Left-drag** | Orbit the arc-ball camera |
+| **Demo list (double-click)** | Load a model or procedural scene (skull, parrot, elephant, teapot, cubes, spheres, towns…) |
+| **Shading radios** | Switch between None / Classic / Flat / Gouraud |
+| **Checkboxes** | Toggle wireframe triangles, back-face culling, XZ grid, world axes |
+
+A stats overlay reports triangle counts (total / back-facing / out-of-view / behind), pixel counts (drawn / z-rejected), and calculation vs. paint timing per frame.
+
+## Project layout
+
+```
+src/
+├── SoftEngine.Core/        # engine, no UI dependency (net10.0 class library)
+│   ├── Buffers/            # FrameBuffer (color + z-buffer), pooled Vertex/World buffers
+│   ├── Geometry/           # IMesh/Mesh, Triangle, primitives, Collada importer
+│   ├── Pipeline/           # Renderer, settings, homogeneous clipping
+│   ├── Rasterization/      # scanline filler, painters, shaders, varyings
+│   ├── Scenes/             # world, camera, projection, lights
+│   └── Shading/            # Lambert lighting
+└── SoftEngine.WinForms/    # interactive front-end (net10.0-windows)
+```
 
 ## Requirements
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
+- Windows (the interactive app uses WinForms; `SoftEngine.Core` itself is platform-neutral).
 
-## Building
+## Build & run
 
 ```bash
+# build everything
 dotnet build SoftEngine.slnx
+
+# run the interactive app
+dotnet run --project src/SoftEngine.WinForms
 ```
 
-There is currently no executable/sample project referencing `SoftEngine.Core`; it builds as a standalone class library.
+## Performance notes
+
+The renderer avoids managed-heap traffic on the pixel hot path:
+
+- **`ColorRGB` is a `readonly struct`** — shaders can produce a color per pixel without allocating.
+- **Struct-based varyings and shaders** let the JIT inline the shade call instead of dispatching through an interface.
+- **`ArrayPool`-backed vertex buffers** are rented per frame rather than allocated.
 
 ## Roadmap
 
-- Triangle rasterizer (scanline fill using the existing z-buffer)
-- A runnable sample app / windowed output target
-- Replace `Rotation3D` (Euler angles) with a quaternion-based rotation
+- Cache per-mesh vertex buffers across frames for static scenes (avoid per-frame `VertexBuffer` allocation).
+- Perspective-correct varying interpolation.
+- Replace `Rotation3D` (Euler angles) with quaternion-based rotation.
+- Texture mapping.
 
 ## License
 
