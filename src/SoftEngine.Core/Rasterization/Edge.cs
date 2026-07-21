@@ -10,7 +10,6 @@ namespace SoftEngine.Core.Rasterization;
 public readonly struct Edge<TVarying>(Vector3 a, Vector3 b, TVarying va, TVarying vb)
     where TVarying : struct, IVarying<TVarying>
 {
-
     public readonly Vector3 A = a;
     public readonly Vector3 B = b;
     public readonly TVarying VA = va;

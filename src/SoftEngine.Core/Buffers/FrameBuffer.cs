@@ -6,6 +6,7 @@ namespace SoftEngine.Core.Buffers;
 
 public sealed class FrameBuffer(int width, int height)
 {
+    // TODO: Build a true Z buffer based on the Zfar/Znear planes instead of a fixed int.MaxValue range.
     private const int Depth = int.MaxValue;
 
     private readonly int[] _zBuffer = new int[width * height];
@@ -49,7 +50,7 @@ public sealed class FrameBuffer(int width, int height)
         }
 #endif
 
-        var index = x + y * Width;
+        int index = x + y * Width;
         if (z > _zBuffer[index])
         {
             if (Stats is not null)
@@ -70,26 +71,26 @@ public sealed class FrameBuffer(int width, int height)
 
     public void DrawLine(Vector3 p0, Vector3 p1, ColorRGB color)
     {
-        var x0 = (int)p0.X;
-        var y0 = (int)p0.Y;
-        var z0 = (int)p0.Z;
-        var x1 = (int)p1.X;
-        var y1 = (int)p1.Y; 
-        var z1 = (int)p1.Z;
+        int x0 = (int)p0.X;
+        int y0 = (int)p0.Y;
+        int z0 = (int)p0.Z;
+        int x1 = (int)p1.X;
+        int y1 = (int)p1.Y;
+        int z1 = (int)p1.Z;
 
-        var dx = System.Math.Abs(x1 - x0); 
-        var dy = System.Math.Abs(y1 - y0); 
-        var dz = System.Math.Abs(z1 - z0);
+        int dx = System.Math.Abs(x1 - x0);
+        int dy = System.Math.Abs(y1 - y0);
+        int dz = System.Math.Abs(z1 - z0);
 
-        var sx = x0 < x1 ? 1 : -1; 
-        var sy = y0 < y1 ? 1 : -1; 
-        var sz = z0 < z1 ? 1 : -1;
+        int sx = x0 < x1 ? 1 : -1;
+        int sy = y0 < y1 ? 1 : -1;
+        int sz = z0 < z1 ? 1 : -1;
 
-        var ex = 0; 
-        var ey = 0; 
-        var ez = 0;
+        int ex = 0;
+        int ey = 0;
+        int ez = 0;
 
-        var dmax = System.Math.Max(dx, dy);
+        int dmax = System.Math.Max(dx, dy);
 
         int i = 0;
         while (i++ < dmax)

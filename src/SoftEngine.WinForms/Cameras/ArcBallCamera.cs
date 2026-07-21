@@ -80,7 +80,6 @@ public sealed class ArcBallCamera : ICamera
 
     private void Control_MouseDown(object? sender, MouseEventArgs e)
     {
-
         left = Control.MouseButtons.HasFlag(MouseButtons.Left);
         _right = Control.MouseButtons.HasFlag(MouseButtons.Right);
 
@@ -153,9 +152,8 @@ public sealed class ArcBallCamera : ICamera
         return Vector3.Normalize(P);
     }
 
-    public Quaternion CalculateQuaternion(Vector3 startV, Vector3 currentV)
+    public static Quaternion CalculateQuaternion(Vector3 startV, Vector3 currentV)
     {
-
         var cross = Vector3.Cross(startV, currentV);
 
         if (cross.Length() > MathConstants.Epsilon)

@@ -11,7 +11,6 @@ namespace SoftEngine.Core.Rasterization;
 /// </summary>
 public static class ScanlineRasterizer
 {
-
     /// <summary>
     /// Fills a triangle given screen-space positions (X, Y in pixels, Z in depth units)
     /// and their varyings. Positions need not be pre-sorted.
@@ -24,7 +23,6 @@ public static class ScanlineRasterizer
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
     {
-
         if (p0.Y > p1.Y)
         { 
             (p0, p1) = (p1, p0); (v0, v1) = (v1, v0);
@@ -79,7 +77,6 @@ public static class ScanlineRasterizer
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
     {
-
         var invLeft = left.InvHeight;
         var invRight = right.InvHeight;
 
@@ -115,7 +112,6 @@ public static class ScanlineRasterizer
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
     {
-
         var xStart = (int)MathF.Max(sx, 0);
         var xEnd = (int)MathF.Min(ex, surface.Width);
 
