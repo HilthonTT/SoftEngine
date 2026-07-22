@@ -93,6 +93,12 @@ The renderer avoids managed-heap traffic on the pixel hot path:
 - Replace `Rotation3D` (Euler angles) with quaternion-based rotation.
 - Texture mapping.
 
+## Credits
+
+Inspired by David Rousset's tutorial series
+[*Learning how to write a 3D soft engine from scratch in C#, TypeScript or JavaScript*](https://www.davrous.com/2013/06/13/tutorial-series-learning-how-to-write-a-3d-soft-engine-from-scratch-in-c-typescript-or-javascript/),
+which this project started from before growing its own pipeline, rasterizer, and shading system.
+
 ## License
 
 [MIT](LICENSE) © Hilthon
