@@ -16,6 +16,7 @@ public sealed partial class MainScreen : Form
     private sealed record WorldSetup(SimpleWorld World, Vector3 CameraPosition, PerspectiveProjection? Projection);
 
     private readonly Label lblLoading;
+    private readonly ProgressBar prgLoading;
 
     public MainScreen()
     {
@@ -32,6 +33,16 @@ public sealed partial class MainScreen : Form
             Visible = false,
         };
         panel3D1.Controls.Add(lblLoading);
+
+        prgLoading = new ProgressBar
+        {
+            Size = new Size(260, 18),
+            Style = ProgressBarStyle.Continuous,
+            Maximum = 1000,
+        };
+        lblLoading.Controls.Add(prgLoading);
+        lblLoading.Resize += (s, e) => CenterLoadingProgress();
+        CenterLoadingProgress();
 
         lstDemos.DisplayMember = nameof(DemoItem.Display);
         lstDemos.ValueMember = nameof(DemoItem.Id);
@@ -123,16 +134,28 @@ public sealed partial class MainScreen : Form
         }
     }
 
+    /// <summary>Places the progress bar just below the centered "Loading…" text.</summary>
+    private void CenterLoadingProgress() =>
+        prgLoading.Location = new Point(
+            (lblLoading.ClientSize.Width - prgLoading.Width) / 2,
+            lblLoading.ClientSize.Height / 2 + 40);
+
     private async Task PrepareWorldAsync(string id)
     {
         lstDemos.Enabled = false;
+        prgLoading.Value = 0;
         lblLoading.Visible = true;
         lblLoading.BringToFront();
         UseWaitCursor = true;
 
         try
         {
-            var setup = await Task.Run(() => BuildWorld(id));
+            // Progress<T> is created on the UI thread, so reports from the worker
+            // are marshalled back here automatically.
+            var progress = new Progress<float>(f =>
+                prgLoading.Value = Math.Clamp((int)(f * prgLoading.Maximum), 0, prgLoading.Maximum));
+
+            var setup = await Task.Run(() => BuildWorld(id, progress));
 
             panel3D1.Scene?.Camera.Position = setup.CameraPosition;
             if (setup.Projection is not null)
@@ -155,7 +178,7 @@ public sealed partial class MainScreen : Form
         }
     }
 
-    private static WorldSetup BuildWorld(string id)
+    private static WorldSetup BuildWorld(string id, IProgress<float>? progress)
     {
         var world = new SimpleWorld();
         var cameraPosition = new Vector3(0, 0, -60);
@@ -164,27 +187,27 @@ public sealed partial class MainScreen : Form
         switch (id)
         {
             case "skull":
-                world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\skull.dae"));
+                world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\skull.dae", progress));
                 cameraPosition = new Vector3(0, 0, -5);
                 break;
 
             case "parrot":
-                world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\parrot.dae"));
+                world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\parrot.dae", progress));
                 cameraPosition = new Vector3(0, 0, -500);
                 break;
 
             case "teapot":
-                world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\teapot.dae"));
+                world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\teapot.dae", progress));
                 break;
 
             case "elefant":
-                world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\elefant.dae"));
+                world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\elefant.dae", progress));
                 cameraPosition = new Vector3(0, 0, -1500);
                 projection = new PerspectiveProjection(40f * (float)Math.PI / 180f, .01f, 65535f);
                 break;
 
             case "Juliet":
-                world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\Juliet.dae"));
+                world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\Juliet.dae", progress));
                 cameraPosition = new Vector3(0, 0, -500);
                 break;
 
@@ -204,6 +227,7 @@ public sealed partial class MainScreen : Form
                             // Scale = new Vector3(1, r.Next(1, 50), 1)
                         });
                     }
+                    progress?.Report((x + d) / (float)(2 * d));
                 }
                 break;
             }
@@ -221,6 +245,7 @@ public sealed partial class MainScreen : Form
                             // Scale = new Vector3(1, r.Next(1, 50), 1)
                         });
                     }
+                    progress?.Report((x + d) / (float)(2 * d));
                 }
                 break;
             }
@@ -238,6 +263,7 @@ public sealed partial class MainScreen : Form
                             // Scale = new Vector3(1, r.Next(1, 50), 1)
                         });
                     }
+                    progress?.Report((x + d) / (float)(2 * d));
                 }
                 break;
             }
@@ -266,6 +292,7 @@ public sealed partial class MainScreen : Form
                             });
                         }
                     }
+                    progress?.Report((x + d) / (float)(2 * d));
                 }
                 break;
             }
@@ -289,6 +316,7 @@ public sealed partial class MainScreen : Form
                             });
                         }
                     }
+                    progress?.Report((x + d) / (float)(2 * d));
                 }
                 break;
             }

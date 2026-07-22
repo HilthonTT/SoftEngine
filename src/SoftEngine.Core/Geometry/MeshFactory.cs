@@ -14,24 +14,37 @@ public static class MeshFactory
 {
     private static readonly XNamespace _collada = "http://www.collada.org/2005/11/COLLADASchema";
 
-    public static IMesh[] HackyImportCollada(string fileName)
+    /// <param name="fileName">Path of the .dae file to read.</param>
+    /// <param name="progress">Optional overall progress in the range 0..1.</param>
+    public static IMesh[] HackyImportCollada(string fileName, IProgress<float>? progress = null)
     {
+        // Loading the XML document is roughly as expensive as walking it afterwards,
+        // so it gets a fixed share of the reported progress.
+        const float parseShare = 0.4f;
+
+        progress?.Report(0f);
+
         var document = XDocument.Load(fileName);
 
-        var geometries = document.Root
+        progress?.Report(parseShare);
+
+        var geometries = (document.Root
             ?.Element(_collada + "library_geometries")
             ?.Elements(_collada + "geometry")
-            ?? [];
+            ?? []).ToArray();
 
         var meshes = new List<IMesh>();
 
-        foreach (var geometry in geometries)
+        for (var i = 0; i < geometries.Length; i++)
         {
-            var mesh = geometry.Element(_collada + "mesh");
+            var mesh = geometries[i].Element(_collada + "mesh");
             if (mesh is null)
             {
                 continue;
             }
+
+            var share = (1f - parseShare) / geometries.Length;
+            var done = parseShare + share * i;
 
             var buffers = new GeometryBuffers();
 
@@ -40,19 +53,24 @@ public static class MeshFactory
             {
                 ReadPolylist(mesh, polylist, buffers);
             }
+            progress?.Report(done + share * 0.4f);
 
             var triangles = mesh.Element(_collada + "triangles");
             if (triangles is not null)
             {
                 ReadTriangles(mesh, triangles, buffers);
             }
+            progress?.Report(done + share * 0.8f);
 
             meshes.Add(new Mesh(
                 buffers.Vertices.ToArray(),
                 buffers.Indices.ToArray().BuildTriangleIndices(),
                 buffers.Normals.Count > 0 ? buffers.Normals.ToArray() : null,
                 triangleColors: null));
+            progress?.Report(done + share);
         }
+
+        progress?.Report(1f);
 
         return meshes.ToArray();
     }
