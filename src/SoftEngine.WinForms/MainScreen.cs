@@ -13,9 +13,25 @@ public sealed partial class MainScreen : Form
 {
     private sealed record DemoItem(string Display, string Id);
 
+    private sealed record WorldSetup(SimpleWorld World, Vector3 CameraPosition, PerspectiveProjection? Projection);
+
+    private readonly Label lblLoading;
+
     public MainScreen()
     {
         InitializeComponent();
+
+        lblLoading = new Label
+        {
+            Text = "Loading…",
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font(Font.FontFamily, 16f, FontStyle.Bold),
+            ForeColor = Color.Blue,
+            BackColor = panel3D1.BackColor,
+            Visible = false,
+        };
+        panel3D1.Controls.Add(lblLoading);
 
         lstDemos.DisplayMember = nameof(DemoItem.Display);
         lstDemos.ValueMember = nameof(DemoItem.Id);
@@ -96,33 +112,65 @@ public sealed partial class MainScreen : Form
             Camera = new ArcBallCamera(panel3D1) { Position = new Vector3(0, 0, -60) }
         };
 
-        PrepareWorld("skull");
+        _ = PrepareWorldAsync("skull");
     }
 
-    private void LstDemos_DoubleClick(object? sender, EventArgs e)
+    private async void LstDemos_DoubleClick(object? sender, EventArgs e)
     {
         if (lstDemos.SelectedValue is string id)
         {
-            PrepareWorld(id);
+            await PrepareWorldAsync(id);
         }
     }
 
-    private void PrepareWorld(string id)
+    private async Task PrepareWorldAsync(string id)
+    {
+        lstDemos.Enabled = false;
+        lblLoading.Visible = true;
+        lblLoading.BringToFront();
+        UseWaitCursor = true;
+
+        try
+        {
+            var setup = await Task.Run(() => BuildWorld(id));
+
+            panel3D1.Scene?.Camera.Position = setup.CameraPosition;
+            if (setup.Projection is not null)
+            {
+                panel3D1.Scene?.Projection = setup.Projection;
+            }
+            panel3D1.Scene?.World = setup.World;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"Failed to load '{id}': {ex.Message}", "Load error",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            UseWaitCursor = false;
+            lblLoading.Visible = false;
+            lstDemos.Enabled = true;
+            panel3D1.Invalidate();
+        }
+    }
+
+    private static WorldSetup BuildWorld(string id)
     {
         var world = new SimpleWorld();
-
-        panel3D1.Scene?.Camera.Position = new Vector3(0, 0, -60);
+        var cameraPosition = new Vector3(0, 0, -60);
+        PerspectiveProjection? projection = null;
 
         switch (id)
         {
             case "skull":
                 world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\skull.dae"));
-                panel3D1.Scene?.Camera.Position = new Vector3(0, 0, -5);
+                cameraPosition = new Vector3(0, 0, -5);
                 break;
 
             case "parrot":
                 world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\parrot.dae"));
-                panel3D1.Scene?.Camera.Position = new Vector3(0, 0, -500);
+                cameraPosition = new Vector3(0, 0, -500);
                 break;
 
             case "teapot":
@@ -131,13 +179,13 @@ public sealed partial class MainScreen : Form
 
             case "elefant":
                 world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\elefant.dae"));
-                panel3D1.Scene?.Camera.Position = new Vector3(0, 0, -1500);
-                panel3D1.Scene?.Projection = new PerspectiveProjection(40f * (float)Math.PI / 180f, .01f, 65535f);
+                cameraPosition = new Vector3(0, 0, -1500);
+                projection = new PerspectiveProjection(40f * (float)Math.PI / 180f, .01f, 65535f);
                 break;
 
             case "Juliet":
                 world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\Juliet.dae"));
-                panel3D1.Scene?.Camera.Position = new Vector3(0, 0, -500);
+                cameraPosition = new Vector3(0, 0, -500);
                 break;
 
             case "empty":
@@ -204,12 +252,13 @@ public sealed partial class MainScreen : Form
 
             case "spheres":
             {
-                var d = 5; var s = 2;
-                for (var x = -d; x <= d; x += s)
+                int d = 5;
+                int s = 2;
+                for (int x = -d; x <= d; x += s)
                 {
-                    for (var y = -d; y <= d; y += s)
+                    for (int y = -d; y <= d; y += s)
                     {
-                        for (var z = -d; z <= d; z += s)
+                        for (int z = -d; z <= d; z += s)
                         {
                             world.Meshes.Add(new IcoSphere(2)
                             {
@@ -245,8 +294,6 @@ public sealed partial class MainScreen : Form
             }
         }
 
-        panel3D1.Scene?.World = world;
-
-        panel3D1.Invalidate();
+        return new WorldSetup(world, cameraPosition, projection);
     }
 }
