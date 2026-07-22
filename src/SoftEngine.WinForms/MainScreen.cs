@@ -7,6 +7,7 @@ using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.WinForms.Cameras;
 using SoftEngine.WinForms.Controls;
+using SoftEngine.WinForms.Interop;
 using System.Drawing.Drawing2D;
 using System.Numerics;
 
@@ -69,6 +70,7 @@ public sealed partial class MainScreen : Form
             new("Big cube", "bigcube"),
             new("Textured cube", "texturedcube"),
             new("Empty", "empty"),
+            new("Open model…", "openfile"),
         };
 
         lstDemos.DoubleClick += LstDemos_DoubleClick;
@@ -156,10 +158,30 @@ public sealed partial class MainScreen : Form
 
     private async void LstDemos_DoubleClick(object? sender, EventArgs e)
     {
-        if (lstDemos.SelectedValue is string id)
+        if (lstDemos.SelectedValue is not string id)
         {
-            await PrepareWorldAsync(id);
+            return;
         }
+
+        if (id == "openfile")
+        {
+            using var dialog = new OpenFileDialog
+            {
+                Title = "Open 3D model",
+                Filter = "3D models (*.obj;*.dae)|*.obj;*.dae"
+                       + "|Wavefront OBJ (*.obj)|*.obj"
+                       + "|Collada (*.dae)|*.dae"
+                       + "|All files (*.*)|*.*",
+            };
+
+            if (dialog.ShowDialog(this) == DialogResult.OK)
+            {
+                await PrepareWorldFromFileAsync(dialog.FileName);
+            }
+            return;
+        }
+
+        await PrepareWorldAsync(id);
     }
 
     private void ApplyTheme()
@@ -229,7 +251,13 @@ public sealed partial class MainScreen : Form
             (lblLoading.ClientSize.Width - prgLoading.Width) / 2,
             lblLoading.ClientSize.Height / 2 + 40);
 
-    private async Task PrepareWorldAsync(string id)
+    private Task PrepareWorldAsync(string id) =>
+        PrepareWorldCoreAsync(progress => BuildWorld(id, progress), id);
+
+    private Task PrepareWorldFromFileAsync(string path) =>
+        PrepareWorldCoreAsync(progress => BuildWorldFromFile(path, progress), Path.GetFileName(path));
+
+    private async Task PrepareWorldCoreAsync(Func<IProgress<float>?, WorldSetup> build, string label)
     {
         lstDemos.Enabled = false;
         prgLoading.Value = 0;
@@ -244,7 +272,7 @@ public sealed partial class MainScreen : Form
             var progress = new Progress<float>(f =>
                 prgLoading.Value = Math.Clamp((int)(f * prgLoading.Maximum), 0, prgLoading.Maximum));
 
-            var setup = await Task.Run(() => BuildWorld(id, progress));
+            var setup = await Task.Run(() => build(progress));
 
             // Start every demo from the canonical view — without this, a previous
             // arc-ball drag stays baked into the camera orbit.
@@ -261,7 +289,7 @@ public sealed partial class MainScreen : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"Failed to load '{id}': {ex.Message}", "Load error",
+            MessageBox.Show(this, $"Failed to load '{label}': {ex.Message}", "Load error",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
@@ -431,6 +459,38 @@ public sealed partial class MainScreen : Form
                 break;
             }
         }
+
+        return new WorldSetup(world, cameraPosition, projection);
+    }
+
+    /// <summary>
+    /// Loads a model file (OBJ or Collada) into a fresh world, framing the camera and
+    /// depth range from the model's own size so any scale of mesh shows up on load.
+    /// </summary>
+    private static WorldSetup BuildWorldFromFile(string path, IProgress<float>? progress)
+    {
+        var extension = Path.GetExtension(path).ToLowerInvariant();
+        IMesh[] meshes = extension switch
+        {
+            ".obj" => ObjImporter.ImportObj(path, progress, ImageTexture.Load),
+            ".dae" => MeshFactory.HackyImportCollada(path, progress),
+            _ => throw new NotSupportedException($"Unsupported model format '{extension}'."),
+        };
+
+        var world = new SimpleWorld();
+        world.Meshes.AddRange(meshes);
+        world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.35f, -0.5f, -1f) });
+
+        // Frame the model: pull the camera back proportional to its bounding radius and push
+        // the far plane out far enough to contain it, whatever units the file uses.
+        var radius = meshes.Length == 0 ? 1f : meshes.Max(m => m.BoundingRadius);
+        if (radius <= 0f || float.IsInfinity(radius) || float.IsNaN(radius))
+        {
+            radius = 1f;
+        }
+
+        var cameraPosition = new Vector3(0, 0, -radius * 3f);
+        var projection = new PerspectiveProjection(40f * (float)Math.PI / 180f, .01f, Math.Max(500f, radius * 20f));
 
         return new WorldSetup(world, cameraPosition, projection);
     }
