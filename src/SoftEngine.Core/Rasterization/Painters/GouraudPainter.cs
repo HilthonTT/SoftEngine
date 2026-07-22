@@ -1,19 +1,13 @@
-﻿using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
-using SoftEngine.Core.Shading;
-using System.Numerics;
+using SoftEngine.Core.Scenes.Lights;
 
 namespace SoftEngine.Core.Rasterization.Painters;
 
-public sealed class GouraudPainter(Vector3 lightPosition) : IPainter
+/// <summary>Per-vertex Lambert intensity, interpolated across the triangle.</summary>
+public sealed class GouraudPainter(ILight? light = null, float ambient = 0.05f) : LitPainter(light, ambient)
 {
-    private readonly Vector3 _lightPosition = lightPosition;
-
-    public GouraudPainter() : this(new Vector3(0, 10, 10))
-    {
-    }
-
-    public void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice)
+    public override void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice)
     {
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
@@ -25,9 +19,10 @@ public sealed class GouraudPainter(Vector3 lightPosition) : IPainter
         ScanlineRasterizer.Fill(
             surface,
             surface.ToScreen3(a.Proj), surface.ToScreen3(b.Proj), surface.ToScreen3(c.Proj),
-            new IntensityVarying(LambertLighting.ComputeNDotL(a.World, a.Norm, _lightPosition)),
-            new IntensityVarying(LambertLighting.ComputeNDotL(b.World, b.Norm, _lightPosition)),
-            new IntensityVarying(LambertLighting.ComputeNDotL(c.World, c.Norm, _lightPosition)),
+            1f / a.Proj.W, 1f / b.Proj.W, 1f / c.Proj.W,
+            new IntensityVarying(LitIntensity(a.World, a.Norm)),
+            new IntensityVarying(LitIntensity(b.World, b.Norm)),
+            new IntensityVarying(LitIntensity(c.World, c.Norm)),
             new LambertShader(color));
     }
 }

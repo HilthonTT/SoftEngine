@@ -45,6 +45,8 @@ public sealed partial class MainScreen
         rdbClassicShading = new RadioButton();
         rdbFlatShading = new RadioButton();
         rdbGouraudShading = new RadioButton();
+        rdbPhongShading = new RadioButton();
+        rdbTexturedShading = new RadioButton();
         pnlViewport = new Panel();
         panel3D1 = new Panel3D();
         toolTip1 = new ToolTip(components);
@@ -174,6 +176,8 @@ public sealed partial class MainScreen
         flpShading.Controls.Add(rdbClassicShading);
         flpShading.Controls.Add(rdbFlatShading);
         flpShading.Controls.Add(rdbGouraudShading);
+        flpShading.Controls.Add(rdbPhongShading);
+        flpShading.Controls.Add(rdbTexturedShading);
         flpShading.FlowDirection = FlowDirection.TopDown;
         flpShading.Margin = new Padding(0);
         flpShading.Name = "flpShading";
@@ -214,6 +218,24 @@ public sealed partial class MainScreen
         rdbGouraudShading.TabStop = true;
         rdbGouraudShading.Text = "Gouraud";
         rdbGouraudShading.UseVisualStyleBackColor = true;
+        //
+        // rdbPhongShading
+        //
+        rdbPhongShading.AutoSize = true;
+        rdbPhongShading.Margin = new Padding(2, 2, 0, 2);
+        rdbPhongShading.Name = "rdbPhongShading";
+        rdbPhongShading.TabStop = true;
+        rdbPhongShading.Text = "Phong";
+        rdbPhongShading.UseVisualStyleBackColor = true;
+        //
+        // rdbTexturedShading
+        //
+        rdbTexturedShading.AutoSize = true;
+        rdbTexturedShading.Margin = new Padding(2, 2, 0, 2);
+        rdbTexturedShading.Name = "rdbTexturedShading";
+        rdbTexturedShading.TabStop = true;
+        rdbTexturedShading.Text = "Textured";
+        rdbTexturedShading.UseVisualStyleBackColor = true;
         //
         // pnlViewport
         //
@@ -269,6 +291,8 @@ public sealed partial class MainScreen
     private RadioButton rdbClassicShading;
     private RadioButton rdbFlatShading;
     private RadioButton rdbGouraudShading;
+    private RadioButton rdbPhongShading;
+    private RadioButton rdbTexturedShading;
     private Panel pnlViewport;
     private Panel3D panel3D1;
     private ToolTip toolTip1;

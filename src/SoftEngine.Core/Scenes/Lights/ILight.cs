@@ -1,10 +1,12 @@
-﻿using System.Numerics;
+using System.Numerics;
 
 namespace SoftEngine.Core.Scenes.Lights;
 
 public interface ILight
 {
-    Vector3 Direction { get; set; }
+    /// <summary>Brightness multiplier for the light's contribution (1 = full).</summary>
+    float Intensity { get; }
 
-    Vector3 Position { get; set; }
+    /// <summary>Unit vector from the surface point toward the light.</summary>
+    Vector3 DirectionFrom(Vector3 worldPosition);
 }

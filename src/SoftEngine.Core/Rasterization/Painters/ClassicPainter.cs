@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 
@@ -16,6 +16,7 @@ public sealed class ClassicPainter : IPainter
         ScanlineRasterizer.Fill(
            surface,
            surface.ToScreen3(a.Proj), surface.ToScreen3(b.Proj), surface.ToScreen3(c.Proj),
+           1f / a.Proj.W, 1f / b.Proj.W, 1f / c.Proj.W,
            default(EmptyVarying), default, default,
            new SolidColorShader(color));
     }

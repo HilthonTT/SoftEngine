@@ -90,13 +90,14 @@ public readonly struct Triangle(int p0, int p1, int p2)
     {
         Matrix4x4 worldMatrix = vertexBuffer.WorldMatrix;
         Vector3[] normVertices = vertexBuffer.Mesh?.NormVertices ?? [];
+        Vector3[] modelVertices = vertexBuffer.Mesh?.Vertices ?? [];
 
-        TransformWorldVertex(vertexBuffer, I0, normVertices, worldMatrix);
-        TransformWorldVertex(vertexBuffer, I1, normVertices, worldMatrix);
-        TransformWorldVertex(vertexBuffer, I2, normVertices, worldMatrix);
+        TransformWorldVertex(vertexBuffer, I0, modelVertices, normVertices, worldMatrix);
+        TransformWorldVertex(vertexBuffer, I1, modelVertices, normVertices, worldMatrix);
+        TransformWorldVertex(vertexBuffer, I2, modelVertices, normVertices, worldMatrix);
     }
 
-    private static void TransformWorldVertex(VertexBuffer vertexBuffer, int v, Vector3[] normVertices, Matrix4x4 worldMatrix)
+    private static void TransformWorldVertex(VertexBuffer vertexBuffer, int v, Vector3[] modelVertices, Vector3[] normVertices, Matrix4x4 worldMatrix)
     {
         if (vertexBuffer.Vertices[v].Norm == Vector3.Zero)
         {
@@ -105,7 +106,7 @@ public readonly struct Triangle(int p0, int p1, int p2)
 
         if (vertexBuffer.Vertices[v].World == Vector3.Zero)
         {
-            vertexBuffer.Vertices[v] = vertexBuffer.Vertices[v].SetWorld(Vector3.Transform(vertexBuffer.Vertices[v].World, worldMatrix));
+            vertexBuffer.Vertices[v] = vertexBuffer.Vertices[v].SetWorld(Vector3.Transform(modelVertices[v], worldMatrix));
         }
     }
 

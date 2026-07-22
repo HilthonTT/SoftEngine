@@ -38,6 +38,8 @@ public sealed class Renderer : IRenderer
 
         // model => worldMatrix => world => viewMatrix => view => projectionMatrix => projection => toNdc => ndc => toScreen => screen
 
+        painter?.Prepare(scene);
+
         var viewMatrix = camera.ViewMatrix;
         var projectionMatrix = projection.ProjectionMatrix(surface.Width, surface.Height);
 

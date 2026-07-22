@@ -3,6 +3,7 @@ using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Math;
 using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
+using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.WinForms.Cameras;
 using SoftEngine.WinForms.Controls;
@@ -66,6 +67,7 @@ public sealed partial class MainScreen : Form
             new("Big town", "bigtown"),
             new("Cube", "cube"),
             new("Big cube", "bigcube"),
+            new("Textured cube", "texturedcube"),
             new("Empty", "empty"),
         };
 
@@ -75,6 +77,8 @@ public sealed partial class MainScreen : Form
         rdbClassicShading.Checked = panel3D1.Painter is ClassicPainter;
         rdbFlatShading.Checked = panel3D1.Painter is FlatPainter;
         rdbGouraudShading.Checked = panel3D1.Painter is GouraudPainter;
+        rdbPhongShading.Checked = panel3D1.Painter is PhongPainter;
+        rdbTexturedShading.Checked = panel3D1.Painter is TexturedPainter;
 
         rdbNoneShading.CheckedChanged += (s, e) =>
         {
@@ -109,7 +113,25 @@ public sealed partial class MainScreen : Form
             {
                 return;
             }
-            panel3D1.Painter = new GouraudPainter(); 
+            panel3D1.Painter = new GouraudPainter();
+            panel3D1.Invalidate();
+        };
+        rdbPhongShading.CheckedChanged += (s, e) =>
+        {
+            if (s is not RadioButton { Checked: true })
+            {
+                return;
+            }
+            panel3D1.Painter = new PhongPainter();
+            panel3D1.Invalidate();
+        };
+        rdbTexturedShading.CheckedChanged += (s, e) =>
+        {
+            if (s is not RadioButton { Checked: true })
+            {
+                return;
+            }
+            panel3D1.Painter = new TexturedPainter();
             panel3D1.Invalidate();
         };
 
@@ -261,6 +283,7 @@ public sealed partial class MainScreen : Form
             case "parrot":
                 world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\parrot.dae", progress));
                 cameraPosition = new Vector3(0, 0, -500);
+                world.Lights.Add(new PointLight { Position = new Vector3(0, 200, 500) });
                 break;
 
             case "teapot":
@@ -271,11 +294,13 @@ public sealed partial class MainScreen : Form
                 world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\elefant.dae", progress));
                 cameraPosition = new Vector3(0, 0, -1500);
                 projection = new PerspectiveProjection(40f * (float)Math.PI / 180f, .01f, 65535f);
+                world.Lights.Add(new PointLight { Position = new Vector3(0, 1000, 1500) });
                 break;
 
             case "Juliet":
                 world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\Juliet.dae", progress));
                 cameraPosition = new Vector3(0, 0, -500);
+                world.Lights.Add(new PointLight { Position = new Vector3(0, 200, 500) });
                 break;
 
             case "empty":
@@ -283,6 +308,7 @@ public sealed partial class MainScreen : Form
 
             case "town":
             {
+                world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.6f, -1f, 0.8f) });
                 var d = 50; var s = 2;
                 for (var x = -d; x <= d; x += s)
                 {
@@ -301,6 +327,7 @@ public sealed partial class MainScreen : Form
 
             case "littletown":
             {
+                world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.6f, -1f, 0.8f) });
                 var d = 10; var s = 2;
                 for (var x = -d; x <= d; x += s)
                 {
@@ -319,6 +346,7 @@ public sealed partial class MainScreen : Form
 
             case "bigtown":
             {
+                world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.6f, -1f, 0.8f) });
                 var d = 200; var s = 2;
                 for (var x = -d; x <= d; x += s)
                 {
@@ -341,6 +369,15 @@ public sealed partial class MainScreen : Form
 
             case "bigcube":
                 world.Meshes.Add(new Cube() { Scale = new Vector3(100, 100, 100) });
+                break;
+
+            case "texturedcube":
+                world.Meshes.Add(new TexturedCube
+                {
+                    Scale = new Vector3(20, 20, 20),
+                    Rotation = new Rotation3D(25, 35, 0).ToRad(),
+                });
+                world.Lights.Add(new PointLight { Position = new Vector3(0, 0, -100) });
                 break;
 
             case "spheres":

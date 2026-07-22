@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 
 namespace SoftEngine.Core.Rasterization;
 
@@ -10,4 +10,7 @@ public readonly struct IntensityVarying(float intensity) : IVarying<IntensityVar
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static IntensityVarying Lerp(in IntensityVarying a, in IntensityVarying b, float t)
         => new(a.Intensity + (b.Intensity - a.Intensity) * t);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static IntensityVarying Scale(in IntensityVarying a, float f) => new(a.Intensity * f);
 }

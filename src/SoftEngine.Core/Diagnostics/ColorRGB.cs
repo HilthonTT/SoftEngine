@@ -24,6 +24,15 @@ public readonly struct ColorRGB
             255 << ARGBAlphaShift));
     }
 
+    private ColorRGB(uint packed)
+    {
+        _value = packed;
+    }
+
+    /// <summary>Wraps a packed 32-bit ARGB value (e.g. a texture texel) without re-encoding.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ColorRGB FromPacked(int argb) => new(unchecked((uint)argb));
+
     public byte R => (byte)((_value >> ARGBRedShift) & 0xFF);
 
     public byte G => (byte)((_value >> ARGBGreenShift) & 0xFF);
@@ -35,6 +44,15 @@ public readonly struct ColorRGB
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ColorRGB operator *(float f, ColorRGB color) =>
         new((byte)(f * color.R), (byte)(f * color.G), (byte)(f * color.B));
+
+    /// <summary>Saturating add — channels clamp at 255 instead of wrapping.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ColorRGB operator +(ColorRGB x, ColorRGB y) =>
+        new((byte)System.Math.Min(255, x.R + y.R),
+            (byte)System.Math.Min(255, x.G + y.G),
+            (byte)System.Math.Min(255, x.B + y.B));
+
+    public static readonly ColorRGB White = new(255, 255, 255);
 
     public static readonly ColorRGB Yellow = new(255, 255, 0);
 
