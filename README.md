@@ -2,6 +2,12 @@
 
 A **software 3D rasterizer** written in C#. The entire pipeline — model transforms, projection, culling, clipping, scanline rasterization, z-buffering and shading — runs on the CPU with no GPU or graphics-API dependency. A WinForms front-end renders live into a bitmap so you can orbit models, switch shading modes, and watch per-frame render statistics.
 
+![Skull model (31k triangles) rendered with Gouraud shading](docs/screenshots/skull.png)
+
+| ![Elephant model (26k triangles, 5 meshes) with Gouraud shading](docs/screenshots/elephant.png) | ![Parrot model (7k triangles) with Gouraud shading](docs/screenshots/parrot.png) |
+| :--: | :--: |
+| Elephant — 26k triangles across 5 meshes | Parrot — 7k triangles |
+
 ## What it does
 
 - Loads and renders 3D models (Collada `.dae`) and procedural primitives in real time.

@@ -5,6 +5,8 @@ using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.WinForms.Cameras;
+using SoftEngine.WinForms.Controls;
+using System.Drawing.Drawing2D;
 using System.Numerics;
 
 namespace SoftEngine.WinForms;
@@ -16,11 +18,12 @@ public sealed partial class MainScreen : Form
     private sealed record WorldSetup(SimpleWorld World, Vector3 CameraPosition, PerspectiveProjection? Projection);
 
     private readonly Label lblLoading;
-    private readonly ProgressBar prgLoading;
+    private readonly FlatProgressBar prgLoading;
 
     public MainScreen()
     {
         InitializeComponent();
+        ApplyTheme();
 
         lblLoading = new Label
         {
@@ -28,21 +31,24 @@ public sealed partial class MainScreen : Form
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleCenter,
             Font = new Font(Font.FontFamily, 16f, FontStyle.Bold),
-            ForeColor = Color.Blue,
+            ForeColor = Theme.Accent,
             BackColor = panel3D1.BackColor,
             Visible = false,
         };
         panel3D1.Controls.Add(lblLoading);
 
-        prgLoading = new ProgressBar
+        prgLoading = new FlatProgressBar
         {
-            Size = new Size(260, 18),
-            Style = ProgressBarStyle.Continuous,
+            Size = new Size(280, 6),
             Maximum = 1000,
         };
         lblLoading.Controls.Add(prgLoading);
         lblLoading.Resize += (s, e) => CenterLoadingProgress();
         CenterLoadingProgress();
+
+        lstDemos.DrawMode = DrawMode.OwnerDrawFixed;
+        lstDemos.ItemHeight = 34;
+        lstDemos.DrawItem += DrawDemoItem;
 
         lstDemos.DisplayMember = nameof(DemoItem.Display);
         lstDemos.ValueMember = nameof(DemoItem.Id);
@@ -132,6 +138,67 @@ public sealed partial class MainScreen : Form
         {
             await PrepareWorldAsync(id);
         }
+    }
+
+    private void ApplyTheme()
+    {
+        BackColor = Theme.Background;
+        ForeColor = Theme.TextPrimary;
+
+        tlpSidebar.BackColor = Theme.Surface;
+        lblTitle.ForeColor = Theme.TextPrimary;
+        lblWorldsHeader.ForeColor = Theme.TextSecondary;
+        lblDisplayHeader.ForeColor = Theme.TextSecondary;
+        lblShadingHeader.ForeColor = Theme.TextSecondary;
+
+        lstDemos.BackColor = Theme.Surface;
+        lstDemos.ForeColor = Theme.TextPrimary;
+
+        foreach (Control control in flpDisplay.Controls)
+        {
+            control.ForeColor = Theme.TextPrimary;
+        }
+        foreach (Control control in flpShading.Controls)
+        {
+            control.ForeColor = Theme.TextPrimary;
+        }
+
+        pnlViewport.BackColor = Theme.Background;
+        panel3D1.BackColor = Theme.Viewport;
+    }
+
+    private void DrawDemoItem(object? sender, DrawItemEventArgs e)
+    {
+        if (e.Index < 0 || e.Index >= lstDemos.Items.Count)
+        {
+            return;
+        }
+
+        var item = (DemoItem)lstDemos.Items[e.Index];
+        var selected = (e.State & DrawItemState.Selected) != 0;
+
+        using var back = new SolidBrush(Theme.Surface);
+        e.Graphics.FillRectangle(back, e.Bounds);
+
+        var bounds = Rectangle.Inflate(e.Bounds, -2, -2);
+        if (selected)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using var fill = new SolidBrush(Theme.Selection);
+            using var path = Theme.RoundedRect(bounds, 6);
+            e.Graphics.FillPath(fill, path);
+
+            using var accent = new SolidBrush(Theme.Accent);
+            e.Graphics.FillRectangle(accent, bounds.Left + 2, bounds.Top + 8, 3, bounds.Height - 16);
+        }
+
+        TextRenderer.DrawText(
+            e.Graphics,
+            item.Display,
+            lstDemos.Font,
+            new Rectangle(bounds.Left + 14, bounds.Top, bounds.Width - 14, bounds.Height),
+            selected ? Theme.TextPrimary : Theme.TextSecondary,
+            TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
     }
 
     /// <summary>Places the progress bar just below the centered "Loading…" text.</summary>

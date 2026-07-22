@@ -102,6 +102,6 @@ public partial class Panel3D : UserControl
             Stats.DrawnPixelCount + Stats.BehindZPixelCount
         );
 
-        TextRenderer.DrawText(g, StatDisplay.ToString(), Font, Point.Empty, Color.BlueViolet, BackColor, TextFormatFlags.ExpandTabs);
+        TextRenderer.DrawText(g, StatDisplay.ToString(), Font, new Point(10, 8), Theme.TextSecondary, TextFormatFlags.ExpandTabs);
     }
 }
