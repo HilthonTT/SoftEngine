@@ -89,6 +89,7 @@ public partial class Panel3D : UserControl
         g.DrawImage(bmp, Point.Empty);
 
         StatDisplay.Clear();
+        StatDisplay.Append($"Lights:{Scene.World.Lights.Count}\n");
         StatDisplay.AppendFormat(Format,
             Scene.World.Meshes.Count,
             Stats.TotalTriangleCount,

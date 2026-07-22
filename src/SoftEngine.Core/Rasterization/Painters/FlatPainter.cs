@@ -5,9 +5,9 @@ using SoftEngine.Core.Scenes.Lights;
 namespace SoftEngine.Core.Rasterization.Painters;
 
 /// <summary>One Lambert intensity per triangle, from its centroid and averaged normal.</summary>
-public sealed class FlatPainter(ILight? light = null, float ambient = 0.05f) : LitPainter(light, ambient)
+public sealed class FlatPainter(ILight? light = null, float ambient = 0.12f) : LitPainter(light, ambient)
 {
-    public override void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice)
+    public override void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in RowSlice slice)
     {
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
@@ -26,6 +26,7 @@ public sealed class FlatPainter(ILight? light = null, float ambient = 0.05f) : L
             surface.ToScreen3(a.Proj), surface.ToScreen3(b.Proj), surface.ToScreen3(c.Proj),
             1f / a.Proj.W, 1f / b.Proj.W, 1f / c.Proj.W,
             default(EmptyVarying), default, default,
-            new SolidColorShader(lit));
+            new SolidColorShader(lit),
+            slice);
     }
 }

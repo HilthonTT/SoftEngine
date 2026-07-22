@@ -6,7 +6,7 @@ namespace SoftEngine.Core.Rasterization.Painters;
 
 public sealed class ClassicPainter : IPainter
 {
-    public void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice)
+    public void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in RowSlice slice)
     {
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
@@ -18,6 +18,7 @@ public sealed class ClassicPainter : IPainter
            surface.ToScreen3(a.Proj), surface.ToScreen3(b.Proj), surface.ToScreen3(c.Proj),
            1f / a.Proj.W, 1f / b.Proj.W, 1f / c.Proj.W,
            default(EmptyVarying), default, default,
-           new SolidColorShader(color));
+           new SolidColorShader(color),
+           slice);
     }
 }

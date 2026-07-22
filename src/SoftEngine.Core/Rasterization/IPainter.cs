@@ -14,5 +14,10 @@ public interface IPainter
     {
     }
 
-    void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice);
+    /// <summary>
+    /// Draws one triangle, restricted to the rows owned by <paramref name="slice"/>.
+    /// The renderer calls this concurrently with disjoint slices; implementations must
+    /// not mutate shared state here.
+    /// </summary>
+    void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in RowSlice slice);
 }

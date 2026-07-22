@@ -17,11 +17,25 @@ public sealed class RenderStats
 
     public int BehindViewTriangleCount { get; internal set; }
 
-    public int DrawnPixelCount { get; internal set; }
+    private int _drawnPixelCount;
+    private int _behindZPixelCount;
 
-    public int DrawPixelCount { get; internal set; }
+    public int DrawnPixelCount => _drawnPixelCount;
 
-    public int BehindZPixelCount { get; internal set; }
+    public int BehindZPixelCount => _behindZPixelCount;
+
+    /// <summary>Thread-safe batched pixel counts, flushed by the rasterizer per scanline.</summary>
+    public void AddPixelCounts(int drawn, int behindZ)
+    {
+        if (drawn != 0)
+        {
+            Interlocked.Add(ref _drawnPixelCount, drawn);
+        }
+        if (behindZ != 0)
+        {
+            Interlocked.Add(ref _behindZPixelCount, behindZ);
+        }
+    }
 
     public long CalculationTimeMs => _caclSw.ElapsedMilliseconds;
 
@@ -36,7 +50,7 @@ public sealed class RenderStats
     public void CalculationTime()
     {
         _painSw.Stop();
-        _caclSw.Stop();
+        _caclSw.Start();
     }
 
     public void StopTime()
@@ -55,7 +69,7 @@ public sealed class RenderStats
         FacingBackTriangleCount = 0;
         OutOfViewTriangleCount = 0;
         BehindViewTriangleCount = 0;
-        DrawnPixelCount = 0;
-        BehindZPixelCount = 0;
+        _drawnPixelCount = 0;
+        _behindZPixelCount = 0;
     }
 }

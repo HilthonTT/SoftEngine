@@ -246,6 +246,12 @@ public sealed partial class MainScreen : Form
 
             var setup = await Task.Run(() => BuildWorld(id, progress));
 
+            // Start every demo from the canonical view — without this, a previous
+            // arc-ball drag stays baked into the camera orbit.
+            if (panel3D1.Scene?.Camera is ArcBallCamera arcBall)
+            {
+                arcBall.Rotation = Quaternion.Identity;
+            }
             panel3D1.Scene?.Camera.Position = setup.CameraPosition;
             if (setup.Projection is not null)
             {
@@ -283,7 +289,7 @@ public sealed partial class MainScreen : Form
             case "parrot":
                 world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\parrot.dae", progress));
                 cameraPosition = new Vector3(0, 0, -500);
-                world.Lights.Add(new PointLight { Position = new Vector3(0, 200, 500) });
+                world.Lights.Add(new PointLight { Position = new Vector3(150, 200, 400) });
                 break;
 
             case "teapot":
@@ -294,13 +300,13 @@ public sealed partial class MainScreen : Form
                 world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\elefant.dae", progress));
                 cameraPosition = new Vector3(0, 0, -1500);
                 projection = new PerspectiveProjection(40f * (float)Math.PI / 180f, .01f, 65535f);
-                world.Lights.Add(new PointLight { Position = new Vector3(0, 1000, 1500) });
+                world.Lights.Add(new PointLight { Position = new Vector3(500, 800, 1200) });
                 break;
 
             case "Juliet":
                 world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\Juliet.dae", progress));
                 cameraPosition = new Vector3(0, 0, -500);
-                world.Lights.Add(new PointLight { Position = new Vector3(0, 200, 500) });
+                world.Lights.Add(new PointLight { Position = new Vector3(150, 200, 400) });
                 break;
 
             case "empty":
@@ -308,7 +314,7 @@ public sealed partial class MainScreen : Form
 
             case "town":
             {
-                world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.6f, -1f, 0.8f) });
+                world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.6f, -1f, -0.8f) });
                 var d = 50; var s = 2;
                 for (var x = -d; x <= d; x += s)
                 {
@@ -327,7 +333,7 @@ public sealed partial class MainScreen : Form
 
             case "littletown":
             {
-                world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.6f, -1f, 0.8f) });
+                world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.6f, -1f, -0.8f) });
                 var d = 10; var s = 2;
                 for (var x = -d; x <= d; x += s)
                 {
@@ -346,7 +352,7 @@ public sealed partial class MainScreen : Form
 
             case "bigtown":
             {
-                world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.6f, -1f, 0.8f) });
+                world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.6f, -1f, -0.8f) });
                 var d = 200; var s = 2;
                 for (var x = -d; x <= d; x += s)
                 {
@@ -377,7 +383,7 @@ public sealed partial class MainScreen : Form
                     Scale = new Vector3(20, 20, 20),
                     Rotation = new Rotation3D(25, 35, 0).ToRad(),
                 });
-                world.Lights.Add(new PointLight { Position = new Vector3(0, 0, -100) });
+                world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.35f, -0.5f, -1f) });
                 break;
 
             case "spheres":

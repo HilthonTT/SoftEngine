@@ -32,7 +32,7 @@ public abstract class LitPainter(ILight? light, float ambient) : IPainter
     {
     }
 
-    public abstract void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice);
+    public abstract void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in RowSlice slice);
 
     /// <summary>Ambient plus Lambert diffuse, clamped to 1.</summary>
     protected float LitIntensity(Vector3 worldPosition, Vector3 normal) =>

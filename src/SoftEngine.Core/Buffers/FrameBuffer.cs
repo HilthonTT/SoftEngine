@@ -59,8 +59,13 @@ public sealed class FrameBuffer(int width, int height)
         Array.Fill(_zBuffer, DepthResolution);
     }
 
+    /// <summary>
+    /// Depth-tests and writes one pixel. Returns true when the pixel was drawn, false
+    /// when it was behind the z-buffer — callers batch these into stats themselves, so
+    /// parallel rasterization doesn't contend on shared counters per pixel.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void PutPixel(int x, int y, int z, ColorRGB color)
+    public bool PutPixel(int x, int y, int z, ColorRGB color)
     {
 #if DEBUG
         if (x > Width - 1 || x < 0 || y > Height - 1 || y < 0)
@@ -72,20 +77,12 @@ public sealed class FrameBuffer(int width, int height)
         int index = x + y * Width;
         if (z > _zBuffer[index])
         {
-            if (Stats is not null)
-            {
-                Stats.BehindZPixelCount++;
-            }
-            return;
-        }
-
-        if (Stats is not null)
-        {
-            Stats.DrawPixelCount++;
+            return false;
         }
 
         _zBuffer[index] = z;
         Screen[index] = color.Color;
+        return true;
     }
 
     public void DrawLine(Vector3 p0, Vector3 p1, ColorRGB color)
@@ -111,28 +108,33 @@ public sealed class FrameBuffer(int width, int height)
 
         int dmax = System.Math.Max(dx, dy);
 
+        var drawn = 0;
+        var behindZ = 0;
+
         int i = 0;
         while (i++ < dmax)
         {
-            ex += dx; 
-            if (ex >= dmax) 
+            ex += dx;
+            if (ex >= dmax)
             {
                 ex -= dmax; x0 += sx;
-                PutPixel(x0, y0, z0, color);
+                if (PutPixel(x0, y0, z0, color)) { drawn++; } else { behindZ++; }
             }
-            ey += dy; 
-            if (ey >= dmax) 
-            { 
+            ey += dy;
+            if (ey >= dmax)
+            {
                 ey -= dmax; y0 += sy;
-                PutPixel(x0, y0, z0, color); 
+                if (PutPixel(x0, y0, z0, color)) { drawn++; } else { behindZ++; }
             }
 
-            ez += dz; 
-            if (ez >= dmax) 
-            { 
+            ez += dz;
+            if (ez >= dmax)
+            {
                 ez -= dmax; z0 += sz;
-                PutPixel(x0, y0, z0, color); 
+                if (PutPixel(x0, y0, z0, color)) { drawn++; } else { behindZ++; }
             }
         }
+
+        Stats?.AddPixelCounts(drawn, behindZ);
     }
 }

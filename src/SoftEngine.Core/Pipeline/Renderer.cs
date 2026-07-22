@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Gizmos;
@@ -14,6 +14,10 @@ namespace SoftEngine.Core.Pipeline;
 public sealed class Renderer : IRenderer
 {
     private readonly WireFramePainter _internalWireFramePainter = new();
+
+    // Visible (mesh, triangle) pairs collected by the sequential cull phase and
+    // consumed by the parallel paint phase. Reused across frames.
+    private readonly List<(int MeshIndex, int TriangleIndex)> _visible = [];
 
     public RendererSettings Settings { get; set; } = new();
 
@@ -43,15 +47,21 @@ public sealed class Renderer : IRenderer
         var viewMatrix = camera.ViewMatrix;
         var projectionMatrix = projection.ProjectionMatrix(surface.Width, surface.Height);
 
+        // View-space frustum planes for whole-mesh bounding-sphere culling.
+        Span<Vector4> frustumPlanes = stackalloc Vector4[6];
+        BuildFrustumPlanes(projectionMatrix, frustumPlanes);
+
         // Allocate arrays to store transformed vertices
         using var worldBuffer = new WorldBuffer(world);
 
         List<IMesh> meshes = world.Meshes;
         int volumeCount = meshes.Count;
 
+        // Phase 1 (sequential): transform, cull and project; collect visible triangles.
+        _visible.Clear();
+
         for (var idxVolume = 0; idxVolume < volumeCount; idxVolume++)
         {
-
             var vbx = worldBuffer.VertexBuffers[idxVolume];
             var mesh = meshes[idxVolume];
 
@@ -62,6 +72,19 @@ public sealed class Renderer : IRenderer
             vbx.WorldMatrix = worldMatrix;
 
             Stats.TotalTriangleCount += mesh.Triangles.Length;
+
+            // Whole-mesh rejection: if the mesh's bounding sphere is fully outside the
+            // frustum, skip transforming its vertices and culling its triangles.
+            var radius = mesh.BoundingRadius * MaxAbsComponent(mesh.Scale);
+            if (!float.IsPositiveInfinity(radius))
+            {
+                var viewCenter = Vector3.Transform(Vector3.Zero, modelViewMatrix);
+                if (IsSphereOutside(frustumPlanes, viewCenter, radius))
+                {
+                    Stats.OutOfViewTriangleCount += mesh.Triangles.Length;
+                    continue;
+                }
+            }
 
             var vertices = mesh.Vertices;
 
@@ -84,7 +107,7 @@ public sealed class Renderer : IRenderer
                     continue;
                 }
 
-                // Discard if back facing 
+                // Discard if back facing
                 if (rendererSettings.BackFaceCulling && t.IsFacingBack(vbx))
                 {
                     Stats.FacingBackTriangleCount++;
@@ -101,20 +124,41 @@ public sealed class Renderer : IRenderer
                     continue;
                 }
 
-                Stats.PaintTime();
+                // Cache world positions and normals while still single-threaded, so the
+                // parallel paint phase only reads the vertex buffer.
+                t.TransformWorld(vbx);
 
-                var color = mesh.TriangleColors[idxTriangle];
-
-                if (rendererSettings.ShowTriangles)
-                {
-                    _internalWireFramePainter.DrawTriangle(scene.Surface, ColorRGB.Magenta, vbx, idxTriangle);
-                }
-
-                painter?.DrawTriangle(scene.Surface, color, vbx, idxTriangle);
-
+                _visible.Add((idxVolume, idxTriangle));
                 Stats.DrawnTriangleCount++;
+            }
+        }
 
-                Stats.CalculationTime();
+        Stats.PaintTime();
+
+        // Phase 2 (parallel): fill the visible triangles. Each worker owns an
+        // interleaved set of screen rows, so pixel writes never overlap.
+        if (painter is not null && _visible.Count > 0)
+        {
+            var sliceCount = System.Math.Clamp(Environment.ProcessorCount, 1, 16);
+
+            if (sliceCount == 1 || _visible.Count < 32)
+            {
+                PaintSlice(painter, surface, meshes, worldBuffer, RowSlice.Full);
+            }
+            else
+            {
+                Parallel.For(0, sliceCount, s =>
+                    PaintSlice(painter, surface, meshes, worldBuffer, new RowSlice(s, sliceCount)));
+            }
+        }
+
+        // The wireframe overlay draws lines across arbitrary rows, so it runs after the
+        // parallel fills, sequentially. Drawing last also keeps the lines visible on top.
+        if (rendererSettings.ShowTriangles)
+        {
+            foreach (var (meshIndex, triangleIndex) in _visible)
+            {
+                _internalWireFramePainter.DrawTriangle(surface, ColorRGB.Magenta, worldBuffer.VertexBuffers[meshIndex], triangleIndex, RowSlice.Full);
             }
         }
 
@@ -127,5 +171,58 @@ public sealed class Renderer : IRenderer
         {
             GizmoRenderer.DrawAxes(surface, viewMatrix * projectionMatrix);
         }
+
+        Stats.StopTime();
     }
+
+    private void PaintSlice(IPainter painter, FrameBuffer surface, List<IMesh> meshes, WorldBuffer worldBuffer, in RowSlice slice)
+    {
+        var count = _visible.Count;
+        for (var i = 0; i < count; i++)
+        {
+            var (meshIndex, triangleIndex) = _visible[i];
+            painter.DrawTriangle(
+                surface,
+                meshes[meshIndex].TriangleColors[triangleIndex],
+                worldBuffer.VertexBuffers[meshIndex],
+                triangleIndex,
+                slice);
+        }
+    }
+
+    /// <summary>
+    /// Extracts the six view-space frustum planes from a projection matrix
+    /// (row-vector convention, clip z in [0, w]). Planes point inward:
+    /// dot(normal, point) + distance ≥ 0 means inside.
+    /// </summary>
+    private static void BuildFrustumPlanes(in Matrix4x4 p, Span<Vector4> planes)
+    {
+        var c1 = new Vector4(p.M11, p.M21, p.M31, p.M41);
+        var c2 = new Vector4(p.M12, p.M22, p.M32, p.M42);
+        var c3 = new Vector4(p.M13, p.M23, p.M33, p.M43);
+        var c4 = new Vector4(p.M14, p.M24, p.M34, p.M44);
+
+        planes[0] = c4 + c1; // left
+        planes[1] = c4 - c1; // right
+        planes[2] = c4 + c2; // bottom
+        planes[3] = c4 - c2; // top
+        planes[4] = c3;      // near (z >= 0)
+        planes[5] = c4 - c3; // far
+    }
+
+    private static bool IsSphereOutside(ReadOnlySpan<Vector4> planes, Vector3 center, float radius)
+    {
+        foreach (var plane in planes)
+        {
+            var normal = new Vector3(plane.X, plane.Y, plane.Z);
+            if (Vector3.Dot(normal, center) + plane.W < -radius * normal.Length())
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static float MaxAbsComponent(Vector3 v) =>
+        MathF.Max(MathF.Abs(v.X), MathF.Max(MathF.Abs(v.Y), MathF.Abs(v.Z)));
 }

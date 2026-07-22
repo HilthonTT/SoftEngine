@@ -12,7 +12,7 @@ namespace SoftEngine.Core.Rasterization.Painters;
 /// </summary>
 public sealed class PhongPainter(
     ILight? light = null,
-    float ambient = 0.05f,
+    float ambient = 0.12f,
     float specularStrength = 0.35f,
     float shininess = 32f) : LitPainter(light, ambient)
 {
@@ -23,10 +23,14 @@ public sealed class PhongPainter(
 
     protected override void PrepareCore(Scene scene)
     {
-        _eye = scene.Camera.Position;
+        // Camera.Position is the translation fed into the view matrix, not the eye's
+        // world position — invert the view matrix to get the true eye point.
+        _eye = Matrix4x4.Invert(scene.Camera.ViewMatrix, out var inverseView)
+            ? inverseView.Translation
+            : scene.Camera.Position;
     }
 
-    public override void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice)
+    public override void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in RowSlice slice)
     {
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
@@ -50,6 +54,7 @@ public sealed class PhongPainter(
             new PhongVarying(a.World, a.Norm),
             new PhongVarying(b.World, b.Norm),
             new PhongVarying(c.World, c.Norm),
-            new BlinnPhongShader(color, lightVector, isDirectional, Light.Intensity, _eye, Ambient, _specularStrength, _shininess));
+            new BlinnPhongShader(color, lightVector, isDirectional, Light.Intensity, _eye, Ambient, _specularStrength, _shininess),
+            slice);
     }
 }

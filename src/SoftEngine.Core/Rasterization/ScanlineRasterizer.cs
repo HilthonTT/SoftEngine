@@ -30,6 +30,21 @@ public static class ScanlineRasterizer
         in TShader shader)
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
+        => Fill(surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2, shader, RowSlice.Full);
+
+    /// <summary>
+    /// Same as the slice-less overload, but only writes rows owned by <paramref name="slice"/> —
+    /// the unit of work for parallel rasterization.
+    /// </summary>
+    public static void Fill<TVarying, TShader>(
+        FrameBuffer surface,
+        Vector3 p0, Vector3 p1, Vector3 p2,
+        float invW0, float invW1, float invW2,
+        TVarying v0, TVarying v1, TVarying v2,
+        in TShader shader,
+        in RowSlice slice)
+        where TVarying : struct, IVarying<TVarying>
+        where TShader : struct, IPixelShader<TVarying>
     {
         if (p0.Y > p1.Y)
         {
@@ -67,9 +82,9 @@ public static class ScanlineRasterizer
             //    p1        long edge on the left
             //  p2
             HalfTriangle(surface, yStart, yMiddle,
-                new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), new Edge<TVarying>(p0, p1, v0, v1, invW0, invW1), shader);
+                new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), new Edge<TVarying>(p0, p1, v0, v1, invW0, invW1), shader, slice);
             HalfTriangle(surface, yMiddle, yEnd,
-                new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), new Edge<TVarying>(p1, p2, v1, v2, invW1, invW2), shader);
+                new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), new Edge<TVarying>(p1, p2, v1, v2, invW1, invW2), shader, slice);
         }
         else
         {
@@ -77,9 +92,9 @@ public static class ScanlineRasterizer
             //  p1          long edge on the right
             //    p2
             HalfTriangle(surface, yStart, yMiddle,
-                new Edge<TVarying>(p0, p1, v0, v1, invW0, invW1), new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), shader);
+                new Edge<TVarying>(p0, p1, v0, v1, invW0, invW1), new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), shader, slice);
             HalfTriangle(surface, yMiddle, yEnd,
-                new Edge<TVarying>(p1, p2, v1, v2, invW1, invW2), new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), shader);
+                new Edge<TVarying>(p1, p2, v1, v2, invW1, invW2), new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), shader, slice);
         }
     }
 
@@ -90,14 +105,15 @@ public static class ScanlineRasterizer
     private static void HalfTriangle<TVarying, TShader>(
         FrameBuffer surface, int yStart, int yEnd,
         in Edge<TVarying> left, in Edge<TVarying> right,
-        in TShader shader)
+        in TShader shader,
+        in RowSlice slice)
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
     {
         var invLeft = left.InvHeight;
         var invRight = right.InvHeight;
 
-        for (var y = yStart; y < yEnd; y++)
+        for (var y = slice.FirstOwnedRowAtOrAfter(yStart); y < yEnd; y += slice.Stride)
         {
             var yCenter = y + 0.5f;
 
@@ -146,6 +162,11 @@ public static class ScanlineRasterizer
         var dz = (ez - sz) * invSpan;
         var z = sz + (xStart + 0.5f - sx) * dz;
 
+        // Pixel stats are accumulated locally and flushed once per scanline, so parallel
+        // slices don't contend on the shared counters at every pixel.
+        var drawn = 0;
+        var behindZ = 0;
+
         for (var x = xStart; x < xEnd; x++)
         {
             var t = (x + 0.5f - sx) * invSpan;
@@ -154,9 +175,18 @@ public static class ScanlineRasterizer
             var oneOverW = float.Lerp(sw, ew, t);
             var varying = TVarying.Scale(TVarying.Lerp(sv, ev, t), 1f / oneOverW);
 
-            surface.PutPixel(x, y, (int)z, shader.Shade(varying));
+            if (surface.PutPixel(x, y, (int)z, shader.Shade(varying)))
+            {
+                drawn++;
+            }
+            else
+            {
+                behindZ++;
+            }
             z += dz;
         }
+
+        surface.Stats?.AddPixelCounts(drawn, behindZ);
     }
 
     /// <summary>Signed area of the triangle in screen space; the sign gives the winding.</summary>

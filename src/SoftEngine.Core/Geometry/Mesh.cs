@@ -18,6 +18,13 @@ public class Mesh : IMesh
         NormVertices = vertexNormals is null ? [.. this.CalculateVertexNormals()] : vertexNormals;
         TriangleColors = triangleColors ?? [.. Enumerable.Repeat(ColorRGB.Gray, Triangles.Length)];
 
+        float maxLengthSquared = 0f;
+        foreach (var vertex in vertices)
+        {
+            maxLengthSquared = MathF.Max(maxLengthSquared, vertex.LengthSquared());
+        }
+        BoundingRadius = MathF.Sqrt(maxLengthSquared);
+
         Scale = Vector3.One;
 
         Rotation = new Rotation3D(0, 0, 0);
@@ -40,4 +47,6 @@ public class Mesh : IMesh
     public Vector2[]? TexCoords { get; set; }
 
     public Texture? Texture { get; set; }
+
+    public float BoundingRadius { get; }
 }
