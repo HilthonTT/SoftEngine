@@ -54,6 +54,8 @@ public sealed partial class MainScreen : Form
         InitializeComponent();
         ApplyTheme();
 
+        CenterToScreen();
+
         lblLoading = new Label
         {
             Text = "Loading…",
