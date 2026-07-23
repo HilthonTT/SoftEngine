@@ -20,6 +20,12 @@ public interface IMesh
 
     Vector3[] NormVertices { get; }
 
+    /// <summary>
+    /// When false the renderer skips this mesh entirely — the "active" flag of the
+    /// graphics object table. Meshes that don't model visibility are always drawn.
+    /// </summary>
+    bool Visible => true;
+
     /// <summary>Per-vertex texture coordinates, aligned with <see cref="Vertices"/>; null when the mesh is untextured.</summary>
     Vector2[]? TexCoords => null;
 

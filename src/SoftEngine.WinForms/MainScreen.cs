@@ -7,6 +7,8 @@ using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.WinForms.Cameras;
 using SoftEngine.WinForms.Controls;
+using SoftEngine.WinForms.Debugging;
+using SoftEngine.WinForms.Dialogs;
 using SoftEngine.WinForms.Interop;
 using System.Drawing.Drawing2D;
 using System.Numerics;
@@ -15,12 +17,37 @@ namespace SoftEngine.WinForms;
 
 public sealed partial class MainScreen : Form
 {
-    private sealed record DemoItem(string Display, string Id);
+    /// <summary>The bundled worlds offered by the model picker.</summary>
+    private static readonly DemoEntry[] Demos =
+    [
+        new("Skull", "skull"),
+        new("Parrot", "parrot"),
+        new("Elefant", "elefant"),
+        new("Teapot", "teapot"),
+        new("Juliet", "Juliet"),
+        new("Cubes", "cubes"),
+        new("Spheres", "spheres"),
+        new("Little town", "littletown"),
+        new("Town", "town"),
+        new("Big town", "bigtown"),
+        new("Cube", "cube"),
+        new("Big cube", "bigcube"),
+        new("Textured cube", "texturedcube"),
+        new("Empty", "empty"),
+    ];
 
     private sealed record WorldSetup(SimpleWorld World, Vector3 CameraPosition, PerspectiveProjection? Projection);
 
     private readonly Label lblLoading;
     private readonly FlatProgressBar prgLoading;
+
+    /// <summary>Set by every rendered frame, cleared when the debugger panels have caught up.</summary>
+    private bool _frameDirty;
+
+    private SceneObjectCatalog _catalog = SceneObjectCatalog.Empty;
+
+    /// <summary>Id of the bundled world on screen, so the picker reopens on it.</summary>
+    private string _currentDemoId = "skull";
 
     public MainScreen()
     {
@@ -48,32 +75,7 @@ public sealed partial class MainScreen : Form
         lblLoading.Resize += (s, e) => CenterLoadingProgress();
         CenterLoadingProgress();
 
-        lstDemos.DrawMode = DrawMode.OwnerDrawFixed;
-        lstDemos.ItemHeight = 34;
-        lstDemos.DrawItem += DrawDemoItem;
-
-        lstDemos.DisplayMember = nameof(DemoItem.Display);
-        lstDemos.ValueMember = nameof(DemoItem.Id);
-        lstDemos.DataSource = new DemoItem[]
-        {
-            new("Skull", "skull"),
-            new("Parrot", "parrot"),
-            new("Elefant", "elefant"),
-            new("Teapot", "teapot"),
-            new("Juliet", "Juliet"),
-            new("Cubes", "cubes"),
-            new("Spheres", "spheres"),
-            new("Little town", "littletown"),
-            new("Town", "town"),
-            new("Big town", "bigtown"),
-            new("Cube", "cube"),
-            new("Big cube", "bigcube"),
-            new("Textured cube", "texturedcube"),
-            new("Empty", "empty"),
-            new("Open model…", "openfile"),
-        };
-
-        lstDemos.DoubleClick += LstDemos_DoubleClick;
+        btnLoadModel.Click += async (s, e) => await ShowModelPickerAsync();
 
         rdbNoneShading.Checked = panel3D1.Painter is null;
         rdbClassicShading.Checked = panel3D1.Painter is ClassicPainter;
@@ -153,35 +155,173 @@ public sealed partial class MainScreen : Form
             Camera = new ArcBallCamera(panel3D1) { Position = new Vector3(0, 0, -60) }
         };
 
+        InitializeDebugger();
+
         _ = PrepareWorldAsync("skull");
     }
 
-    private async void LstDemos_DoubleClick(object? sender, EventArgs e)
+    #region Graphics debugger
+
+    /// <summary>
+    /// Wires the debugger panels to the viewport. The renderer records its event list every
+    /// frame, but the panels only pull from it on a timer: a drag repaints far faster than a
+    /// list view can usefully be rebuilt.
+    /// </summary>
+    private void InitializeDebugger()
     {
-        if (lstDemos.SelectedValue is not string id)
-        {
-            return;
-        }
+        panel3D1.Diagnostics.CaptureEvents = mnuRecordEvents.Checked;
+        panel3D1.ShowStatsOverlay = mnuStatsOverlay.Checked;
 
-        if (id == "openfile")
-        {
-            using var dialog = new OpenFileDialog
-            {
-                Title = "Open 3D model",
-                Filter = "3D models (*.obj;*.dae)|*.obj;*.dae"
-                       + "|Wavefront OBJ (*.obj)|*.obj"
-                       + "|Collada (*.dae)|*.dae"
-                       + "|All files (*.*)|*.*",
-            };
+        panel3D1.FrameRendered += (s, e) => _frameDirty = true;
+        panel3D1.ZoomChanged += (s, e) => UpdateStatus();
+        panel3D1.SelectedPixelChanged += (s, e) => UpdateStatus();
 
-            if (dialog.ShowDialog(this) == DialogResult.OK)
+        tmrDebugRefresh.Tick += (s, e) => RefreshDebugPanels();
+        tmrDebugRefresh.Start();
+
+        objectTablePanel.ActiveChanged += (s, e) => panel3D1.Invalidate();
+
+        // Clicking a write in the pixel history reveals the event and the object behind it.
+        pixelHistoryPanel.WriteSelected += (s, write) =>
+        {
+            eventListPanel.SelectEvent(write.EventIndex);
+
+            if (write.ObjectId >= 0)
             {
-                await PrepareWorldFromFileAsync(dialog.FileName);
+                objectTablePanel.SelectObject(write.ObjectId);
             }
+        };
+
+        eventListPanel.EventSelected += (s, graphicsEvent) =>
+        {
+            if (graphicsEvent.ObjectId >= 0)
+            {
+                objectTablePanel.SelectObject(graphicsEvent.ObjectId);
+            }
+        };
+
+        mnuLoadModel.Click += async (s, e) => await ShowModelPickerAsync();
+        mnuOpenModel.Click += async (s, e) => await OpenModelAsync();
+        mnuExit.Click += (s, e) => Close();
+
+        mnuPixelHistory.CheckedChanged += (s, e) => splitLeft.Panel2Collapsed = !mnuPixelHistory.Checked;
+        mnuObjectTable.CheckedChanged += (s, e) => splitCenter.Panel2Collapsed = !mnuObjectTable.Checked;
+        mnuEventList.CheckedChanged += (s, e) => splitRight.Panel2Collapsed = !mnuEventList.Checked;
+
+        mnuStatsOverlay.CheckedChanged += (s, e) =>
+        {
+            panel3D1.ShowStatsOverlay = mnuStatsOverlay.Checked;
+            panel3D1.Invalidate();
+        };
+
+        mnuRecordEvents.CheckedChanged += (s, e) =>
+        {
+            panel3D1.Diagnostics.CaptureEvents = mnuRecordEvents.Checked;
+            panel3D1.Invalidate();
+        };
+
+        mnuZoomIn.Click += (s, e) => panel3D1.ZoomIn();
+        mnuZoomOut.Click += (s, e) => panel3D1.ZoomOut();
+        mnuZoomActual.Click += (s, e) => panel3D1.ZoomActualSize();
+        mnuClearPixel.Click += (s, e) => panel3D1.ClearSelectedPixel();
+
+        UpdateStatus();
+    }
+
+    /// <summary>Pulls the last frame's capture into the three panels — at most once per timer tick.</summary>
+    private void RefreshDebugPanels()
+    {
+        if (!_frameDirty)
+        {
             return;
         }
 
-        await PrepareWorldAsync(id);
+        _frameDirty = false;
+
+        var scene = panel3D1.Scene;
+        var signature = SceneObjectCatalog.SignatureOf(scene, panel3D1.Painter);
+
+        if (_catalog.Signature != signature)
+        {
+            _catalog = SceneObjectCatalog.Build(scene, panel3D1.Painter);
+            objectTablePanel.SetCatalog(_catalog);
+        }
+
+        if (!splitRight.Panel2Collapsed)
+        {
+            eventListPanel.SetEvents(panel3D1.Diagnostics.Events);
+        }
+
+        if (!splitLeft.Panel2Collapsed)
+        {
+            pixelHistoryPanel.SetHistory(panel3D1.Diagnostics.PixelHistory, _catalog);
+        }
+
+        UpdateStatus();
+    }
+
+    private void UpdateStatus()
+    {
+        // 100% is the framing the world loaded with; the wheel and W/S move away from it.
+        var buffer = panel3D1.BufferSize;
+        lblZoomStatus.Text = $"Zoom: {panel3D1.Zoom * 100f:0}%  ·  {buffer.Width} × {buffer.Height}";
+
+        if (panel3D1.SelectedPixel is { } pixel && panel3D1.SelectedPixelNormalized is { } normalized)
+        {
+            lblPixelStatus.Text = $"Selected pixel X: {pixel.X} ({normalized.X:0.000}) Y: {pixel.Y} ({normalized.Y:0.000})";
+        }
+        else
+        {
+            lblPixelStatus.Text = "Selected pixel: none — click the viewport to probe one";
+        }
+
+        if (panel3D1.Scene?.Camera is { } camera)
+        {
+            var position = camera.Position;
+            lblCameraStatus.Text = $"Camera: ({position.X:0.##}, {position.Y:0.##}, {position.Z:0.##})";
+        }
+
+        var stats = panel3D1.Stats;
+        lblFrameStatus.Text = $"Frame #{panel3D1.Diagnostics.FrameNumber} · {stats.CalculationTimeMs + stats.PainterTimeMs} ms";
+    }
+
+    #endregion
+
+    /// <summary>Opens the model picker: the bundled worlds, or a file from the machine.</summary>
+    private async Task ShowModelPickerAsync()
+    {
+        using var dialog = new ModelPickerDialog(Demos, _currentDemoId);
+
+        if (dialog.ShowDialog(this) != DialogResult.OK || dialog.Choice is not { } choice)
+        {
+            return;
+        }
+
+        if (choice.FilePath is { } path)
+        {
+            await PrepareWorldFromFileAsync(path);
+        }
+        else if (choice.DemoId is { } id)
+        {
+            await PrepareWorldAsync(id);
+        }
+    }
+
+    private async Task OpenModelAsync()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "Open 3D model",
+            Filter = "3D models (*.obj;*.dae)|*.obj;*.dae"
+                   + "|Wavefront OBJ (*.obj)|*.obj"
+                   + "|Collada (*.dae)|*.dae"
+                   + "|All files (*.*)|*.*",
+        };
+
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+        {
+            await PrepareWorldFromFileAsync(dialog.FileName);
+        }
     }
 
     private void ApplyTheme()
@@ -191,12 +331,16 @@ public sealed partial class MainScreen : Form
 
         tlpSidebar.BackColor = Theme.Surface;
         lblTitle.ForeColor = Theme.TextPrimary;
-        lblWorldsHeader.ForeColor = Theme.TextSecondary;
         lblDisplayHeader.ForeColor = Theme.TextSecondary;
         lblShadingHeader.ForeColor = Theme.TextSecondary;
 
-        lstDemos.BackColor = Theme.Surface;
-        lstDemos.ForeColor = Theme.TextPrimary;
+        lblModelHeader.ForeColor = Theme.TextSecondary;
+        lblCurrentModel.ForeColor = Theme.TextPrimary;
+
+        btnLoadModel.BackColor = Theme.Selection;
+        btnLoadModel.ForeColor = Theme.TextPrimary;
+        btnLoadModel.FlatAppearance.BorderColor = Theme.Accent;
+        btnLoadModel.FlatAppearance.MouseOverBackColor = Theme.Accent;
 
         foreach (Control control in flpDisplay.Controls)
         {
@@ -209,40 +353,19 @@ public sealed partial class MainScreen : Form
 
         pnlViewport.BackColor = Theme.Background;
         panel3D1.BackColor = Theme.Viewport;
-    }
 
-    private void DrawDemoItem(object? sender, DrawItemEventArgs e)
-    {
-        if (e.Index < 0 || e.Index >= lstDemos.Items.Count)
+        menuStrip.BackColor = Theme.Surface;
+        menuStrip.ForeColor = Theme.TextPrimary;
+
+        statusStrip.BackColor = Theme.Surface;
+        statusStrip.ForeColor = Theme.TextSecondary;
+
+        foreach (var split in new[] { splitMain, splitLeft, splitRight, splitCenter })
         {
-            return;
+            split.BackColor = Theme.Background;
+            split.Panel1.BackColor = Theme.Background;
+            split.Panel2.BackColor = Theme.Background;
         }
-
-        var item = (DemoItem)lstDemos.Items[e.Index];
-        var selected = (e.State & DrawItemState.Selected) != 0;
-
-        using var back = new SolidBrush(Theme.Surface);
-        e.Graphics.FillRectangle(back, e.Bounds);
-
-        var bounds = Rectangle.Inflate(e.Bounds, -2, -2);
-        if (selected)
-        {
-            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            using var fill = new SolidBrush(Theme.Selection);
-            using var path = Theme.RoundedRect(bounds, 6);
-            e.Graphics.FillPath(fill, path);
-
-            using var accent = new SolidBrush(Theme.Accent);
-            e.Graphics.FillRectangle(accent, bounds.Left + 2, bounds.Top + 8, 3, bounds.Height - 16);
-        }
-
-        TextRenderer.DrawText(
-            e.Graphics,
-            item.Display,
-            lstDemos.Font,
-            new Rectangle(bounds.Left + 14, bounds.Top, bounds.Width - 14, bounds.Height),
-            selected ? Theme.TextPrimary : Theme.TextSecondary,
-            TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
     }
 
     /// <summary>Places the progress bar just below the centered "Loading…" text.</summary>
@@ -251,15 +374,26 @@ public sealed partial class MainScreen : Form
             (lblLoading.ClientSize.Width - prgLoading.Width) / 2,
             lblLoading.ClientSize.Height / 2 + 40);
 
-    private Task PrepareWorldAsync(string id) =>
-        PrepareWorldCoreAsync(progress => BuildWorld(id, progress), id);
+    private Task PrepareWorldAsync(string id)
+    {
+        _currentDemoId = id;
+        var label = Demos.FirstOrDefault(demo => demo.Id == id)?.Display ?? id;
 
-    private Task PrepareWorldFromFileAsync(string path) =>
-        PrepareWorldCoreAsync(progress => BuildWorldFromFile(path, progress), Path.GetFileName(path));
+        return PrepareWorldCoreAsync(progress => BuildWorld(id, progress), label);
+    }
+
+    private Task PrepareWorldFromFileAsync(string path)
+    {
+        _currentDemoId = string.Empty;
+
+        return PrepareWorldCoreAsync(progress => BuildWorldFromFile(path, progress), Path.GetFileName(path));
+    }
 
     private async Task PrepareWorldCoreAsync(Func<IProgress<float>?, WorldSetup> build, string label)
     {
-        lstDemos.Enabled = false;
+        btnLoadModel.Enabled = false;
+        mnuLoadModel.Enabled = false;
+        mnuOpenModel.Enabled = false;
         prgLoading.Value = 0;
         lblLoading.Visible = true;
         lblLoading.BringToFront();
@@ -281,11 +415,16 @@ public sealed partial class MainScreen : Form
                 arcBall.Rotation = Quaternion.Identity;
             }
             panel3D1.Scene?.Camera.Position = setup.CameraPosition;
+
+            // The distance a world is framed from is what the zoom readout calls 100%.
+            panel3D1.ReferenceDistance = setup.CameraPosition.Length();
             if (setup.Projection is not null)
             {
                 panel3D1.Scene?.Projection = setup.Projection;
             }
             panel3D1.Scene?.World = setup.World;
+
+            lblCurrentModel.Text = label;
         }
         catch (Exception ex)
         {
@@ -296,7 +435,12 @@ public sealed partial class MainScreen : Form
         {
             UseWaitCursor = false;
             lblLoading.Visible = false;
-            lstDemos.Enabled = true;
+            btnLoadModel.Enabled = true;
+            mnuLoadModel.Enabled = true;
+            mnuOpenModel.Enabled = true;
+
+            // The world changed under any selected pixel, and its history with it.
+            panel3D1.ClearSelectedPixel();
             panel3D1.Invalidate();
         }
     }

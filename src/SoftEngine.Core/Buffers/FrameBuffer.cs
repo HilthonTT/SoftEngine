@@ -1,4 +1,5 @@
 ﻿using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Geometry;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -8,7 +9,7 @@ public sealed class FrameBuffer(int width, int height)
 {
     // Number of quantization steps used to store normalized device depth (0 at the near plane,
     // 1 at the far plane) across the full positive int range.
-    private const int DepthResolution = int.MaxValue;
+    public const int DepthResolution = int.MaxValue;
 
     private readonly int[] _zBuffer = new int[width * height];
     private readonly float _widthMinus1By2 = (width - 1) / 2;
@@ -59,6 +60,12 @@ public sealed class FrameBuffer(int width, int height)
         Array.Fill(_zBuffer, DepthResolution);
     }
 
+    /// <summary>Reads back one pixel of the render target, packed ARGB.</summary>
+    public int GetColor(int x, int y) => Screen[x + y * Width];
+
+    /// <summary>Reads back one pixel of the z-buffer, in raw depth units.</summary>
+    public int GetDepth(int x, int y) => _zBuffer[x + y * Width];
+
     /// <summary>
     /// Depth-tests and writes one pixel. Returns true when the pixel was drawn, false
     /// when it was behind the z-buffer — callers batch these into stats themselves, so
@@ -75,7 +82,17 @@ public sealed class FrameBuffer(int width, int height)
 #endif
 
         int index = x + y * Width;
-        if (z > _zBuffer[index])
+        int previousDepth = _zBuffer[index];
+        bool passed = z <= previousDepth;
+
+        // One int compare against a field that is -1 unless a pixel is being probed:
+        // predictable enough not to show up next to the depth test itself.
+        if (index == _probeIndex)
+        {
+            RecordProbe(index, z, color, previousDepth, passed);
+        }
+
+        if (!passed)
         {
             return false;
         }
@@ -84,6 +101,130 @@ public sealed class FrameBuffer(int width, int height)
         Screen[index] = color.Color;
         return true;
     }
+
+    #region Pixel probe
+
+    // What is currently drawing, for the pixel history. Thread-static because the paint
+    // phase runs in parallel: each worker owns a disjoint set of screen rows, so the one
+    // worker that owns the probed pixel's row is also the one that sets this context, and
+    // the writes it appends stay in draw order.
+    [ThreadStatic]
+    private static ProbeContext _probeContext;
+
+    private int _probeIndex = -1;
+    private PixelHistory? _probeHistory;
+
+    /// <summary>Starts recording every write attempt at <see cref="PixelHistory.X"/>, <see cref="PixelHistory.Y"/>.</summary>
+    public void BeginProbe(PixelHistory history)
+    {
+        ArgumentNullException.ThrowIfNull(history);
+
+        _probeHistory = history;
+        _probeIndex = history.X + history.Y * Width;
+    }
+
+    public void EndProbe()
+    {
+        _probeIndex = -1;
+        _probeHistory = null;
+    }
+
+    /// <summary>
+    /// Tags the writes that follow on this thread with the object drawing them. The vertex
+    /// buffer is only referenced, never copied: a probed pixel is hit by a handful of the
+    /// thousands of triangles that call this, so vertices are snapshotted on a hit instead.
+    /// </summary>
+    internal static void SetProbeContext(int eventIndex, PixelWriteSource source, int objectId, int triangleIndex, VertexBuffer? vertexBuffer) =>
+        _probeContext = new ProbeContext(eventIndex, source, objectId, triangleIndex, vertexBuffer);
+
+    /// <summary>Appends a write the pipeline made outside <see cref="PutPixel"/> (a buffer clear).</summary>
+    internal void RecordProbeClear(int eventIndex)
+    {
+        var history = _probeHistory;
+        if (history is null)
+        {
+            return;
+        }
+
+        history.Writes.Add(new PixelWrite
+        {
+            EventIndex = eventIndex,
+            Source = PixelWriteSource.Clear,
+            ObjectId = SceneObjectIds.RenderTarget,
+            TriangleIndex = -1,
+            Color = 0,
+            PreviousColor = Screen[_probeIndex],
+            Depth = DepthResolution,
+            PreviousDepth = _zBuffer[_probeIndex],
+            Passed = true,
+        });
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void RecordProbe(int index, int z, ColorRGB color, int previousDepth, bool passed)
+    {
+        var history = _probeHistory;
+        if (history is null)
+        {
+            return;
+        }
+
+        var context = _probeContext;
+
+        var write = new PixelWrite
+        {
+            EventIndex = context.EventIndex,
+            Source = context.Source,
+            ObjectId = context.ObjectId,
+            TriangleIndex = context.TriangleIndex,
+            Color = color.Color,
+            PreviousColor = Screen[index],
+            Depth = z,
+            PreviousDepth = previousDepth,
+            Passed = passed,
+            Vertices = SnapshotTriangle(context),
+        };
+
+        lock (history)
+        {
+            history.Writes.Add(write);
+        }
+    }
+
+    private static ProbeVertex[]? SnapshotTriangle(in ProbeContext context)
+    {
+        var buffer = context.VertexBuffer;
+        var mesh = buffer?.Mesh;
+
+        if (buffer is null || mesh is null || (uint)context.TriangleIndex >= (uint)mesh.Triangles.Length)
+        {
+            return null;
+        }
+
+        var triangle = mesh.Triangles[context.TriangleIndex];
+
+        return
+        [
+            SnapshotVertex(buffer, mesh, triangle.I0),
+            SnapshotVertex(buffer, mesh, triangle.I1),
+            SnapshotVertex(buffer, mesh, triangle.I2),
+        ];
+    }
+
+    private static ProbeVertex SnapshotVertex(VertexBuffer buffer, IMesh mesh, int index)
+    {
+        var vertex = buffer.Vertices[index];
+        return new ProbeVertex(mesh.Vertices[index], vertex.World, vertex.View, vertex.Proj, vertex.Norm);
+    }
+
+    private readonly record struct ProbeContext(
+        int EventIndex,
+        PixelWriteSource Source,
+        int ObjectId,
+        int TriangleIndex,
+        VertexBuffer? VertexBuffer);
+
+    #endregion
 
     public void DrawLine(Vector3 p0, Vector3 p1, ColorRGB color)
     {

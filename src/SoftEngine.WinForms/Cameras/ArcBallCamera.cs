@@ -49,7 +49,6 @@ public sealed class ArcBallCamera : ICamera
                     oldControl.MouseDown -= Control_MouseDown;
                     oldControl.MouseMove -= Control_MouseMove;
                     _control?.MouseUp -= Control_MouseUp;
-                    _control?.MouseWheel -= Control_MouseWheel;
                 }
 
                 if (_control is not null)
@@ -57,18 +56,9 @@ public sealed class ArcBallCamera : ICamera
                     _control.MouseDown += Control_MouseDown;
                     _control.MouseMove += Control_MouseMove;
                     _control.MouseUp += Control_MouseUp;
-                    _control.MouseWheel += Control_MouseWheel;
                 }
             }
         }
-    }
-
-    private void Control_MouseWheel(object? sender, MouseEventArgs e)
-    {
-        var delta = Math.Sign(e.Delta);
-        Debug.WriteLine(delta);
-        Position += new Vector3(0, 0, delta / 2.5f);
-        _control.Invalidate();
     }
 
     private void Control_MouseUp(object? sender, MouseEventArgs e)

@@ -44,6 +44,8 @@ public class Mesh : IMesh
 
     public Vector3[] NormVertices { get; }
 
+    public bool Visible { get; set; } = true;
+
     public Vector2[]? TexCoords { get; set; }
 
     public Texture? Texture { get; set; }

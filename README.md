@@ -10,10 +10,11 @@ A **software 3D rasterizer** written in C#. The entire pipeline — model transf
 
 ## What it does
 
-- Loads and renders 3D models (Collada `.dae`) and procedural primitives in real time.
+- Loads and renders 3D models (Wavefront `.obj`, Collada `.dae`) and procedural primitives in real time.
 - Rasterizes triangles with a generic scanline filler and a depth (z) buffer.
-- Supports several shading modes — wireframe, solid, flat, and Gouraud — selectable at runtime.
-- Provides an interactive arc-ball camera, gizmos (world axes, ground grid), and a live stats overlay.
+- Supports several shading modes — wireframe, solid, flat, Gouraud, Phong and textured — selectable at runtime.
+- Provides an interactive arc-ball camera, WASD fly controls, gizmos (world axes, ground grid), and a live stats overlay.
+- Ships a **graphics debugger** — event list, object table and per-pixel history — built on the renderer's own instrumentation.
 
 ## Shading modes
 
@@ -49,24 +50,51 @@ The WinForms app ([`SoftEngine.WinForms`](src/SoftEngine.WinForms)) renders the 
 | Control | Action |
 | --- | --- |
 | **Left-drag** | Orbit the arc-ball camera |
-| **Demo list (double-click)** | Load a model or procedural scene (skull, parrot, elephant, teapot, cubes, spheres, towns…) |
-| **Shading radios** | Switch between None / Classic / Flat / Gouraud |
+| **Right-drag** | Pan; **left+right-drag** dollies |
+| **Mouse wheel** | Move the camera in/out — the status bar's zoom percentage follows it (100% is the framing a world loads with) |
+| **W / A / S / D** | Fly the camera forward / left / back / right (**Q**/**E** for down/up). Hold **Shift** to move faster, **Ctrl** for fine steps; the step scales with the camera's distance, so it works on a 2-unit skull and a 1500-unit elephant alike |
+| **Left-click the viewport** | Probe that pixel — its full write history appears in the Pixel History panel (**Esc** clears it) |
+| **Load model…** | Pick a bundled world (skull, parrot, elephant, teapot, cubes, spheres, towns…) or open an OBJ/Collada file from disk |
+| **Shading radios** | Switch between None / Classic / Flat / Gouraud / Phong / Textured |
 | **Checkboxes** | Toggle wireframe triangles, back-face culling, XZ grid, world axes |
 
 A stats overlay reports triangle counts (total / back-facing / out-of-view / behind), pixel counts (drawn / z-rejected), and calculation vs. paint timing per frame.
+
+## Graphics debugger
+
+The front-end doubles as a small graphics debugger, modelled on [Rasterizr Studio](https://github.com/tgjones/rasterizr). Because the whole pipeline runs on the CPU, the panels show what the renderer actually did rather than what a driver reported.
+
+| Panel | Shows |
+| --- | --- |
+| **Graphics Event List** | Every step of the frame in pipeline order — viewport and depth-range setup, buffer clears, the view and projection matrices, then per mesh: vertex transform, cull results and the draw call, ending with the present. |
+| **Graphics Object Table** | Every object the frame touched — render target, depth buffer, camera, projection, painter, lights, meshes and textures — with its size, vertex/triangle counts and dimensions. Meshes carry an **active** checkbox that drops them from the frame. |
+| **Pixel History** | For the selected pixel: the clear, then each triangle that tried to write it — including the ones the depth test rejected — with the input-assembler and transformed vertex data, the depth comparison, and the previous → resulting colour. |
+
+Identifiers are shared: `obj:7` in the event list is `obj:7` in the object table, and clicking an entry in the pixel history selects both.
+
+Recording is driven from `RenderDiagnostics` on the renderer ([`Diagnostics/`](src/SoftEngine.Core/Diagnostics)):
+
+- Events are stored as a `readonly record struct` with a numeric payload in a reused buffer, and formatted only for the rows the list actually draws — a busy scene emits thousands of events per frame and capturing them allocates nothing.
+- The pixel probe is a single int compare inside `FrameBuffer.PutPixel`, off (`-1`) unless a pixel is selected. The "what is drawing" context is thread-static: each paint worker owns a disjoint set of screen rows, so the one worker that owns the probed pixel is also the one that tags its writes, and they stay in draw order.
+- Triangle vertices are snapshotted only when a write actually lands on the probed pixel, never per triangle.
+
+Both can be switched off from the **View** menu, along with each panel.
 
 ## Project layout
 
 ```
 src/
 ├── SoftEngine.Core/        # engine, no UI dependency (net10.0 class library)
-│   ├── Buffers/            # FrameBuffer (color + z-buffer), pooled Vertex/World buffers
-│   ├── Geometry/           # IMesh/Mesh, Triangle, primitives, Collada importer
+│   ├── Buffers/            # FrameBuffer (color + z-buffer + pixel probe), pooled Vertex/World buffers
+│   ├── Diagnostics/        # render stats, graphics event log, pixel history
+│   ├── Geometry/           # IMesh/Mesh, Triangle, primitives, OBJ/Collada importers
 │   ├── Pipeline/           # Renderer, settings, homogeneous clipping
 │   ├── Rasterization/      # scanline filler, painters, shaders, varyings
 │   ├── Scenes/             # world, camera, projection, lights
 │   └── Shading/            # Lambert lighting
 └── SoftEngine.WinForms/    # interactive front-end (net10.0-windows)
+    ├── Debugging/          # event list, object table and pixel history panels
+    └── Dialogs/            # model picker
 ```
 
 ## Requirements
@@ -95,9 +123,8 @@ The renderer avoids managed-heap traffic on the pixel hot path:
 ## Roadmap
 
 - Cache per-mesh vertex buffers across frames for static scenes (avoid per-frame `VertexBuffer` allocation).
-- Perspective-correct varying interpolation.
 - Replace `Rotation3D` (Euler angles) with quaternion-based rotation.
-- Texture mapping.
+- Frame capture history, so the debugger can step back through earlier frames.
 
 ## Credits
 

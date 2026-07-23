@@ -10,5 +10,8 @@ public interface IRenderer
 
     RenderStats Stats { get; }
 
+    /// <summary>Graphics event list and pixel probe for the frame just rendered.</summary>
+    RenderDiagnostics Diagnostics { get; }
+
     void Render(Scene scene, IPainter? painter);
 }
