@@ -15,10 +15,10 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
         var mesh = vertexBuffer.Mesh;
-        var t = mesh.Triangles[triangleIndice];
+        var t = vertexBuffer.GetTriangle(triangleIndice);
         t.TransformWorld(vertexBuffer);
 
-        var (a, b, c) = (vertexBuffer.Vertices[t.I0], vertexBuffer.Vertices[t.I1], vertexBuffer.Vertices[t.I2]);
+        var (a, b, c) = (vertexBuffer.GetVertex(t.I0), vertexBuffer.GetVertex(t.I1), vertexBuffer.GetVertex(t.I2));
 
         var ia = LitIntensity(a.World, a.Norm);
         var ib = LitIntensity(b.World, b.Norm);
@@ -43,9 +43,9 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
             surface,
             surface.ToScreen3(a.Proj), surface.ToScreen3(b.Proj), surface.ToScreen3(c.Proj),
             1f / a.Proj.W, 1f / b.Proj.W, 1f / c.Proj.W,
-            new TextureVarying(uvs[t.I0], ia),
-            new TextureVarying(uvs[t.I1], ib),
-            new TextureVarying(uvs[t.I2], ic),
+            new TextureVarying(vertexBuffer.GetTexCoord(t.I0), ia),
+            new TextureVarying(vertexBuffer.GetTexCoord(t.I1), ib),
+            new TextureVarying(vertexBuffer.GetTexCoord(t.I2), ic),
             new TexturedShader(texture),
             slice);
     }

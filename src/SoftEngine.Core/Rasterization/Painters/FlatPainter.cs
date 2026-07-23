@@ -11,10 +11,10 @@ public sealed class FlatPainter(ILight? light = null, float ambient = 0.12f) : L
     {
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
-        var t = vertexBuffer.Mesh.Triangles[triangleIndice];
+        var t = vertexBuffer.GetTriangle(triangleIndice);
         t.TransformWorld(vertexBuffer);
 
-        var (a, b, c) = (vertexBuffer.Vertices[t.I0], vertexBuffer.Vertices[t.I1], vertexBuffer.Vertices[t.I2]);
+        var (a, b, c) = (vertexBuffer.GetVertex(t.I0), vertexBuffer.GetVertex(t.I1), vertexBuffer.GetVertex(t.I2));
 
         var normal = (a.Norm + b.Norm + c.Norm) / 3f;
         var centroid = (a.World + b.World + c.World) / 3f;

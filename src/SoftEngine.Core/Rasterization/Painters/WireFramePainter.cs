@@ -16,9 +16,9 @@ public sealed class WireFramePainter : IPainter
     {
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
-        var t = vertexBuffer.Mesh.Triangles[triangleIndice];
+        var t = vertexBuffer.GetTriangle(triangleIndice);
 
-        var (t0, t1, t2) = (vertexBuffer.Vertices[t.I0], vertexBuffer.Vertices[t.I1], vertexBuffer.Vertices[t.I2]);
+        var (t0, t1, t2) = (vertexBuffer.GetVertex(t.I0), vertexBuffer.GetVertex(t.I1), vertexBuffer.GetVertex(t.I2));
 
         Vector4 l0p0 = t0.Proj; 
         Vector4 l0p1 = t1.Proj;

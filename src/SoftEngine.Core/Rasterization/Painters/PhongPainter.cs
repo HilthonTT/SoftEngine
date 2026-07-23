@@ -34,10 +34,10 @@ public sealed class PhongPainter(
     {
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
-        var t = vertexBuffer.Mesh.Triangles[triangleIndice];
+        var t = vertexBuffer.GetTriangle(triangleIndice);
         t.TransformWorld(vertexBuffer);
 
-        var (a, b, c) = (vertexBuffer.Vertices[t.I0], vertexBuffer.Vertices[t.I1], vertexBuffer.Vertices[t.I2]);
+        var (a, b, c) = (vertexBuffer.GetVertex(t.I0), vertexBuffer.GetVertex(t.I1), vertexBuffer.GetVertex(t.I2));
 
         // Resolve the light to plain vectors so the per-pixel shader stays dispatch-free.
         var (lightVector, isDirectional) = Light switch

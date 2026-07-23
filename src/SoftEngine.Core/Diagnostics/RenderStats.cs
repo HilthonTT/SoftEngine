@@ -17,6 +17,9 @@ public sealed class RenderStats
 
     public int BehindViewTriangleCount { get; internal set; }
 
+    /// <summary>Triangles that straddled the near plane and were split instead of discarded.</summary>
+    public int NearClippedTriangleCount { get; internal set; }
+
     private int _drawnPixelCount;
     private int _behindZPixelCount;
 
@@ -69,6 +72,7 @@ public sealed class RenderStats
         FacingBackTriangleCount = 0;
         OutOfViewTriangleCount = 0;
         BehindViewTriangleCount = 0;
+        NearClippedTriangleCount = 0;
         _drawnPixelCount = 0;
         _behindZPixelCount = 0;
     }

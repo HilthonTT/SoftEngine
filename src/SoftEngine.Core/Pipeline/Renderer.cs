@@ -2,6 +2,7 @@ using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Gizmos;
+using SoftEngine.Core.Pipeline.Clipping;
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
@@ -166,7 +167,7 @@ public sealed class Renderer : IRenderer
             {
                 Triangle t = mesh.Triangles[idxTriangle];
 
-                // Discard if behind far plane
+                // Discard if behind the camera
                 if (t.IsBehindFarPlane(vbx))
                 {
                     Stats.BehindViewTriangleCount++;
@@ -185,21 +186,54 @@ public sealed class Renderer : IRenderer
                 // Project in frustum
                 t.TransformProjection(vbx, projectionMatrix);
 
-                // Discard if outside view frustum
-                if (t.IsOutsideFrustum(vbx))
+                // Classify against the near plane (clip-space z ≥ 0): fully behind is
+                // discarded, straddling is clipped, fully in front takes the fast path.
+                var behindNear = (vbx.Vertices[t.I0].Proj.Z < 0 ? 1 : 0)
+                    + (vbx.Vertices[t.I1].Proj.Z < 0 ? 1 : 0)
+                    + (vbx.Vertices[t.I2].Proj.Z < 0 ? 1 : 0);
+
+                if (behindNear == 3)
                 {
-                    Stats.OutOfViewTriangleCount++;
+                    Stats.BehindViewTriangleCount++;
                     clipped++;
                     continue;
                 }
 
-                // Cache world positions and normals while still single-threaded, so the
-                // parallel paint phase only reads the vertex buffer.
+                if (behindNear == 0)
+                {
+                    // Discard if outside view frustum
+                    if (t.IsOutsideFrustum(vbx))
+                    {
+                        Stats.OutOfViewTriangleCount++;
+                        clipped++;
+                        continue;
+                    }
+
+                    // Cache world positions and normals while still single-threaded, so the
+                    // parallel paint phase only reads the vertex buffer.
+                    t.TransformWorld(vbx);
+
+                    _visible.Add((idxVolume, idxTriangle));
+                    Stats.DrawnTriangleCount++;
+                    drawn++;
+                    continue;
+                }
+
+                // Straddles the near plane: clip into sub-triangles. The new vertices
+                // interpolate world data, so the source's must be computed first.
                 t.TransformWorld(vbx);
 
-                _visible.Add((idxVolume, idxTriangle));
-                Stats.DrawnTriangleCount++;
-                drawn++;
+                if (NearPlaneClipper.Clip(vbx, t, idxTriangle, idxVolume, _visible) > 0)
+                {
+                    Stats.DrawnTriangleCount++;
+                    Stats.NearClippedTriangleCount++;
+                    drawn++;
+                }
+                else
+                {
+                    Stats.OutOfViewTriangleCount++;
+                    clipped++;
+                }
             }
 
             events.Add(GraphicsEventKind.MeshCullTriangles, objectId, drawn, facingBack, clipped);
@@ -236,12 +270,14 @@ public sealed class Renderer : IRenderer
 
             foreach (var (meshIndex, triangleIndex) in _visible)
             {
+                var vbx = worldBuffer.VertexBuffers[meshIndex];
+
                 if (drawEvents is not null)
                 {
-                    FrameBuffer.SetProbeContext(wireFrameEvent, PixelWriteSource.WireFrame, meshIdBase + meshIndex, triangleIndex, worldBuffer.VertexBuffers[meshIndex]);
+                    FrameBuffer.SetProbeContext(wireFrameEvent, PixelWriteSource.WireFrame, meshIdBase + meshIndex, vbx.SourceTriangleIndex(triangleIndex), vbx);
                 }
 
-                _internalWireFramePainter.DrawTriangle(surface, ColorRGB.Magenta, worldBuffer.VertexBuffers[meshIndex], triangleIndex, RowSlice.Full);
+                _internalWireFramePainter.DrawTriangle(surface, ColorRGB.Magenta, vbx, triangleIndex, RowSlice.Full);
             }
         }
 
@@ -329,16 +365,21 @@ public sealed class Renderer : IRenderer
         for (var i = 0; i < count; i++)
         {
             var (meshIndex, triangleIndex) = _visible[i];
+            var vbx = worldBuffer.VertexBuffers[meshIndex];
+
+            // Clipped sub-triangles keep the color and diagnostics identity of the mesh
+            // triangle they came from.
+            var sourceIndex = vbx.SourceTriangleIndex(triangleIndex);
 
             if (drawEvents is not null)
             {
-                FrameBuffer.SetProbeContext(drawEvents[meshIndex], PixelWriteSource.Triangle, meshIdBase + meshIndex, triangleIndex, worldBuffer.VertexBuffers[meshIndex]);
+                FrameBuffer.SetProbeContext(drawEvents[meshIndex], PixelWriteSource.Triangle, meshIdBase + meshIndex, sourceIndex, vbx);
             }
 
             painter.DrawTriangle(
                 surface,
-                meshes[meshIndex].TriangleColors[triangleIndex],
-                worldBuffer.VertexBuffers[meshIndex],
+                meshes[meshIndex].TriangleColors[sourceIndex],
+                vbx,
                 triangleIndex,
                 slice);
         }

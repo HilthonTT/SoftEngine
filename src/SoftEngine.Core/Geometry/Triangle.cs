@@ -99,6 +99,13 @@ public readonly struct Triangle(int p0, int p1, int p2)
 
     private static void TransformWorldVertex(VertexBuffer vertexBuffer, int v, Vector3[] modelVertices, Vector3[] normVertices, Matrix4x4 worldMatrix)
     {
+        // Vertices produced by near-plane clipping are fully populated when created and
+        // have no model-space counterpart to transform.
+        if (v >= vertexBuffer.Size)
+        {
+            return;
+        }
+
         if (vertexBuffer.Vertices[v].Norm == Vector3.Zero)
         {
             vertexBuffer.Vertices[v] = vertexBuffer.Vertices[v].SetNorm(Vector3.TransformNormal(normVertices[v], worldMatrix));

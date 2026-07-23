@@ -10,8 +10,8 @@ public sealed class ClassicPainter : IPainter
     {
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
-        Triangle t = vertexBuffer.Mesh.Triangles[triangleIndice];
-        (Vertices a, Vertices b, Vertices c) = (vertexBuffer.Vertices[t.I0], vertexBuffer.Vertices[t.I1], vertexBuffer.Vertices[t.I2]);
+        Triangle t = vertexBuffer.GetTriangle(triangleIndice);
+        (Vertices a, Vertices b, Vertices c) = (vertexBuffer.GetVertex(t.I0), vertexBuffer.GetVertex(t.I1), vertexBuffer.GetVertex(t.I2));
 
         ScanlineRasterizer.Fill(
            surface,

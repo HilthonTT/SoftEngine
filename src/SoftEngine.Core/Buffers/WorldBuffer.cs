@@ -59,6 +59,7 @@ public sealed class WorldBuffer : IDisposable
         {
             var vertexBuffer = VertexBuffers[i];
             Array.Clear(vertexBuffer.Vertices, 0, vertexBuffer.Size);
+            vertexBuffer.ResetClipped();
             vertexBuffer.Mesh = null;
         }
     }
