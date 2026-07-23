@@ -34,3 +34,6 @@ jobs:
 
       - name: Build
         run: dotnet build SoftEngine.slnx --configuration ${{ matrix.configuration }} --no-restore
+
+      - name: Test
+        run: dotnet test SoftEngine.slnx --configuration ${{ matrix.configuration }} --no-build --verbosity normal

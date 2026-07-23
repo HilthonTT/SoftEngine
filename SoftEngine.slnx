@@ -3,4 +3,7 @@
     <Project Path="src/SoftEngine.Core/SoftEngine.Core.csproj" Id="b5b0cdf4-63da-433a-8b5e-caddd81cf5ca" />
     <Project Path="src/SoftEngine.WinForms/SoftEngine.WinForms.csproj" Id="299fd47d-b379-4951-800d-b28940d46921" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SoftEngine.Core.Tests/SoftEngine.Core.Tests.csproj" />
+  </Folder>
 </Solution>
