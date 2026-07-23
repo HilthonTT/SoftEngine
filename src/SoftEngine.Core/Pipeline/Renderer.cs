@@ -23,6 +23,9 @@ public sealed class Renderer : IRenderer
     // back at the event that produced it. Grown to the mesh count, reused across frames.
     private int[] _meshDrawEvent = [];
 
+    // Reused across frames; rebuilt only when the world stops fitting it.
+    private WorldBuffer? _worldBuffer;
+
     public RendererSettings Settings { get; set; } = new();
 
     public RenderStats Stats { get; } = new();
@@ -89,8 +92,18 @@ public sealed class Renderer : IRenderer
         Span<Vector4> frustumPlanes = stackalloc Vector4[6];
         BuildFrustumPlanes(projectionMatrix, frustumPlanes);
 
-        // Allocate arrays to store transformed vertices
-        using var worldBuffer = new WorldBuffer(world);
+        // Arrays for the transformed vertices, kept across frames: rebuilding them is one
+        // allocation per mesh, which at tens of thousands of meshes dominates the frame.
+        if (_worldBuffer is null || !_worldBuffer.Fits(world))
+        {
+            _worldBuffer?.Dispose();
+            _worldBuffer = new WorldBuffer(world);
+        }
+        else
+        {
+            _worldBuffer.Reset();
+        }
+        var worldBuffer = _worldBuffer;
 
         List<IMesh> meshes = world.Meshes;
         int volumeCount = meshes.Count;

@@ -420,10 +420,12 @@ public sealed partial class MainScreen : Form
 
             // The distance a world is framed from is what the zoom readout calls 100%.
             panel3D1.ReferenceDistance = setup.CameraPosition.Length();
-            if (setup.Projection is not null)
-            {
-                panel3D1.Scene?.Projection = setup.Projection;
-            }
+
+            // Every load sets a projection: either the demo's own, or one whose far plane
+            // is derived from the world's extent — a far plane closer than the world's
+            // farthest geometry visibly slices models while they are orbited, and the
+            // previous world's projection must not leak into this one.
+            panel3D1.Scene?.Projection = setup.Projection ?? ProjectionFor(setup);
             panel3D1.Scene?.World = setup.World;
 
             lblCurrentModel.Text = label;
@@ -445,6 +447,30 @@ public sealed partial class MainScreen : Form
             panel3D1.ClearSelectedPixel();
             panel3D1.Invalidate();
         }
+    }
+
+    /// <summary>
+    /// A projection whose far plane contains the whole world from anywhere on the camera's
+    /// orbit: the camera distance plus the world's farthest geometry, with headroom so
+    /// dollying out a little doesn't immediately clip.
+    /// </summary>
+    private static PerspectiveProjection ProjectionFor(WorldSetup setup)
+    {
+        var worldRadius = 0f;
+        foreach (var mesh in setup.World.Meshes)
+        {
+            var scale = Math.Max(Math.Abs(mesh.Scale.X), Math.Max(Math.Abs(mesh.Scale.Y), Math.Abs(mesh.Scale.Z)));
+            var reach = mesh.Position.Length() + mesh.BoundingRadius * scale;
+
+            if (!float.IsNaN(reach) && !float.IsInfinity(reach))
+            {
+                worldRadius = Math.Max(worldRadius, reach);
+            }
+        }
+
+        var far = Math.Max(500f, (setup.CameraPosition.Length() + worldRadius) * 2f);
+
+        return new PerspectiveProjection(40f * (float)Math.PI / 180f, .01f, far);
     }
 
     private static WorldSetup BuildWorld(string id, IProgress<float>? progress)
