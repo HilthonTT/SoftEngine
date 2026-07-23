@@ -84,7 +84,9 @@ public static class ObjImporter
 
                 case "mtllib":
                     // The library path is the remainder of the line (filenames may contain spaces).
-                    var libraryPath = lines[lineIndex]["mtllib".Length..].Trim();
+                    // Slice from the keyword's position so leading whitespace doesn't shift the path.
+                    var rawLine = lines[lineIndex];
+                    var libraryPath = rawLine[(rawLine.IndexOf("mtllib", StringComparison.Ordinal) + "mtllib".Length)..].Trim();
                     LoadMaterialLibrary(Path.Combine(baseDirectory, libraryPath), materials);
                     break;
             }

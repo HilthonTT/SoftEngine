@@ -12,8 +12,8 @@ public sealed class FrameBuffer(int width, int height)
     public const int DepthResolution = int.MaxValue;
 
     private readonly int[] _zBuffer = new int[width * height];
-    private readonly float _widthMinus1By2 = (width - 1) / 2;
-    private readonly float _heightMinus1By2 = (height - 1) / 2;
+    private readonly float _widthMinus1By2 = (width - 1) / 2f;
+    private readonly float _heightMinus1By2 = (height - 1) / 2f;
 
     // Device depth as a function of the view-space distance w: depth = _depthScale - _depthBias / w.
     // Derived from the active projection's clip planes via SetDepthRange, so the buffer is defined
@@ -230,27 +230,31 @@ public sealed class FrameBuffer(int width, int height)
     {
         int x0 = (int)p0.X;
         int y0 = (int)p0.Y;
-        int z0 = (int)p0.Z;
         int x1 = (int)p1.X;
         int y1 = (int)p1.Y;
-        int z1 = (int)p1.Z;
 
         int dx = System.Math.Abs(x1 - x0);
         int dy = System.Math.Abs(y1 - y0);
-        int dz = System.Math.Abs(z1 - z0);
 
         int sx = x0 < x1 ? 1 : -1;
         int sy = y0 < y1 ? 1 : -1;
-        int sz = z0 < z1 ? 1 : -1;
-
-        int ex = 0;
-        int ey = 0;
-        int ez = 0;
 
         int dmax = System.Math.Max(dx, dy);
 
+        // Depth spans the full quantized range — millions of units over a line of at most
+        // a few thousand pixels — so it cannot be stepped with an integer error term like
+        // x and y; it is interpolated over the dominant screen axis instead. Double keeps
+        // the cast back to int exact at the extremes of the depth range.
+        double z = p0.Z;
+        double zStep = dmax > 0 ? (p1.Z - (double)p0.Z) / dmax : 0d;
+
+        int ex = 0;
+        int ey = 0;
+
         var drawn = 0;
         var behindZ = 0;
+
+        if (PutPixel(x0, y0, ClampDepth(z), color)) { drawn++; } else { behindZ++; }
 
         int i = 0;
         while (i++ < dmax)
@@ -259,23 +263,21 @@ public sealed class FrameBuffer(int width, int height)
             if (ex >= dmax)
             {
                 ex -= dmax; x0 += sx;
-                if (PutPixel(x0, y0, z0, color)) { drawn++; } else { behindZ++; }
             }
             ey += dy;
             if (ey >= dmax)
             {
                 ey -= dmax; y0 += sy;
-                if (PutPixel(x0, y0, z0, color)) { drawn++; } else { behindZ++; }
             }
 
-            ez += dz;
-            if (ez >= dmax)
-            {
-                ez -= dmax; z0 += sz;
-                if (PutPixel(x0, y0, z0, color)) { drawn++; } else { behindZ++; }
-            }
+            z += zStep;
+            if (PutPixel(x0, y0, ClampDepth(z), color)) { drawn++; } else { behindZ++; }
         }
 
         Stats?.AddPixelCounts(drawn, behindZ);
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int ClampDepth(double z) =>
+        (int)System.Math.Clamp(z, 0d, DepthResolution);
 }

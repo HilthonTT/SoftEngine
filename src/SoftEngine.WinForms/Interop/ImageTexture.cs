@@ -43,9 +43,10 @@ public static class ImageTexture
 
             return new Texture(bitmap.Width, bitmap.Height, pixels);
         }
-        catch (Exception ex) when (ex is ArgumentException or ExternalException)
+        catch (Exception ex) when (ex is ArgumentException or ExternalException or OutOfMemoryException)
         {
-            // Unsupported/corrupt image — fall back to an untextured mesh rather than failing the load.
+            // Unsupported/corrupt image — fall back to an untextured mesh rather than failing the
+            // load. GDI+ reports many corrupt/unsupported files as OutOfMemoryException.
             return null;
         }
     }

@@ -31,12 +31,15 @@ public static class MeshExtensions
             return Vector3.Zero;
         }
 
+        // Zero-area triangles produce NaN normals (Normalize of a zero cross product);
+        // the LengthSquared filter drops both those and exact zero vectors.
         Vector3 sum = inTriangles
             .Select(idx => mesh.Triangles[idx].CalculateNormal(mesh.Vertices))
+            .Where(normal => normal.LengthSquared() > 1e-12f)
             .Distinct()
-            .Aggregate((v1, v2) => v1 + v2);
-        
-        return Vector3.Normalize(sum);
+            .Aggregate(Vector3.Zero, (v1, v2) => v1 + v2);
+
+        return sum.LengthSquared() > 1e-12f ? Vector3.Normalize(sum) : Vector3.Zero;
     }
 
     public static IEnumerable<Vector3> CalculateVertexNormals(this IMesh mesh)

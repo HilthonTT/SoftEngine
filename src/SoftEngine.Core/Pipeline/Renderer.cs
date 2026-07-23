@@ -204,7 +204,7 @@ public sealed class Renderer : IRenderer
         {
             var sliceCount = System.Math.Clamp(Environment.ProcessorCount, 1, 16);
 
-            if (sliceCount == 1 || _visible.Count < 32)
+            if (sliceCount == 1 || _visible.Count < 32 || !painter.SupportsRowSlices)
             {
                 PaintSlice(painter, surface, meshes, worldBuffer, RowSlice.Full, drawEvents, meshIdBase);
             }

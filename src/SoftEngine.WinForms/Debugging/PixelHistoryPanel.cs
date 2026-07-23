@@ -230,7 +230,8 @@ internal sealed class PixelHistoryPanel : UserControl
             return index;
         }
 
-        var bitmap = new Bitmap(_swatches.ImageSize.Width, _swatches.ImageSize.Height);
+        // ImageList.Images.Add copies the bitmap, so this one is disposed when done.
+        using var bitmap = new Bitmap(_swatches.ImageSize.Width, _swatches.ImageSize.Height);
         using (var g = Graphics.FromImage(bitmap))
         {
             using var fill = new SolidBrush(Opaque(argb));

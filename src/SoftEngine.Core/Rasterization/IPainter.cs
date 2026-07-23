@@ -15,6 +15,13 @@ public interface IPainter
     }
 
     /// <summary>
+    /// Whether <see cref="DrawTriangle"/> honors the row slice it is given. Painters that
+    /// ignore the slice (line drawing crosses arbitrary rows) must return false so the
+    /// renderer keeps them on the sequential path instead of racing the z-buffer.
+    /// </summary>
+    bool SupportsRowSlices => true;
+
+    /// <summary>
     /// Draws one triangle, restricted to the rows owned by <paramref name="slice"/>.
     /// The renderer calls this concurrently with disjoint slices; implementations must
     /// not mutate shared state here.

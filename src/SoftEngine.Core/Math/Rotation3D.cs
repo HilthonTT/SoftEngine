@@ -20,9 +20,12 @@ public sealed class Rotation3D(float x, float y, float z)
 
     public Rotation3D ToRad() => this * PiDeg;
 
-    public static bool operator ==(Rotation3D p, Rotation3D other) => other.XPitch == p.XPitch && other.YYaw == p.YYaw && other.ZRoll == p.ZRoll;
+    public static bool operator ==(Rotation3D? p, Rotation3D? other) =>
+        p is null
+            ? other is null
+            : other is not null && other.XPitch == p.XPitch && other.YYaw == p.YYaw && other.ZRoll == p.ZRoll;
 
-    public static bool operator !=(Rotation3D p, Rotation3D other) => !(other == p);
+    public static bool operator !=(Rotation3D? p, Rotation3D? other) => !(other == p);
 
     public static Rotation3D operator +(Rotation3D p, Rotation3D other) => new(other.XPitch + p.XPitch, other.YYaw + p.YYaw, other.ZRoll + p.ZRoll);
 

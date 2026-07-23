@@ -62,10 +62,14 @@ public static class MeshFactory
             }
             progress?.Report(done + share * 0.8f);
 
+            // Normals are only usable when there is exactly one per vertex; otherwise let
+            // the mesh compute its own instead of indexing out of range while rendering.
             meshes.Add(new Mesh(
                 buffers.Vertices.ToArray(),
                 buffers.Indices.ToArray().BuildTriangleIndices(),
-                buffers.Normals.Count > 0 ? buffers.Normals.ToArray() : null,
+                buffers.Normals.Count == buffers.Vertices.Count && buffers.Normals.Count > 0
+                    ? buffers.Normals.ToArray()
+                    : null,
                 triangleColors: null));
             progress?.Report(done + share);
         }
@@ -76,20 +80,55 @@ public static class MeshFactory
     }
 
     /// <summary>
-    /// A <c>polylist</c> references its positions and normals through a shared
-    /// <c>vertices</c> element, and its indices are already vertex indices.
+    /// A <c>polylist</c> references its positions (and possibly normals) through a shared
+    /// <c>vertices</c> element. Its <c>p</c> stream interleaves one lane per input and its
+    /// <c>vcount</c> element gives the size of each polygon, which is fan-triangulated here.
     /// </summary>
     private static void ReadPolylist(XElement mesh, XElement polylist, GeometryBuffers buffers)
     {
-        GetInput(polylist, "VERTEX", out var vertexInputId, out _);
+        var interleavedIndices = ParseArray<int>(polylist.Element(_collada + "p")?.Value);
+        var stride = Stride(polylist);
+
+        GetInput(polylist, "VERTEX", out var vertexInputId, out var vertexOffset);
         var vertices = FindVertices(mesh, vertexInputId);
 
         GetInput(vertices, "POSITION", out var positionSourceId, out _);
         GetInput(vertices, "NORMAL", out var normalSourceId, out _);
 
+        var baseVertex = buffers.Vertices.Count;
         buffers.Vertices.AddRange(ReadVectors(mesh, positionSourceId));
-        buffers.Normals.AddRange(ReadVectors(mesh, normalSourceId));
-        buffers.Indices.AddRange(ParseArray<int>(polylist.Element(_collada + "p")?.Value));
+        if (normalSourceId is not null)
+        {
+            buffers.Normals.AddRange(ReadVectors(mesh, normalSourceId));
+        }
+
+        var vertexIndices = ExtractLane(interleavedIndices, vertexOffset, stride);
+        var vcounts = ParseArray<int>(polylist.Element(_collada + "vcount")?.Value);
+
+        if (vcounts.Count == 0)
+        {
+            // No vcount — assume the stream is already triangles.
+            buffers.Indices.AddRange(vertexIndices.Select(index => index + baseVertex));
+            return;
+        }
+
+        var cursor = 0;
+        foreach (var vcount in vcounts)
+        {
+            if (cursor + vcount > vertexIndices.Count)
+            {
+                break;
+            }
+
+            for (var corner = 1; corner + 1 < vcount; corner++)
+            {
+                buffers.Indices.Add(vertexIndices[cursor] + baseVertex);
+                buffers.Indices.Add(vertexIndices[cursor + corner] + baseVertex);
+                buffers.Indices.Add(vertexIndices[cursor + corner + 1] + baseVertex);
+            }
+
+            cursor += vcount;
+        }
     }
 
     /// <summary>
@@ -100,8 +139,7 @@ public static class MeshFactory
     private static void ReadTriangles(XElement mesh, XElement triangles, GeometryBuffers buffers)
     {
         var interleavedIndices = ParseArray<int>(triangles.Element(_collada + "p")?.Value);
-        var stride = triangles.Elements(_collada + "input")
-            .Max(input => int.Parse(input.Attribute("offset")?.Value ?? "0")) + 1;
+        var stride = Stride(triangles);
 
         GetInput(triangles, "VERTEX", out var vertexInputId, out var vertexOffset);
         var vertices = FindVertices(mesh, vertexInputId);
@@ -109,12 +147,38 @@ public static class MeshFactory
 
         GetInput(triangles, "NORMAL", out var normalSourceId, out var normalOffset);
 
-        buffers.Vertices.AddRange(ReadVectors(mesh, positionSourceId));
-        buffers.Normals.AddRange(normalSourceId is null
-            ? []
-            : ReadVectors(mesh, normalSourceId, interleavedIndices, normalOffset, stride));
-        buffers.Indices.AddRange(ExtractLane(interleavedIndices, vertexOffset, stride));
+        var baseVertex = buffers.Vertices.Count;
+        var positions = ReadVectors(mesh, positionSourceId);
+        buffers.Vertices.AddRange(positions);
+
+        var vertexIndices = ExtractLane(interleavedIndices, vertexOffset, stride);
+
+        if (normalSourceId is not null)
+        {
+            // The gathered normals are one per triangle corner; the mesh consumes them by
+            // vertex index, so scatter each corner's normal to its vertex slot.
+            var cornerNormals = ReadVectors(mesh, normalSourceId, interleavedIndices, normalOffset, stride);
+            var vertexNormals = new Vector3[positions.Count];
+            for (var corner = 0; corner < vertexIndices.Count && corner < cornerNormals.Count; corner++)
+            {
+                var vertexIndex = vertexIndices[corner];
+                if (vertexIndex >= 0 && vertexIndex < vertexNormals.Length)
+                {
+                    vertexNormals[vertexIndex] = cornerNormals[corner];
+                }
+            }
+            buffers.Normals.AddRange(vertexNormals);
+        }
+
+        buffers.Indices.AddRange(vertexIndices.Select(index => index + baseVertex));
     }
+
+    /// <summary>The interleaved stream's stride: one lane per declared input offset.</summary>
+    private static int Stride(XElement primitives) =>
+        primitives.Elements(_collada + "input")
+            .Select(input => int.Parse(input.Attribute("offset")?.Value ?? "0"))
+            .DefaultIfEmpty(0)
+            .Max() + 1;
 
     /// <summary>Picks every <paramref name="stride"/>-th index starting at <paramref name="lane"/>.</summary>
     private static List<int> ExtractLane(List<int> interleaved, int lane, int stride)
@@ -144,9 +208,14 @@ public static class MeshFactory
 
         if (indices is not null && offset != -1 && stride != -1)
         {
-            for (var i = 0; i < indices.Count; i += stride)
+            for (var i = 0; i + offset < indices.Count; i += stride)
             {
                 var index = indices[i + offset];
+                if (index < 0 || index * 3 + 2 >= floats.Count)
+                {
+                    vectors.Add(Vector3.Zero);
+                    continue;
+                }
                 vectors.Add(new Vector3(floats[index * 3], floats[index * 3 + 1], floats[index * 3 + 2]));
             }
         }
@@ -166,12 +235,15 @@ public static class MeshFactory
         mesh.Elements(_collada + "vertices")
             .FirstOrDefault(v => v.Attribute("id")?.Value == vertexInputId);
 
-    /// <summary>Returns the raw text of the <c>float_array</c> owned by the given source.</summary>
+    /// <summary>
+    /// Returns the raw text of the <c>float_array</c> owned by the given source, or an
+    /// empty string when the source (or its array) is missing.
+    /// </summary>
     private static string ReadFloatArray(XElement mesh, string? sourceId) =>
         mesh.Elements(_collada + "source")
             .FirstOrDefault(source => source?.Attribute("id")?.Value == sourceId)
-            !.Element(_collada + "float_array")
-            !.Value;
+            ?.Element(_collada + "float_array")
+            ?.Value ?? string.Empty;
 
     /// <summary>
     /// Reads the <c>input</c> with the given <paramref name="semantic"/> off an element,

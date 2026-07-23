@@ -2,6 +2,7 @@ using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Scenes;
+using System.Runtime.CompilerServices;
 
 namespace SoftEngine.WinForms.Debugging;
 
@@ -127,7 +128,13 @@ internal sealed class SceneObjectCatalog
 
         var meshes = scene.World.Meshes;
 
-        return $"{scene.Surface?.Width ?? 0}x{scene.Surface?.Height ?? 0}|{painter?.GetType().Name}|" +
+        // Identity hashes of the world and its first/last meshes distinguish two worlds
+        // that happen to have the same shape (same counts and type names), so the table
+        // is rebuilt — and rewired to the live mesh instances — when the world is swapped.
+        return $"{RuntimeHelpers.GetHashCode(scene.World)}|" +
+               $"{(meshes.Count > 0 ? RuntimeHelpers.GetHashCode(meshes[0]) : 0)}|" +
+               $"{(meshes.Count > 0 ? RuntimeHelpers.GetHashCode(meshes[^1]) : 0)}|" +
+               $"{scene.Surface?.Width ?? 0}x{scene.Surface?.Height ?? 0}|{painter?.GetType().Name}|" +
                $"{scene.Camera?.GetType().Name}|{scene.Projection?.GetType().Name}|" +
                $"{scene.World.Lights.Count}|{meshes.Count}|" +
                $"{(meshes.Count > 0 ? meshes[0].Triangles.Length : 0)}|" +

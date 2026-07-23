@@ -9,8 +9,9 @@ public sealed class WireFramePainter : IPainter
 {
     private static readonly LiangBarskyClippingHomogeneous _liangBarskyClipping = new();
 
-    // Lines cross arbitrary rows, so the slice is ignored — the renderer only calls
-    // this painter from sequential code.
+    // Lines cross arbitrary rows, so the slice is ignored and the renderer must not
+    // call this painter from its parallel fill phase.
+    public bool SupportsRowSlices => false;
     public void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in RowSlice slice)
     {
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));

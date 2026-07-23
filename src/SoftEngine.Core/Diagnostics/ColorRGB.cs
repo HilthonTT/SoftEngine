@@ -43,7 +43,9 @@ public readonly struct ColorRGB
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ColorRGB operator *(float f, ColorRGB color) =>
-        new((byte)(f * color.R), (byte)(f * color.G), (byte)(f * color.B));
+        new((byte)System.Math.Clamp(f * color.R, 0f, 255f),
+            (byte)System.Math.Clamp(f * color.G, 0f, 255f),
+            (byte)System.Math.Clamp(f * color.B, 0f, 255f));
 
     /// <summary>Saturating add — channels clamp at 255 instead of wrapping.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

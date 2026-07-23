@@ -48,7 +48,7 @@ public sealed class ArcBallCamera : ICamera
                 {
                     oldControl.MouseDown -= Control_MouseDown;
                     oldControl.MouseMove -= Control_MouseMove;
-                    _control?.MouseUp -= Control_MouseUp;
+                    oldControl.MouseUp -= Control_MouseUp;
                 }
 
                 if (_control is not null)
