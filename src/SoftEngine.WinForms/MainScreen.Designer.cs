@@ -58,6 +58,7 @@ public sealed partial class MainScreen
         mnuFile = new ToolStripMenuItem();
         mnuLoadModel = new ToolStripMenuItem();
         mnuOpenModel = new ToolStripMenuItem();
+        mnuScreenshot = new ToolStripMenuItem();
         mnuExit = new ToolStripMenuItem();
         mnuView = new ToolStripMenuItem();
         mnuPixelHistory = new ToolStripMenuItem();
@@ -73,6 +74,7 @@ public sealed partial class MainScreen
         statusStrip = new StatusStrip();
         lblZoomStatus = new ToolStripStatusLabel();
         lblPixelStatus = new ToolStripStatusLabel();
+        lblScreenshotHint = new ToolStripStatusLabel();
         lblCameraStatus = new ToolStripStatusLabel();
         lblFrameStatus = new ToolStripStatusLabel();
 
@@ -327,7 +329,7 @@ public sealed partial class MainScreen
         //
         // mnuFile
         //
-        mnuFile.DropDownItems.AddRange(new ToolStripItem[] { mnuLoadModel, mnuOpenModel, new ToolStripSeparator(), mnuExit });
+        mnuFile.DropDownItems.AddRange(new ToolStripItem[] { mnuLoadModel, mnuOpenModel, new ToolStripSeparator(), mnuScreenshot, new ToolStripSeparator(), mnuExit });
         mnuFile.Name = "mnuFile";
         mnuFile.Text = "&File";
         //
@@ -342,6 +344,12 @@ public sealed partial class MainScreen
         mnuOpenModel.Name = "mnuOpenModel";
         mnuOpenModel.ShortcutKeys = Keys.Control | Keys.O;
         mnuOpenModel.Text = "&Open model file…";
+        //
+        // mnuScreenshot
+        //
+        mnuScreenshot.Name = "mnuScreenshot";
+        mnuScreenshot.ShortcutKeys = Keys.F12;
+        mnuScreenshot.Text = "Save &screenshot…";
         //
         // mnuExit
         //
@@ -425,7 +433,7 @@ public sealed partial class MainScreen
         //
         // statusStrip
         //
-        statusStrip.Items.AddRange(new ToolStripItem[] { lblZoomStatus, lblPixelStatus, lblCameraStatus, lblFrameStatus });
+        statusStrip.Items.AddRange(new ToolStripItem[] { lblZoomStatus, lblPixelStatus, lblScreenshotHint, lblCameraStatus, lblFrameStatus });
         statusStrip.Name = "statusStrip";
         statusStrip.SizingGrip = false;
         statusStrip.TabIndex = 11;
@@ -445,6 +453,13 @@ public sealed partial class MainScreen
         lblPixelStatus.Spring = true;
         lblPixelStatus.TextAlign = ContentAlignment.MiddleLeft;
         lblPixelStatus.Text = "Selected pixel: none";
+        //
+        // lblScreenshotHint
+        //
+        lblScreenshotHint.Name = "lblScreenshotHint";
+        lblScreenshotHint.TextAlign = ContentAlignment.MiddleRight;
+        lblScreenshotHint.Text = "F12: Screenshot";
+        lblScreenshotHint.ToolTipText = "Save the current view as a PNG (File → Save screenshot…)";
         //
         // lblCameraStatus
         //
@@ -612,6 +627,7 @@ public sealed partial class MainScreen
     private ToolStripMenuItem mnuFile;
     private ToolStripMenuItem mnuLoadModel;
     private ToolStripMenuItem mnuOpenModel;
+    private ToolStripMenuItem mnuScreenshot;
     private ToolStripMenuItem mnuExit;
     private ToolStripMenuItem mnuView;
     private ToolStripMenuItem mnuPixelHistory;
@@ -626,6 +642,7 @@ public sealed partial class MainScreen
 
     private StatusStrip statusStrip;
     private ToolStripStatusLabel lblZoomStatus;
+    private ToolStripStatusLabel lblScreenshotHint;
     private ToolStripStatusLabel lblPixelStatus;
     private ToolStripStatusLabel lblCameraStatus;
     private ToolStripStatusLabel lblFrameStatus;

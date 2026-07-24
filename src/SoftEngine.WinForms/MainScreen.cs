@@ -10,7 +10,6 @@ using SoftEngine.WinForms.Controls;
 using SoftEngine.WinForms.Debugging;
 using SoftEngine.WinForms.Dialogs;
 using SoftEngine.WinForms.Interop;
-using System.Drawing.Drawing2D;
 using System.Numerics;
 
 namespace SoftEngine.WinForms;
@@ -204,6 +203,8 @@ public sealed partial class MainScreen : Form
 
         mnuLoadModel.Click += async (s, e) => await ShowModelPickerAsync();
         mnuOpenModel.Click += async (s, e) => await OpenModelAsync();
+        mnuScreenshot.Click += (s, e) => SaveScreenshot();
+        lblScreenshotHint.Click += (s, e) => SaveScreenshot();
         mnuExit.Click += (s, e) => Close();
 
         mnuPixelHistory.CheckedChanged += (s, e) => splitLeft.Panel2Collapsed = !mnuPixelHistory.Checked;
@@ -323,6 +324,37 @@ public sealed partial class MainScreen : Form
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
             await PrepareWorldFromFileAsync(dialog.FileName);
+        }
+    }
+
+    private void SaveScreenshot()
+    {
+        using var dialog = new SaveFileDialog
+        {
+            Title = "Save screenshot",
+            Filter = "PNG image (*.png)|*.png",
+            DefaultExt = "png",
+            FileName = $"{_currentDemoId}-{DateTime.Now:yyyyMMdd-HHmmss}.png",
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!panel3D1.SaveScreenshot(dialog.FileName))
+            {
+                MessageBox.Show(this, "Nothing has been rendered yet.", "Save screenshot",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, $"Failed to save the screenshot:\n{exception.Message}", "Save screenshot",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -678,4 +710,5 @@ public sealed partial class MainScreen : Form
 
         return new WorldSetup(world, cameraPosition, projection);
     }
+
 }

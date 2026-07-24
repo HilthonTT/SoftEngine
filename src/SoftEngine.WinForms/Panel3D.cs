@@ -5,6 +5,7 @@ using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
 using SoftEngine.WinForms.Interop;
+using SoftEngine.WinForms.Utilities;
 using System.ComponentModel;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
@@ -353,6 +354,38 @@ public partial class Panel3D : UserControl
 
     #endregion
 
+    /// <summary>
+    /// Saves the last rendered frame as a PNG. The capture is the bare render target:
+    /// the stats overlay and the pixel-selection marker are drawn over the control, not
+    /// into the framebuffer, so they never appear in the file. Returns false when no
+    /// frame has been rendered yet.
+    /// </summary>
+    public bool SaveScreenshot(string path)
+    {
+        if (Scene?.Surface is not { } surface || surface.Width <= 0 || surface.Height <= 0)
+        {
+            return false;
+        }
+
+        var screen = surface.Screen;
+        var pixels = new uint[surface.Width * surface.Height];
+
+        // The framebuffer is packed ARGB (blue in the low byte); PngWriter wants packed
+        // RGBA (red in the low byte). Swap R and B, and force alpha opaque — cleared
+        // background pixels are 0x00000000, which would otherwise save as transparent.
+        for (var i = 0; i < pixels.Length; i++)
+        {
+            var argb = (uint)screen[i];
+            pixels[i] = 0xFF000000u
+                | ((argb & 0x00FF0000) >> 16)  // R: bits 16-23 -> 0-7
+                | (argb & 0x0000FF00)          // G stays in bits 8-15
+                | ((argb & 0x000000FF) << 16); // B: bits 0-7 -> 16-23
+        }
+
+        PngWriter.Save(path, pixels, surface.Width, surface.Height);
+        return true;
+    }
+
     private void Panel3D_Paint(object? sender, PaintEventArgs e)
     {
         if (Scene is null)
@@ -360,9 +393,7 @@ public partial class Panel3D : UserControl
             return;
         }
 
-        var bufferSize = new Size(
-            System.Math.Max(1, ClientSize.Width),
-            System.Math.Max(1, ClientSize.Height));
+        var bufferSize = new Size(Math.Max(1, ClientSize.Width), Math.Max(1, ClientSize.Height));
 
         if (bufferSize != _bufferSize)
         {
