@@ -21,6 +21,10 @@ public sealed class FrameBuffer(int width, int height)
     private float _depthScale = 1f;
     private float _depthBias;
 
+    // Set by SetLinearDepthRange for parallel projections, where w is 1 everywhere and the
+    // formula above would collapse to a constant: the projected z is the device depth already.
+    private bool _linearDepth;
+
     public RenderStats? Stats { get; set; }
 
     public int[] Screen { get; set; } = new int[width * height];
@@ -38,6 +42,20 @@ public sealed class FrameBuffer(int width, int height)
     {
         _depthScale = zFar / (zFar - zNear);
         _depthBias = zFar * zNear / (zFar - zNear);
+        _linearDepth = false;
+    }
+
+    /// <summary>
+    /// Depth mapping for a parallel projection: the projection matrix has already mapped
+    /// the near plane to z = 0 and the far plane to z = 1, so the buffer takes the
+    /// projected z as-is. Call instead of <see cref="SetDepthRange"/> when the scene's
+    /// projection reports <c>IsOrthographic</c>.
+    /// </summary>
+    public void SetLinearDepthRange()
+    {
+        _depthScale = 1f;
+        _depthBias = 0f;
+        _linearDepth = true;
     }
 
     public Vector3 ToScreen3(Vector4 vector)
@@ -49,7 +67,7 @@ public sealed class FrameBuffer(int width, int height)
         float y = -_heightMinus1By2 * (vector.Y / vector.W - 1);
 
         // Normalized device depth from the near/far planes, quantized to the buffer resolution.
-        float z = DepthResolution * (_depthScale - _depthBias / vector.W);
+        float z = DepthResolution * (_linearDepth ? vector.Z / vector.W : _depthScale - _depthBias / vector.W);
 
         return new Vector3(x, y, z);
     }
@@ -205,6 +223,36 @@ public sealed class FrameBuffer(int width, int height)
             Color = 0,
             PreviousColor = Screen[_probeIndex],
             Depth = DepthResolution,
+            PreviousDepth = _zBuffer[_probeIndex],
+            Passed = true,
+        });
+    }
+
+    /// <summary>The current colour of the probed pixel; 0 when nothing is being probed.</summary>
+    internal int GetProbedColor() => _probeIndex >= 0 ? Screen[_probeIndex] : 0;
+
+    /// <summary>
+    /// Appends a write for a stage that rewrote the probed pixel outside the rasterizer — a
+    /// full-screen post-process pass, which has already replaced the colour by the time it
+    /// is recorded, hence the caller-supplied <paramref name="previousColor"/>.
+    /// </summary>
+    internal void RecordProbeOverwrite(int eventIndex, PixelWriteSource source, int objectId, int previousColor)
+    {
+        var history = _probeHistory;
+        if (history is null)
+        {
+            return;
+        }
+
+        history.Writes.Add(new PixelWrite
+        {
+            EventIndex = eventIndex,
+            Source = source,
+            ObjectId = objectId,
+            TriangleIndex = -1,
+            Color = Screen[_probeIndex],
+            PreviousColor = previousColor,
+            Depth = _zBuffer[_probeIndex],
             PreviousDepth = _zBuffer[_probeIndex],
             Passed = true,
         });

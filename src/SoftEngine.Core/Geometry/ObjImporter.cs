@@ -8,8 +8,10 @@ namespace SoftEngine.Core.Geometry;
 /// A Wavefront OBJ reader (with companion MTL material support). It understands the common
 /// subset used by exported models: <c>v</c>/<c>vt</c>/<c>vn</c> attributes, polygonal
 /// <c>f</c> faces (any of <c>v</c>, <c>v/vt</c>, <c>v//vn</c>, <c>v/vt/vn</c>, including
-/// negative relative indices), n-gon fan triangulation, <c>mtllib</c>/<c>usemtl</c>, and the
-/// <c>Kd</c> diffuse colour plus <c>map_Kd</c> diffuse texture from the material file.
+/// negative relative indices), n-gon fan triangulation, <c>mtllib</c>/<c>usemtl</c>, and from
+/// the material file the <c>Kd</c> diffuse colour, the <c>Ks</c>/<c>Ns</c> highlight, the
+/// <c>d</c>/<c>Tr</c> opacity, and the <c>map_Kd</c>, <c>map_Ks</c> and
+/// <c>map_Bump</c>/<c>bump</c>/<c>norm</c> textures.
 ///
 /// One <see cref="IMesh"/> is emitted per material actually used, so each mesh carries a
 /// single diffuse colour and texture — matching the one-texture-per-mesh model of the engine.
@@ -183,10 +185,46 @@ public static class ObjImporter
                         ToByte(ParseFloat(tokens, 3)));
                     break;
 
+                case "Ks" when current is not null:
+                    // Ks is a colour, but the engine's highlight is a single white-scaled
+                    // strength — its luminance is the closest single number to it.
+                    current.SpecularStrength = System.Math.Clamp(
+                        0.2126f * ParseFloat(tokens, 1) + 0.7152f * ParseFloat(tokens, 2) + 0.0722f * ParseFloat(tokens, 3),
+                        0f, 1f);
+                    break;
+
+                case "Ns" when current is not null:
+                    current.Shininess = System.Math.Clamp(ParseFloat(tokens, 1), 1f, 1024f);
+                    break;
+
+                case "d" when current is not null:
+                    current.Opacity = System.Math.Clamp(ParseFloat(tokens, 1), 0f, 1f);
+                    break;
+
+                case "Tr" when current is not null:
+                    // Tr is the inverse of d — transparency rather than opacity.
+                    current.Opacity = System.Math.Clamp(1f - ParseFloat(tokens, 1), 0f, 1f);
+                    break;
+
                 case "map_Kd" when current is not null:
                     // Any texture options (-o, -s, …) precede the filename, so it is the last token.
                     current.DiffuseMap = tokens[^1];
                     break;
+
+                case "map_Ks" when current is not null:
+                    current.SpecularMap = tokens[^1];
+                    break;
+
+                // Normal maps have no single spelling: map_Bump and bump are the Wavefront
+                // originals (height maps by intent, tangent-space normals by universal
+                // practice), and norm is the later PBR-era addition.
+                case "map_Bump" when current is not null:
+                case "map_bump" when current is not null:
+                case "bump" when current is not null:
+                case "norm" when current is not null:
+                    current.NormalMap = tokens[^1];
+                    break;
+
                 default:
                     break;
             }
@@ -203,12 +241,22 @@ public static class ObjImporter
 
     private static byte ToByte(float unit) => (byte)(System.Math.Clamp(unit, 0f, 1f) * 255f);
 
-    /// <summary>A resolved OBJ material: diffuse colour and optional diffuse-map filename.</summary>
+    /// <summary>A resolved OBJ material: the values read from the file, before any texture is loaded.</summary>
     private sealed class ObjMaterial
     {
         public ColorRGB Diffuse { get; set; } = ColorRGB.Gray;
 
+        public float SpecularStrength { get; set; } = 0.35f;
+
+        public float Shininess { get; set; } = 32f;
+
+        public float Opacity { get; set; } = 1f;
+
         public string? DiffuseMap { get; set; }
+
+        public string? NormalMap { get; set; }
+
+        public string? SpecularMap { get; set; }
     }
 
     /// <summary>
@@ -309,22 +357,35 @@ public static class ObjImporter
                 normals,
                 [.. Enumerable.Repeat(diffuse, Indices.Count / 3)]);
 
+            mesh.Material.Diffuse = diffuse;
+            mesh.Opacity = material?.Opacity ?? 1f;
+
+            if (material is not null)
+            {
+                mesh.Material.SpecularStrength = material.SpecularStrength;
+                mesh.Material.Shininess = material.Shininess;
+            }
+
+            // Every map is addressed by UV; without them there is nothing to sample with.
             if (_hasTexCoords)
             {
                 mesh.TexCoords = TexCoords.ToArray();
-                mesh.Texture = ResolveTexture(material, baseDirectory, textureLoader, textureCache);
+
+                mesh.Material.DiffuseMap = ResolveTexture(material?.DiffuseMap, baseDirectory, textureLoader, textureCache);
+                mesh.Material.NormalMap = ResolveTexture(material?.NormalMap, baseDirectory, textureLoader, textureCache);
+                mesh.Material.SpecularMap = ResolveTexture(material?.SpecularMap, baseDirectory, textureLoader, textureCache);
             }
 
             return mesh;
         }
 
         private static Texture? ResolveTexture(
-            ObjMaterial? material,
+            string? map,
             string baseDirectory,
             Func<string, Texture?>? textureLoader,
             Dictionary<string, Texture?> textureCache)
         {
-            if (material?.DiffuseMap is not { Length: > 0 } map || textureLoader is null)
+            if (map is not { Length: > 0 } || textureLoader is null)
             {
                 return null;
             }

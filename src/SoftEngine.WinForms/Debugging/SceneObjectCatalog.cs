@@ -1,5 +1,6 @@
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
+using SoftEngine.Core.Pipeline.PostProcess;
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Scenes;
 using System.Numerics;
@@ -46,7 +47,7 @@ internal sealed class SceneObjectCatalog
         return row is null ? $"obj:{id}" : $"obj:{id} ({row.Type})";
     }
 
-    public static SceneObjectCatalog Build(Scene? scene, IPainter? painter)
+    public static SceneObjectCatalog Build(Scene? scene, IPainter? painter, PostProcessStack? postProcess = null)
     {
         if (scene?.World is null)
         {
@@ -71,6 +72,19 @@ internal sealed class SceneObjectCatalog
                 0, 0, 0, 0, 0, null),
             new(SceneObjectIds.Painter, painter?.GetType().Name ?? "None", painter is null ? "no shading" : string.Empty, 0, 0, 0, 0, 0, null),
         };
+
+        if (scene.ShadowMap is { } shadowMap)
+        {
+            rows.Add(new SceneObjectRow(SceneObjectIds.ShadowMap, "ShadowMap", "32 bit depth",
+                (long)shadowMap.Resolution * shadowMap.Resolution * sizeof(float),
+                0, 0, shadowMap.Resolution, shadowMap.Resolution, null));
+        }
+
+        if (postProcess is { HasEffects: true })
+        {
+            rows.Add(new SceneObjectRow(SceneObjectIds.PostProcess, "PostProcess", DescribeEffects(postProcess),
+                (long)width * height * 3 * sizeof(float) * 2, 0, 0, width, height, null));
+        }
 
         for (var i = 0; i < lights.Count; i++)
         {
@@ -113,14 +127,18 @@ internal sealed class SceneObjectCatalog
                 (long)texture.Width * texture.Height * sizeof(int), 0, 0, texture.Width, texture.Height, null));
         }
 
-        return new SceneObjectCatalog(rows, SignatureOf(scene, painter));
+        return new SceneObjectCatalog(rows, SignatureOf(scene, painter, postProcess));
     }
+
+    /// <summary>The enabled effects, in the order the stack applies them.</summary>
+    private static string DescribeEffects(PostProcessStack stack) =>
+        string.Join(" → ", stack.Effects.Where(effect => effect.Enabled).Select(effect => effect.Name));
 
     /// <summary>
     /// Cheap fingerprint of what the table would contain, so a caller polling every frame
     /// can skip rebuilding rows for a scene of a few thousand meshes that hasn't changed.
     /// </summary>
-    public static string SignatureOf(Scene? scene, IPainter? painter)
+    public static string SignatureOf(Scene? scene, IPainter? painter, PostProcessStack? postProcess = null)
     {
         if (scene?.World is null)
         {
@@ -137,6 +155,7 @@ internal sealed class SceneObjectCatalog
                $"{(meshes.Count > 0 ? RuntimeHelpers.GetHashCode(meshes[^1]) : 0)}|" +
                $"{scene.Surface?.Width ?? 0}x{scene.Surface?.Height ?? 0}|{painter?.GetType().Name}|" +
                $"{scene.Camera?.GetType().Name}|{scene.Projection?.GetType().Name}|" +
+               $"{scene.ShadowMap?.Resolution ?? 0}|{(postProcess is null ? string.Empty : DescribeEffects(postProcess))}|" +
                $"{scene.World.Lights.Count}|{meshes.Count}|" +
                $"{(meshes.Count > 0 ? meshes[0].Triangles.Length : 0)}|" +
                $"{(meshes.Count > 0 ? meshes[^1].Vertices.Length : 0)}";

@@ -39,6 +39,8 @@ public readonly record struct GraphicsEvent(GraphicsEventKind Kind, int ObjectId
                 string.Create(c, $"obj:{ObjectId} — eye ({A:0.##}, {B:0.##}, {C:0.##})"),
             GraphicsEventKind.ProjectionSetProjectionMatrix =>
                 string.Create(c, $"obj:{ObjectId} — near {A:0.###}, far {B:0.###}, aspect {C:0.###}"),
+            GraphicsEventKind.ShadowMapRender =>
+                string.Create(c, $"obj:{ObjectId} — {(int)A} × {(int)A} depth, {(int)B} triangles"),
             GraphicsEventKind.PainterPrepare =>
                 string.Create(c, $"obj:{ObjectId}"),
             GraphicsEventKind.MeshSkipInactive =>
@@ -57,6 +59,8 @@ public readonly record struct GraphicsEvent(GraphicsEventKind Kind, int ObjectId
                 string.Create(c, $"{(int)A} lines, {B:0.#} … {C:0.#}"),
             GraphicsEventKind.GizmoDrawAxes =>
                 "X, Y, Z",
+            GraphicsEventKind.PostProcessApply =>
+                string.Create(c, $"obj:{ObjectId} — {(int)A} effects over {(int)B} × {(int)C}"),
             GraphicsEventKind.FramePresent =>
                 string.Create(c, $"{(int)A} pixels drawn, {(int)B} z-rejected"),
             _ => string.Empty,

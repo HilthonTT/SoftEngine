@@ -40,6 +40,30 @@ public interface IMesh
     Texture? Texture => null;
 
     /// <summary>
+    /// How this mesh's surface responds to light — base colour, maps and highlight shape.
+    /// Null when the mesh predates the material system; painters fall back to the triangle
+    /// colour and their own defaults.
+    /// </summary>
+    Material? Material => null;
+
+    /// <summary>
+    /// Per-vertex tangents aligned with <see cref="Vertices"/>: XYZ is the direction U grows
+    /// in, W is ±1 handedness for reconstructing the bitangent. Null until
+    /// <see cref="EnsureTangents"/> has run, or when the mesh has no UVs.
+    /// </summary>
+    Vector4[]? Tangents => null;
+
+    /// <summary>
+    /// Builds <see cref="Tangents"/> if the mesh has UVs and doesn't have them yet.
+    /// Normal mapping needs a per-vertex UV frame, and deriving it walks every triangle —
+    /// so painters call this from Prepare, before the parallel paint phase, exactly as
+    /// they do for mip chains.
+    /// </summary>
+    void EnsureTangents()
+    {
+    }
+
+    /// <summary>
     /// Radius of a model-space sphere (centred on the origin) containing every vertex.
     /// Used for whole-mesh frustum culling; infinity disables the cull.
     /// </summary>

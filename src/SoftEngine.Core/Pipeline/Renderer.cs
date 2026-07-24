@@ -3,11 +3,15 @@ using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Gizmos;
 using SoftEngine.Core.Pipeline.Clipping;
+using SoftEngine.Core.Pipeline.PostProcess;
+using SoftEngine.Core.Pipeline.Shadows;
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Cameras;
+using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
+using SoftEngine.Core.Shading;
 using System.Numerics;
 
 namespace SoftEngine.Core.Pipeline;
@@ -33,7 +37,17 @@ public sealed class Renderer : IRenderer
     // Reused across frames; rebuilt only when the world stops fitting it.
     private WorldBuffer? _worldBuffer;
 
+    // Created on the first frame that actually needs a shadow map, and kept afterwards:
+    // it owns the depth buffer and the projected-vertex scratch.
+    private ShadowMapRenderer? _shadowRenderer;
+
     public RendererSettings Settings { get; set; } = new();
+
+    /// <summary>
+    /// Full-screen effects applied to the finished render target, in order. Null (the
+    /// default) skips the pass entirely; an empty stack costs nothing either.
+    /// </summary>
+    public PostProcessStack? PostProcess { get; set; }
 
     public RenderStats Stats { get; } = new();
 
@@ -69,8 +83,17 @@ public sealed class Renderer : IRenderer
         }
         diagnostics.PixelHistory = history;
 
-        // Match the depth buffer to the projection's clip planes for this frame.
-        surface.SetDepthRange(projection.ZNear, projection.ZFar);
+        // Match the depth buffer to the projection's clip planes for this frame. A parallel
+        // projection carries its depth in z rather than w, so it needs the other mapping.
+        if (projection.IsOrthographic)
+        {
+            surface.SetLinearDepthRange();
+        }
+        else
+        {
+            surface.SetDepthRange(projection.ZNear, projection.ZFar);
+        }
+
         events.Add(GraphicsEventKind.FrameBufferSetDepthRange, SceneObjectIds.DepthBuffer, projection.ZNear, projection.ZFar);
 
         var clearEvent = events.Add(GraphicsEventKind.FrameBufferClearRenderTarget, SceneObjectIds.RenderTarget, surface.Width, surface.Height);
@@ -83,6 +106,10 @@ public sealed class Renderer : IRenderer
         Stats.CalculationTime();
 
         // model => worldMatrix => world => viewMatrix => view => projectionMatrix => projection => toNdc => ndc => toScreen => screen
+
+        // The shadow pass runs first: painters pick the map up in Prepare and every
+        // subsequent shade reads it, so it has to be complete before any of them start.
+        scene.ShadowMap = RenderShadowMap(scene, events);
 
         painter?.Prepare(scene);
         events.Add(GraphicsEventKind.PainterPrepare, SceneObjectIds.Painter);
@@ -329,6 +356,8 @@ public sealed class Renderer : IRenderer
             GizmoRenderer.DrawAxes(surface, viewMatrix * projectionMatrix);
         }
 
+        ApplyPostProcess(surface, events);
+
         Stats.StopTime();
 
         events.Add(GraphicsEventKind.FramePresent, SceneObjectIds.RenderTarget, Stats.DrawnPixelCount, Stats.BehindZPixelCount);
@@ -338,6 +367,59 @@ public sealed class Renderer : IRenderer
             history.FinalColor = surface.GetColor(history.X, history.Y);
             history.FinalDepth = surface.GetDepth(history.X, history.Y);
             surface.EndProbe();
+        }
+    }
+
+    /// <summary>
+    /// Renders the world's depth from the scene's first light, or returns null when the
+    /// scene casts no shadows — disabled, no lights, or nothing opaque to cast one.
+    /// </summary>
+    private ShadowMap? RenderShadowMap(Scene scene, GraphicsEventLog events)
+    {
+        var settings = scene.Shadows;
+
+        if (settings is null || !settings.Enabled || settings.Strength <= 0f)
+        {
+            return null;
+        }
+
+        _shadowRenderer ??= new ShadowMapRenderer();
+
+        // The same resolution the lit painters use, so the scene is shadowed from wherever
+        // it is lit from — including the fallback light of a world that declares none.
+        var map = _shadowRenderer.Render(scene.World, SceneLights.Resolve(scene.World), settings);
+
+        if (map is not null)
+        {
+            events.Add(GraphicsEventKind.ShadowMapRender, SceneObjectIds.ShadowMap,
+                map.Resolution, _shadowRenderer.TriangleCount);
+        }
+
+        return map;
+    }
+
+    /// <summary>
+    /// Runs the post-process stack over the finished render target. A probed pixel gets one
+    /// more history entry for the whole stack: the effects work on the image as a whole
+    /// rather than pixel by pixel, so there is no per-triangle write to attribute.
+    /// </summary>
+    private void ApplyPostProcess(FrameBuffer surface, GraphicsEventLog events)
+    {
+        if (PostProcess is not { } stack || !stack.HasEffects)
+        {
+            return;
+        }
+
+        var eventIndex = events.Add(GraphicsEventKind.PostProcessApply, SceneObjectIds.PostProcess,
+            stack.EnabledCount, surface.Width, surface.Height);
+
+        var before = surface.IsProbing ? surface.GetProbedColor() : 0;
+
+        stack.Apply(surface);
+
+        if (surface.IsProbing)
+        {
+            surface.RecordProbeOverwrite(eventIndex, PixelWriteSource.PostProcess, SceneObjectIds.PostProcess, before);
         }
     }
 

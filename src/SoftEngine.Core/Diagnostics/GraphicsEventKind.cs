@@ -10,6 +10,7 @@ public enum GraphicsEventKind
     FrameBufferClearDepthBuffer,
     CameraSetViewMatrix,
     ProjectionSetProjectionMatrix,
+    ShadowMapRender,
     PainterPrepare,
     MeshSkipInactive,
     MeshCullBoundingSphere,
@@ -19,5 +20,6 @@ public enum GraphicsEventKind
     WireFrameOverlayDraw,
     GizmoDrawGrid,
     GizmoDrawAxes,
+    PostProcessApply,
     FramePresent,
 }

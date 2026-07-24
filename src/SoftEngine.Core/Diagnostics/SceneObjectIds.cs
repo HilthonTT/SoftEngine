@@ -13,9 +13,11 @@ public static class SceneObjectIds
     public const int Camera = 2;
     public const int Projection = 3;
     public const int Painter = 4;
+    public const int ShadowMap = 5;
+    public const int PostProcess = 6;
 
     /// <summary>First identifier handed out to world contents.</summary>
-    public const int First = 5;
+    public const int First = 7;
 
     public static int Light(int lightIndex) => First + lightIndex;
 

@@ -8,6 +8,8 @@ namespace SoftEngine.Core.Rasterization;
 /// Per-pixel Blinn-Phong: ambient + Lambert diffuse + specular highlight from the
 /// half-vector. The light is baked in as either a position (point light) or a unit
 /// direction toward the light (directional), so no interface dispatch happens per pixel.
+/// A shadow map, when the scene has one, is sampled at every fragment — the world
+/// position needed for the lookup is already interpolated for the lighting.
 /// </summary>
 public readonly struct BlinnPhongShader(
     ColorRGB color,
@@ -18,7 +20,8 @@ public readonly struct BlinnPhongShader(
     float ambient,
     float specularStrength,
     float shininess,
-    bool gammaCorrect = false) : IPixelShader<PhongVarying>
+    bool gammaCorrect = false,
+    ShadowMap? shadows = null) : IPixelShader<PhongVarying>
 {
     private readonly ColorRGB _color = color;
     private readonly Vector3 _lightVector = lightVector;
@@ -28,6 +31,7 @@ public readonly struct BlinnPhongShader(
     private readonly float _ambient = ambient;
     private readonly float _specularStrength = specularStrength;
     private readonly float _shininess = shininess;
+    private readonly ShadowMap? _shadows = shadows;
 
     private readonly bool _gammaCorrect = gammaCorrect;
     private readonly float _linearR = gammaCorrect ? ColorSpace.ToLinear(color.R) : 0f;
@@ -45,17 +49,22 @@ public readonly struct BlinnPhongShader(
         var l = _isDirectional ? _lightVector : Vector3.Normalize(_lightVector - v.World);
 
         var nDotL = Vector3.Dot(n, l);
-        var diffuse = MathF.Max(0, nDotL) * _lightIntensity;
+
+        // Shadowing scales the light's own contribution; ambient stands in for everything
+        // that reaches the surface by other paths, so it survives being in shadow.
+        var visibility = _shadows is null || nDotL <= 0f ? 1f : _shadows.Visibility(v.World, nDotL);
+
+        var diffuse = MathF.Max(0, nDotL) * _lightIntensity * visibility;
         var lit = MathF.Min(1f, _ambient + diffuse);
 
         var spec = 0f;
-        if (nDotL > 0 && _specularStrength > 0)
+        if (nDotL > 0 && _specularStrength > 0 && visibility > 0f)
         {
             var view = Vector3.Normalize(_eye - v.World);
             var half = Vector3.Normalize(l + view);
             var nDotH = MathF.Max(0, Vector3.Dot(n, half));
             spec = (_shininessInt > 0 ? PowInt(nDotH, _shininessInt) : MathF.Pow(nDotH, _shininess))
-                * _specularStrength * _lightIntensity;
+                * _specularStrength * _lightIntensity * visibility;
         }
 
         if (_gammaCorrect)

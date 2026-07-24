@@ -155,4 +155,33 @@ public sealed class Texture
 
         return new Texture(size, size, pixels);
     }
+
+    /// <summary>
+    /// A greyscale height map of domes on a grid — the quickest way to see whether normal
+    /// mapping is working, since a dome's shading depends on the light from every direction.
+    /// Feed it through <see cref="NormalMapBuilder.FromHeight"/> to get a normal map.
+    /// </summary>
+    public static Texture Bumps(int size, int cells)
+    {
+        var pixels = new int[size * size];
+        var cellSize = MathF.Max(1f, size / (float)System.Math.Max(1, cells));
+
+        for (var y = 0; y < size; y++)
+        {
+            for (var x = 0; x < size; x++)
+            {
+                // Position within this cell, remapped to [-1, 1] from its centre.
+                var u = (x % cellSize) / cellSize * 2f - 1f;
+                var v = (y % cellSize) / cellSize * 2f - 1f;
+
+                var radiusSquared = u * u + v * v;
+                var height = radiusSquared >= 1f ? 0f : MathF.Sqrt(1f - radiusSquared);
+
+                var level = (byte)(height * 255f);
+                pixels[x + y * size] = new ColorRGB(level, level, level).Color;
+            }
+        }
+
+        return new Texture(size, size, pixels);
+    }
 }

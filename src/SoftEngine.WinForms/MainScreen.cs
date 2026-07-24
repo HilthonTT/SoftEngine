@@ -2,6 +2,8 @@
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Math;
+using SoftEngine.Core.Pipeline.PostProcess;
+using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Lights;
@@ -34,6 +36,8 @@ public sealed partial class MainScreen : Form
         new("Big cube", "bigcube"),
         new("Textured cube", "texturedcube"),
         new("Transparency", "transparency"),
+        new("Shadows", "shadows"),
+        new("Normal mapping", "normalmapping"),
         new("Empty", "empty"),
     ];
 
@@ -86,6 +90,7 @@ public sealed partial class MainScreen : Form
         rdbGouraudShading.Checked = panel3D1.Painter is GouraudPainter;
         rdbPhongShading.Checked = panel3D1.Painter is PhongPainter;
         rdbTexturedShading.Checked = panel3D1.Painter is TexturedPainter;
+        rdbMaterialShading.Checked = panel3D1.Painter is MaterialPainter;
 
         rdbNoneShading.CheckedChanged += (s, e) =>
         {
@@ -141,6 +146,15 @@ public sealed partial class MainScreen : Form
             panel3D1.Painter = CreateTexturedPainter();
             panel3D1.Invalidate();
         };
+        rdbMaterialShading.CheckedChanged += (s, e) =>
+        {
+            if (s is not RadioButton { Checked: true })
+            {
+                return;
+            }
+            panel3D1.Painter = CreateMaterialPainter();
+            panel3D1.Invalidate();
+        };
 
         chkShowTriangles.Checked = panel3D1.RendererSettings.ShowTriangles;
         chkShowBackFacesCulling.Checked = panel3D1.RendererSettings.BackFaceCulling;
@@ -163,6 +177,7 @@ public sealed partial class MainScreen : Form
         chkTextureFiltering.Checked = true;
 
         chkFog.CheckedChanged += (s, e) => ApplyFog();
+        chkShadows.CheckedChanged += (s, e) => ApplyShadows();
         chkGammaCorrect.CheckedChanged += (s, e) =>
         {
             if (panel3D1.Scene is { } scene)
@@ -173,12 +188,11 @@ public sealed partial class MainScreen : Form
         };
         chkTextureFiltering.CheckedChanged += (s, e) =>
         {
-            if (panel3D1.Painter is TexturedPainter textured)
-            {
-                ApplyTextureFiltering(textured);
-                panel3D1.Invalidate();
-            }
+            ApplyTextureFiltering(panel3D1.Painter);
+            panel3D1.Invalidate();
         };
+
+        InitializePostProcessing();
 
         InitializeDebugger();
 
@@ -266,11 +280,11 @@ public sealed partial class MainScreen : Form
         _frameDirty = false;
 
         var scene = panel3D1.Scene;
-        var signature = SceneObjectCatalog.SignatureOf(scene, panel3D1.Painter);
+        var signature = SceneObjectCatalog.SignatureOf(scene, panel3D1.Painter, panel3D1.PostProcess);
 
         if (_catalog.Signature != signature)
         {
-            _catalog = SceneObjectCatalog.Build(scene, panel3D1.Painter);
+            _catalog = SceneObjectCatalog.Build(scene, panel3D1.Painter, panel3D1.PostProcess);
             objectTablePanel.SetCatalog(_catalog);
         }
 
@@ -390,10 +404,73 @@ public sealed partial class MainScreen : Form
         return painter;
     }
 
-    private void ApplyTextureFiltering(TexturedPainter painter)
+    /// <summary>A material painter configured from the "Texture filtering" checkbox.</summary>
+    private MaterialPainter CreateMaterialPainter()
     {
-        painter.Filtering = chkTextureFiltering.Checked ? TextureFiltering.Bilinear : TextureFiltering.Nearest;
-        painter.UseMipMaps = chkTextureFiltering.Checked;
+        var painter = new MaterialPainter();
+        ApplyTextureFiltering(painter);
+        return painter;
+    }
+
+    /// <summary>Applies the filtering checkbox to whichever painter samples textures, if any.</summary>
+    private void ApplyTextureFiltering(IPainter? painter)
+    {
+        var filtering = chkTextureFiltering.Checked ? TextureFiltering.Bilinear : TextureFiltering.Nearest;
+
+        switch (painter)
+        {
+            case TexturedPainter textured:
+                textured.Filtering = filtering;
+                textured.UseMipMaps = chkTextureFiltering.Checked;
+                break;
+
+            case MaterialPainter material:
+                material.Filtering = filtering;
+                material.UseMipMaps = chkTextureFiltering.Checked;
+                break;
+        }
+    }
+
+    /// <summary>Points each post-processing checkbox at its effect in the viewport's stack.</summary>
+    private void InitializePostProcessing()
+    {
+        Bind(chkBloom, panel3D1.PostProcess.Find<BloomEffect>());
+        Bind(chkToneMap, panel3D1.PostProcess.Find<ToneMapEffect>());
+        Bind(chkFxaa, panel3D1.PostProcess.Find<FxaaEffect>());
+        Bind(chkVignette, panel3D1.PostProcess.Find<VignetteEffect>());
+
+        void Bind(CheckBox box, IPostEffect? effect)
+        {
+            if (effect is null)
+            {
+                box.Enabled = false;
+                return;
+            }
+
+            box.Checked = effect.Enabled;
+            box.CheckedChanged += (s, e) =>
+            {
+                effect.Enabled = box.Checked;
+                panel3D1.Invalidate();
+            };
+        }
+    }
+
+    /// <summary>
+    /// Turns shadow mapping on or off. The map's resolution scales with the viewport, so a
+    /// larger window doesn't end up with visibly coarser shadows than a small one.
+    /// </summary>
+    private void ApplyShadows()
+    {
+        if (panel3D1.Scene is not { } scene)
+        {
+            return;
+        }
+
+        scene.Shadows.Enabled = chkShadows.Checked;
+        scene.Shadows.Resolution = panel3D1.BufferSize.Width > 1280 ? 2048 : 1024;
+
+        panel3D1.Invalidate();
     }
 
     /// <summary>
@@ -427,10 +504,14 @@ public sealed partial class MainScreen : Form
         BackColor = Theme.Background;
         ForeColor = Theme.TextPrimary;
 
+        // The scrolling host takes the sidebar's colour too, or the strip below the controls
+        // shows through in the system default.
+        pnlSidebar.BackColor = Theme.Surface;
         tlpSidebar.BackColor = Theme.Surface;
         lblTitle.ForeColor = Theme.TextPrimary;
         lblDisplayHeader.ForeColor = Theme.TextSecondary;
         lblShadingHeader.ForeColor = Theme.TextSecondary;
+        lblPostHeader.ForeColor = Theme.TextSecondary;
 
         lblModelHeader.ForeColor = Theme.TextSecondary;
         lblCurrentModel.ForeColor = Theme.TextPrimary;
@@ -445,6 +526,10 @@ public sealed partial class MainScreen : Form
             control.ForeColor = Theme.TextPrimary;
         }
         foreach (Control control in flpShading.Controls)
+        {
+            control.ForeColor = Theme.TextPrimary;
+        }
+        foreach (Control control in flpPost.Controls)
         {
             control.ForeColor = Theme.TextPrimary;
         }
@@ -517,8 +602,10 @@ public sealed partial class MainScreen : Form
             // The distance a world is framed from is what the zoom readout calls 100%.
             panel3D1.ReferenceDistance = setup.CameraPosition.Length();
 
-            // Fog distances are relative to the world's framing, which just changed.
+            // Fog distances and the shadow map's resolution are both relative to the world's
+            // framing and the viewport, either of which may have changed.
             ApplyFog();
+            ApplyShadows();
 
             // Every load sets a projection: either the demo's own, or one whose far plane
             // is derived from the world's extent — a far plane closer than the world's
@@ -719,6 +806,77 @@ public sealed partial class MainScreen : Form
                 break;
             }
 
+            case "shadows":
+            {
+                // Nearly overhead and tilted toward the camera, so a caster's shadow lands
+                // in front of it rather than behind it where it cannot be seen.
+                world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.3f, -1f, 0.35f) });
+
+                var ground = new Cube { Position = new Vector3(0, -4f, 0), Scale = new Vector3(26, 0.5f, 26) };
+                Array.Fill(ground.TriangleColors, new ColorRGB(190, 188, 182));
+                world.Meshes.Add(ground);
+
+                var pillar = new Cube { Position = new Vector3(-5.5f, -1.2f, -1f), Scale = new Vector3(1.4f, 5f, 1.4f) };
+                Array.Fill(pillar.TriangleColors, new ColorRGB(150, 120, 90));
+                world.Meshes.Add(pillar);
+
+                // Everything else floats well clear of the ground: a caster resting on the
+                // floor hides its own shadow under itself.
+                var beam = new Cube
+                {
+                    Position = new Vector3(1f, 3f, -1f),
+                    Scale = new Vector3(9f, 0.5f, 0.6f),
+                    Rotation = new Rotation3D(0, 0, 10).ToRad(),
+                };
+                Array.Fill(beam.TriangleColors, new ColorRGB(150, 120, 90));
+                world.Meshes.Add(beam);
+
+                var ball = new IcoSphere(3) { Position = new Vector3(2f, 0.2f, 3f), Scale = new Vector3(1.8f, 1.8f, 1.8f) };
+                Array.Fill(ball.TriangleColors, new ColorRGB(200, 70, 60));
+                world.Meshes.Add(ball);
+
+                var small = new IcoSphere(3) { Position = new Vector3(-2f, -0.8f, 1.5f) };
+                Array.Fill(small.TriangleColors, new ColorRGB(70, 150, 210));
+                world.Meshes.Add(small);
+
+                cameraPosition = new Vector3(0, 0, -24);
+                break;
+            }
+
+            case "normalmapping":
+            {
+                world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.4f, -0.35f, -1f) });
+
+                // The same albedo on both cubes, so the only difference on screen is the
+                // normal map — the point being that it costs no extra geometry.
+                var albedo = Texture.Checkerboard(256, 8, new ColorRGB(210, 205, 195), new ColorRGB(150, 145, 138));
+                var normals = NormalMapBuilder.FromHeight(Texture.Bumps(256, 8), 3f);
+
+                var bumpy = new TexturedCube
+                {
+                    Position = new Vector3(-1.2f, 0, 0),
+                    Scale = new Vector3(18, 18, 18),
+                    Rotation = new Rotation3D(20, 30, 0).ToRad(),
+                };
+                bumpy.Material.DiffuseMap = albedo;
+                bumpy.Material.NormalMap = normals;
+                bumpy.Material.SpecularStrength = 0.5f;
+                world.Meshes.Add(bumpy);
+
+                var flat = new TexturedCube
+                {
+                    Position = new Vector3(24f, 0, 0),
+                    Scale = new Vector3(18, 18, 18),
+                    Rotation = new Rotation3D(20, 30, 0).ToRad(),
+                };
+                flat.Material.DiffuseMap = albedo;
+                flat.Material.SpecularStrength = 0.5f;
+                world.Meshes.Add(flat);
+
+                cameraPosition = new Vector3(-11f, 0, -70);
+                break;
+            }
+
             case "spheres":
             {
                 int d = 5;
@@ -801,5 +959,4 @@ public sealed partial class MainScreen : Form
 
         return new WorldSetup(world, cameraPosition, projection);
     }
-
 }

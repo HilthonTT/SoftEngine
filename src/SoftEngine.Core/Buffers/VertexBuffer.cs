@@ -13,6 +13,7 @@ public sealed class VertexBuffer : IDisposable
     // both kinds through the Get* accessors without knowing which is which.
     private readonly List<Vertices> _clippedVertices = [];
     private readonly List<Vector2> _clippedTexCoords = [];
+    private readonly List<Vector4> _clippedTangents = [];
     private readonly List<(Triangle Triangle, int Source)> _clippedTriangles = [];
 
     public VertexBuffer(int vertexCount)
@@ -33,14 +34,16 @@ public sealed class VertexBuffer : IDisposable
     {
         _clippedVertices.Clear();
         _clippedTexCoords.Clear();
+        _clippedTangents.Clear();
         _clippedTriangles.Clear();
     }
 
     /// <summary>Adds a vertex produced by clipping; returns its index (≥ <see cref="Size"/>).</summary>
-    public int AddClippedVertex(in Vertices vertex, Vector2 texCoord)
+    public int AddClippedVertex(in Vertices vertex, Vector2 texCoord, Vector4 tangent = default)
     {
         _clippedVertices.Add(vertex);
         _clippedTexCoords.Add(texCoord);
+        _clippedTangents.Add(tangent);
         return Size + _clippedVertices.Count - 1;
     }
 
@@ -78,6 +81,15 @@ public sealed class VertexBuffer : IDisposable
         vertexIndex < Size
             ? Mesh?.TexCoords?[vertexIndex] ?? Vector2.Zero
             : _clippedTexCoords[vertexIndex - Size];
+
+    /// <summary>
+    /// The vertex's tangent frame in model space, or <see cref="Vector4.Zero"/> when the mesh
+    /// has none — normal mapping treats that as "use the interpolated normal as-is".
+    /// </summary>
+    public Vector4 GetTangent(int vertexIndex) =>
+        vertexIndex < Size
+            ? Mesh?.Tangents?[vertexIndex] ?? Vector4.Zero
+            : _clippedTangents[vertexIndex - Size];
 
     public void Dispose()
     {

@@ -31,6 +31,7 @@ public sealed partial class MainScreen
     private void InitializeComponent()
     {
         components = new System.ComponentModel.Container();
+        pnlSidebar = new Panel();
         tlpSidebar = new TableLayoutPanel();
         lblTitle = new Label();
         lblModelHeader = new Label();
@@ -43,6 +44,7 @@ public sealed partial class MainScreen
         chkShowXZGrid = new CheckBox();
         chkShowAxes = new CheckBox();
         chkFog = new CheckBox();
+        chkShadows = new CheckBox();
         chkGammaCorrect = new CheckBox();
         chkTextureFiltering = new CheckBox();
         lblShadingHeader = new Label();
@@ -53,6 +55,13 @@ public sealed partial class MainScreen
         rdbGouraudShading = new RadioButton();
         rdbPhongShading = new RadioButton();
         rdbTexturedShading = new RadioButton();
+        rdbMaterialShading = new RadioButton();
+        lblPostHeader = new Label();
+        flpPost = new FlowLayoutPanel();
+        chkBloom = new CheckBox();
+        chkToneMap = new CheckBox();
+        chkFxaa = new CheckBox();
+        chkVignette = new CheckBox();
         pnlViewport = new Panel();
         panel3D1 = new Panel3D();
         toolTip1 = new ToolTip(components);
@@ -92,9 +101,11 @@ public sealed partial class MainScreen
 
         tmrDebugRefresh = new System.Windows.Forms.Timer(components);
 
+        pnlSidebar.SuspendLayout();
         tlpSidebar.SuspendLayout();
         flpDisplay.SuspendLayout();
         flpShading.SuspendLayout();
+        flpPost.SuspendLayout();
         pnlViewport.SuspendLayout();
         menuStrip.SuspendLayout();
         statusStrip.SuspendLayout();
@@ -116,6 +127,14 @@ public sealed partial class MainScreen
         splitCenter.SuspendLayout();
         SuspendLayout();
         //
+        // pnlSidebar — scrolls the controls column when the split leaves it too little room
+        //
+        pnlSidebar.AutoScroll = true;
+        pnlSidebar.Controls.Add(tlpSidebar);
+        pnlSidebar.Dock = DockStyle.Fill;
+        pnlSidebar.Name = "pnlSidebar";
+        pnlSidebar.TabIndex = 0;
+        //
         // tlpSidebar
         //
         tlpSidebar.ColumnCount = 1;
@@ -128,11 +147,17 @@ public sealed partial class MainScreen
         tlpSidebar.Controls.Add(flpDisplay, 0, 5);
         tlpSidebar.Controls.Add(lblShadingHeader, 0, 6);
         tlpSidebar.Controls.Add(flpShading, 0, 7);
-        tlpSidebar.AutoScroll = true;
-        tlpSidebar.Dock = DockStyle.Fill;
+        tlpSidebar.Controls.Add(lblPostHeader, 0, 8);
+        tlpSidebar.Controls.Add(flpPost, 0, 9);
+        // Sized to its content and docked to the top of a scrolling panel. Filling the panel
+        // instead would let the table squeeze its own rows to fit whatever height it was
+        // given, so the content would never overflow and the scrollbar would never appear.
+        tlpSidebar.AutoSize = true;
+        tlpSidebar.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        tlpSidebar.Dock = DockStyle.Top;
         tlpSidebar.Name = "tlpSidebar";
         tlpSidebar.Padding = new Padding(16, 12, 16, 12);
-        tlpSidebar.RowCount = 9;
+        tlpSidebar.RowCount = 10;
         tlpSidebar.RowStyles.Add(new RowStyle());
         tlpSidebar.RowStyles.Add(new RowStyle());
         tlpSidebar.RowStyles.Add(new RowStyle());
@@ -141,7 +166,8 @@ public sealed partial class MainScreen
         tlpSidebar.RowStyles.Add(new RowStyle());
         tlpSidebar.RowStyles.Add(new RowStyle());
         tlpSidebar.RowStyles.Add(new RowStyle());
-        tlpSidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        tlpSidebar.RowStyles.Add(new RowStyle());
+        tlpSidebar.RowStyles.Add(new RowStyle());
         tlpSidebar.TabIndex = 0;
         //
         // lblTitle
@@ -196,6 +222,7 @@ public sealed partial class MainScreen
         flpDisplay.Controls.Add(chkShowXZGrid);
         flpDisplay.Controls.Add(chkShowAxes);
         flpDisplay.Controls.Add(chkFog);
+        flpDisplay.Controls.Add(chkShadows);
         flpDisplay.Controls.Add(chkGammaCorrect);
         flpDisplay.Controls.Add(chkTextureFiltering);
         flpDisplay.FlowDirection = FlowDirection.TopDown;
@@ -244,6 +271,15 @@ public sealed partial class MainScreen
         chkFog.UseVisualStyleBackColor = true;
         toolTip1.SetToolTip(chkFog, "Fade distant geometry into the background");
         //
+        // chkShadows
+        //
+        chkShadows.AutoSize = true;
+        chkShadows.Margin = new Padding(2, 2, 0, 2);
+        chkShadows.Name = "chkShadows";
+        chkShadows.Text = "Shadows";
+        chkShadows.UseVisualStyleBackColor = true;
+        toolTip1.SetToolTip(chkShadows, "Shadow-map the world from the first light (lit shading modes)");
+        //
         // chkGammaCorrect
         //
         chkGammaCorrect.AutoSize = true;
@@ -280,6 +316,7 @@ public sealed partial class MainScreen
         flpShading.Controls.Add(rdbGouraudShading);
         flpShading.Controls.Add(rdbPhongShading);
         flpShading.Controls.Add(rdbTexturedShading);
+        flpShading.Controls.Add(rdbMaterialShading);
         flpShading.FlowDirection = FlowDirection.TopDown;
         flpShading.Margin = new Padding(0);
         flpShading.Name = "flpShading";
@@ -338,6 +375,73 @@ public sealed partial class MainScreen
         rdbTexturedShading.TabStop = true;
         rdbTexturedShading.Text = "Textured";
         rdbTexturedShading.UseVisualStyleBackColor = true;
+        //
+        // rdbMaterialShading
+        //
+        rdbMaterialShading.AutoSize = true;
+        rdbMaterialShading.Margin = new Padding(2, 2, 0, 2);
+        rdbMaterialShading.Name = "rdbMaterialShading";
+        rdbMaterialShading.TabStop = true;
+        rdbMaterialShading.Text = "Material";
+        rdbMaterialShading.UseVisualStyleBackColor = true;
+        toolTip1.SetToolTip(rdbMaterialShading, "Per-pixel albedo, normal and specular maps");
+        //
+        // lblPostHeader
+        //
+        lblPostHeader.AutoSize = true;
+        lblPostHeader.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
+        lblPostHeader.Margin = new Padding(2, 10, 0, 6);
+        lblPostHeader.Name = "lblPostHeader";
+        lblPostHeader.Text = "POST-PROCESSING";
+        //
+        // flpPost
+        //
+        flpPost.AutoSize = true;
+        flpPost.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        flpPost.Controls.Add(chkBloom);
+        flpPost.Controls.Add(chkToneMap);
+        flpPost.Controls.Add(chkFxaa);
+        flpPost.Controls.Add(chkVignette);
+        flpPost.FlowDirection = FlowDirection.TopDown;
+        flpPost.Margin = new Padding(0);
+        flpPost.Name = "flpPost";
+        flpPost.WrapContents = false;
+        //
+        // chkBloom
+        //
+        chkBloom.AutoSize = true;
+        chkBloom.Margin = new Padding(2, 2, 0, 2);
+        chkBloom.Name = "chkBloom";
+        chkBloom.Text = "Bloom";
+        chkBloom.UseVisualStyleBackColor = true;
+        toolTip1.SetToolTip(chkBloom, "Bleed light out of the brightest parts of the image");
+        //
+        // chkToneMap
+        //
+        chkToneMap.AutoSize = true;
+        chkToneMap.Margin = new Padding(2, 2, 0, 2);
+        chkToneMap.Name = "chkToneMap";
+        chkToneMap.Text = "Tone map";
+        chkToneMap.UseVisualStyleBackColor = true;
+        toolTip1.SetToolTip(chkToneMap, "Exposure and an ACES filmic curve instead of a hard clip");
+        //
+        // chkFxaa
+        //
+        chkFxaa.AutoSize = true;
+        chkFxaa.Margin = new Padding(2, 2, 0, 2);
+        chkFxaa.Name = "chkFxaa";
+        chkFxaa.Text = "FXAA";
+        chkFxaa.UseVisualStyleBackColor = true;
+        toolTip1.SetToolTip(chkFxaa, "Smooth stair-stepped edges after rasterization");
+        //
+        // chkVignette
+        //
+        chkVignette.AutoSize = true;
+        chkVignette.Margin = new Padding(2, 2, 0, 2);
+        chkVignette.Name = "chkVignette";
+        chkVignette.Text = "Vignette";
+        chkVignette.UseVisualStyleBackColor = true;
+        toolTip1.SetToolTip(chkVignette, "Darken the frame toward its corners");
         //
         // pnlViewport
         //
@@ -560,7 +664,7 @@ public sealed partial class MainScreen
         splitLeft.Dock = DockStyle.Fill;
         splitLeft.Name = "splitLeft";
         splitLeft.Orientation = Orientation.Horizontal;
-        splitLeft.Panel1.Controls.Add(tlpSidebar);
+        splitLeft.Panel1.Controls.Add(pnlSidebar);
         splitLeft.Panel1MinSize = 160;
         splitLeft.Panel2.Controls.Add(pixelHistoryPanel);
         splitLeft.Panel2MinSize = 120;
@@ -601,10 +705,14 @@ public sealed partial class MainScreen
         Text = "SoftEngine";
         tlpSidebar.ResumeLayout(false);
         tlpSidebar.PerformLayout();
+        pnlSidebar.ResumeLayout(false);
+        pnlSidebar.PerformLayout();
         flpDisplay.ResumeLayout(false);
         flpDisplay.PerformLayout();
         flpShading.ResumeLayout(false);
         flpShading.PerformLayout();
+        flpPost.ResumeLayout(false);
+        flpPost.PerformLayout();
         pnlViewport.ResumeLayout(false);
         menuStrip.ResumeLayout(false);
         menuStrip.PerformLayout();
@@ -633,6 +741,7 @@ public sealed partial class MainScreen
 
     #endregion
 
+    private Panel pnlSidebar;
     private TableLayoutPanel tlpSidebar;
     private Label lblTitle;
     private Label lblModelHeader;
@@ -645,6 +754,7 @@ public sealed partial class MainScreen
     private CheckBox chkShowXZGrid;
     private CheckBox chkShowAxes;
     private CheckBox chkFog;
+    private CheckBox chkShadows;
     private CheckBox chkGammaCorrect;
     private CheckBox chkTextureFiltering;
     private Label lblShadingHeader;
@@ -655,6 +765,13 @@ public sealed partial class MainScreen
     private RadioButton rdbGouraudShading;
     private RadioButton rdbPhongShading;
     private RadioButton rdbTexturedShading;
+    private RadioButton rdbMaterialShading;
+    private Label lblPostHeader;
+    private FlowLayoutPanel flpPost;
+    private CheckBox chkBloom;
+    private CheckBox chkToneMap;
+    private CheckBox chkFxaa;
+    private CheckBox chkVignette;
     private Panel pnlViewport;
     private Panel3D panel3D1;
     private ToolTip toolTip1;

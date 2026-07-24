@@ -54,7 +54,7 @@ public sealed class PhongPainter(
             new PhongVarying(a.World, a.Norm),
             new PhongVarying(b.World, b.Norm),
             new PhongVarying(c.World, c.Norm),
-            new BlinnPhongShader(color, lightVector, isDirectional, Light.Intensity, _eye, Ambient, _specularStrength, _shininess, GammaCorrect),
+            new BlinnPhongShader(color, lightVector, isDirectional, Light.Intensity, _eye, Ambient, _specularStrength, _shininess, GammaCorrect, Shadows),
             StateFor(vertexBuffer.Mesh),
             slice);
     }

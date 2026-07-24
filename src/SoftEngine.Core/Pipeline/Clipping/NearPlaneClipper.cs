@@ -30,6 +30,7 @@ public static class NearPlaneClipper
         List<(int MeshIndex, int TriangleIndex)> visible)
     {
         var uvs = vbx.Mesh?.TexCoords;
+        var tangents = vbx.Mesh?.Tangents;
 
         Span<int> input = [triangle.I0, triangle.I1, triangle.I2];
 
@@ -58,7 +59,12 @@ public static class NearPlaneClipper
                 var vertex = Vertices.Lerp(vbx.Vertices[current], vbx.Vertices[next], t);
                 var uv = uvs is null ? Vector2.Zero : Vector2.Lerp(uvs[current], uvs[next], t);
 
-                output[outputCount++] = vbx.AddClippedVertex(vertex, uv);
+                // The handedness in W is ±1 on both ends of an edge except across a mirrored
+                // UV seam; lerping it there lands between the two, which the shader reads as
+                // whichever side it is closer to — the same choice a hard pick would make.
+                var tangent = tangents is null ? Vector4.Zero : Vector4.Lerp(tangents[current], tangents[next], t);
+
+                output[outputCount++] = vbx.AddClippedVertex(vertex, uv, tangent);
             }
         }
 

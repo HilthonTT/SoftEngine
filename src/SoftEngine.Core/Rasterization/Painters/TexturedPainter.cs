@@ -71,11 +71,9 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
         var uv1 = vertexBuffer.GetTexCoord(t.I1);
         var uv2 = vertexBuffer.GetTexCoord(t.I2);
 
-        var mipLevel = 0;
-        if (UseMipMaps && texture.MipCount > 1)
-        {
-            mipLevel = SelectMipLevel(texture, p0, p1, p2, uv0, uv1, uv2);
-        }
+        var mipLevel = UseMipMaps
+            ? MipSelector.Select(texture, p0, p1, p2, uv0, uv1, uv2)
+            : 0;
 
         ScanlineRasterizer.Fill(
             surface,
@@ -87,34 +85,5 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
             new TexturedShader(texture, mipLevel, Filtering, GammaCorrect),
             StateFor(mesh),
             slice);
-    }
-
-    /// <summary>
-    /// One mip level per triangle, from the ratio of its texel footprint to its screen
-    /// area: level 0 when a texel maps to a pixel or more, one level up for every 4×
-    /// more texels than pixels. Cruder than per-pixel derivatives, but a triangle is a
-    /// small enough unit in practice — and it keeps the per-pixel path branch-free.
-    /// </summary>
-    private static int SelectMipLevel(
-        Texture texture,
-        in System.Numerics.Vector3 p0, in System.Numerics.Vector3 p1, in System.Numerics.Vector3 p2,
-        in System.Numerics.Vector2 uv0, in System.Numerics.Vector2 uv1, in System.Numerics.Vector2 uv2)
-    {
-        var screenArea = MathF.Abs(ScanlineRasterizer.Cross2D(p0, p1, p2)) * 0.5f;
-        if (screenArea <= 0f)
-        {
-            return 0;
-        }
-
-        var texelArea = MathF.Abs(
-            (uv1.X - uv0.X) * (uv2.Y - uv0.Y) - (uv1.Y - uv0.Y) * (uv2.X - uv0.X))
-            * 0.5f * texture.Width * texture.Height;
-        if (texelArea <= 0f)
-        {
-            return 0;
-        }
-
-        var level = (int)(0.5f * MathF.Log2(texelArea / screenArea) + 0.5f);
-        return System.Math.Clamp(level, 0, texture.MipCount - 1);
     }
 }

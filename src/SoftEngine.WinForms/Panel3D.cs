@@ -1,6 +1,7 @@
 using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Pipeline;
+using SoftEngine.Core.Pipeline.PostProcess;
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
@@ -50,6 +51,10 @@ public partial class Panel3D : UserControl
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public IPainter? Painter { get; set; }
 
+    /// <summary>The full-screen effects applied after every frame; toggled individually.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public PostProcessStack PostProcess { get; }
+
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public IRenderer Renderer { get; set; }
 
@@ -72,6 +77,11 @@ public partial class Panel3D : UserControl
         InitializeComponent();
 
         Renderer = new Renderer { Settings = new RendererSettings { BackFaceCulling = true } };
+
+        // Created up front and left empty of enabled effects, so the front-end can toggle
+        // one on without having to rebuild the chain.
+        PostProcess = PostProcessStack.CreateDefault();
+        Renderer.PostProcess = PostProcess;
 
         Stats = Renderer.Stats;
         Painter = new GouraudPainter();

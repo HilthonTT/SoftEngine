@@ -1,3 +1,4 @@
+using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using System.Numerics;
 
@@ -117,5 +118,133 @@ public class ObjImporterTests : IDisposable
 
         Assert.Equal(meshes[0].Vertices.Length, meshes[0].NormVertices.Length);
         Assert.All(meshes[0].NormVertices, n => Assert.True(n.Length() > 0.99f));
+    }
+
+    /// <summary>Writes a material library next to the model and returns an OBJ that uses it.</summary>
+    private string WriteMaterialModel(string materialLibrary)
+    {
+        File.WriteAllText(Path.Combine(_directory, "model.mtl"), materialLibrary);
+
+        return WriteObj("""
+            mtllib model.mtl
+            usemtl surface
+            v 0 0 0
+            v 1 0 0
+            v 0 1 0
+            vt 0 0
+            vt 1 0
+            vt 0 1
+            f 1/1 2/2 3/3
+            """);
+    }
+
+    [Fact]
+    public void ImportObj_MaterialHighlight_IsCarriedOntoTheMesh()
+    {
+        var path = WriteMaterialModel("""
+            newmtl surface
+            Kd 1 0 0
+            Ks 1 1 1
+            Ns 64
+            """);
+
+        var mesh = Assert.Single(ObjImporter.ImportObj(path));
+
+        Assert.NotNull(mesh.Material);
+        Assert.Equal(64f, mesh.Material.Shininess);
+        Assert.Equal(1f, mesh.Material.SpecularStrength, 3);
+        Assert.Equal(255, mesh.Material.Diffuse.R);
+    }
+
+    [Fact]
+    public void ImportObj_MaterialOpacity_MakesTheMeshTransparent()
+    {
+        var path = WriteMaterialModel("""
+            newmtl surface
+            d 0.25
+            """);
+
+        Assert.Equal(0.25f, Assert.Single(ObjImporter.ImportObj(path)).Opacity, 3);
+    }
+
+    [Fact]
+    public void ImportObj_TrIsTheInverseOfD()
+    {
+        var path = WriteMaterialModel("""
+            newmtl surface
+            Tr 0.25
+            """);
+
+        Assert.Equal(0.75f, Assert.Single(ObjImporter.ImportObj(path)).Opacity, 3);
+    }
+
+    [Theory]
+    [InlineData("map_Bump")]
+    [InlineData("map_bump")]
+    [InlineData("bump")]
+    [InlineData("norm")]
+    public void ImportObj_NormalMap_IsRecognizedUnderEverySpelling(string keyword)
+    {
+        var path = WriteMaterialModel($"""
+            newmtl surface
+            {keyword} surface_normal.png
+            """);
+
+        var loaded = new List<string>();
+
+        var mesh = Assert.Single(ObjImporter.ImportObj(path, null, file =>
+        {
+            loaded.Add(Path.GetFileName(file));
+            return Texture.Checkerboard(4, 2, ColorRGB.White, ColorRGB.Gray);
+        }));
+
+        Assert.Equal(["surface_normal.png"], loaded);
+        Assert.NotNull(mesh.Material?.NormalMap);
+    }
+
+    [Fact]
+    public void ImportObj_EveryMapKind_IsLoadedOnce()
+    {
+        var path = WriteMaterialModel("""
+            newmtl surface
+            map_Kd albedo.png
+            map_Bump normal.png
+            map_Ks gloss.png
+            """);
+
+        var loaded = new List<string>();
+
+        var mesh = Assert.Single(ObjImporter.ImportObj(path, null, file =>
+        {
+            loaded.Add(Path.GetFileName(file));
+            return Texture.Checkerboard(4, 2, ColorRGB.White, ColorRGB.Gray);
+        }));
+
+        Assert.Equal(3, loaded.Count);
+        Assert.NotNull(mesh.Material?.DiffuseMap);
+        Assert.NotNull(mesh.Material.NormalMap);
+        Assert.NotNull(mesh.Material.SpecularMap);
+
+        // Texture and Material.DiffuseMap are the same slot under two names.
+        Assert.Same(mesh.Material.DiffuseMap, mesh.Texture);
+    }
+
+    [Fact]
+    public void ImportObj_TextureOptionsBeforeTheFilename_AreIgnored()
+    {
+        var path = WriteMaterialModel("""
+            newmtl surface
+            map_Bump -bm 0.5 normal.png
+            """);
+
+        var loaded = new List<string>();
+
+        ObjImporter.ImportObj(path, null, file =>
+        {
+            loaded.Add(Path.GetFileName(file));
+            return null;
+        });
+
+        Assert.Equal(["normal.png"], loaded);
     }
 }

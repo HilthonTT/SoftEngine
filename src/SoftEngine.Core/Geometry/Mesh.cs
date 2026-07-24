@@ -50,7 +50,31 @@ public class Mesh : IMesh
 
     public Vector2[]? TexCoords { get; set; }
 
-    public Texture? Texture { get; set; }
+    /// <summary>
+    /// This mesh's surface parameters. Always present, so callers can set a normal map or a
+    /// shininess without allocating one first; a mesh that never touches it renders exactly
+    /// as it did before materials existed.
+    /// </summary>
+    public Material Material { get; set; } = new();
+
+    /// <summary>The albedo map — the material's <see cref="Geometry.Material.DiffuseMap"/> under its older name.</summary>
+    public Texture? Texture
+    {
+        get => Material.DiffuseMap;
+        set => Material.DiffuseMap = value;
+    }
+
+    public Vector4[]? Tangents { get; set; }
 
     public float BoundingRadius { get; }
+
+    public void EnsureTangents()
+    {
+        if (Tangents is not null || TexCoords is null)
+        {
+            return;
+        }
+
+        Tangents = TangentBuilder.Build(Vertices, NormVertices, TexCoords, Triangles);
+    }
 }
