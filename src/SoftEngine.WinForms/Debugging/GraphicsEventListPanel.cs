@@ -59,7 +59,7 @@ internal sealed class GraphicsEventListPanel : UserControl
 
         if (_events.Length < source.Length)
         {
-            _events = new GraphicsEvent[System.Math.Max(source.Length, 256)];
+            _events = new GraphicsEvent[Math.Max(source.Length, 256)];
         }
 
         source.CopyTo(_events);

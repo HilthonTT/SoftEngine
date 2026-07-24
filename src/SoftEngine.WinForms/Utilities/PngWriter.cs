@@ -22,13 +22,13 @@ internal static class PngWriter
     /// <param name="height">Image height in pixels.</param>
     public static void Save(string path, ReadOnlySpan<uint> pixels, int width, int height)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path, nameof(path));
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width, nameof(width));
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height, nameof(height));
         if (pixels.Length < width * height)
         {
             throw new ArgumentException($"Need {width * height} pixels; got {pixels.Length}.", nameof(pixels));
         }
-
 
         // Filtered scanlines: PNG prefixes every row with a filter-type byte (0 = None), followed by
         // the row's RGBA bytes. Row 0 is the top, which matches our framebuffer's row order.

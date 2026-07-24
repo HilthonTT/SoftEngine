@@ -258,7 +258,7 @@ public partial class Panel3D : UserControl
     {
         base.OnMouseMove(e);
 
-        if (System.Math.Abs(e.X - _mouseDownAt.X) > 3 || System.Math.Abs(e.Y - _mouseDownAt.Y) > 3)
+        if (Math.Abs(e.X - _mouseDownAt.X) > 3 || Math.Abs(e.Y - _mouseDownAt.Y) > 3)
         {
             _mouseDragged = true;
         }
@@ -363,6 +363,11 @@ public partial class Panel3D : UserControl
     public bool SaveScreenshot(string path)
     {
         if (Scene?.Surface is not { } surface || surface.Width <= 0 || surface.Height <= 0)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(path))
         {
             return false;
         }
