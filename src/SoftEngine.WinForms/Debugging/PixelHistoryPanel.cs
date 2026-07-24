@@ -275,12 +275,15 @@ internal sealed class PixelHistoryPanel : UserControl
             return;
         }
 
+        // The swatch forces alpha to 255 so the colour is visible; the text reports the
+        // channels actually stored in the render target, including the true alpha.
+        var actual = Color.FromArgb(_history.FinalColor);
         var lines = new[]
         {
-            $"R: {Channel(color.R)}",
-            $"G: {Channel(color.G)}",
-            $"B: {Channel(color.B)}",
-            $"A: {Channel(color.A)}",
+            $"R: {Channel(actual.R)}",
+            $"G: {Channel(actual.G)}",
+            $"B: {Channel(actual.B)}",
+            $"A: {Channel(actual.A)}",
         };
 
         var font = new Font("Consolas", 8.25f);

@@ -131,15 +131,14 @@ public sealed partial class SliderIn : Control
                     g.DrawLine(Pens.DarkGray, new PointF(x, 0), new PointF(x, 3));
                 }
 
-                for (float i = Min; i <= Max; i += NumberEvery)
+                using (var format = new StringFormat { Alignment = StringAlignment.Center })
                 {
-                    var label = $"{i}";
-                    var x = Transform(i);
-                    var format = new StringFormat
+                    for (float i = Min; i <= Max; i += NumberEvery)
                     {
-                        Alignment = StringAlignment.Center,
-                    };
-                    g.DrawString(label, f, Brushes.Gray, x, 12, format);
+                        var label = $"{i}";
+                        var x = Transform(i);
+                        g.DrawString(label, f, Brushes.Gray, x, 12, format);
+                    }
                 }
                 DrawIndexH(Transform(Value), g);
                 break;
@@ -151,16 +150,18 @@ public sealed partial class SliderIn : Control
                     g.DrawLine(Pens.DarkGray, new PointF(0, y), new PointF(5, y));
                 }
 
-                for (float i = Min; i <= Max; i += NumberEvery)
+                using (var format = new StringFormat
                 {
-                    var label = $"{i}";
-                    var y = Transform(i);
-                    var format = new StringFormat 
+                    Alignment = StringAlignment.Center,
+                    LineAlignment = StringAlignment.Center
+                })
+                {
+                    for (float i = Min; i <= Max; i += NumberEvery)
                     {
-                        Alignment = StringAlignment.Center, 
-                        LineAlignment = StringAlignment.Center 
-                    };
-                    g.DrawString(label, f, Brushes.Gray, 12, y - 1, format);
+                        var label = $"{i}";
+                        var y = Transform(i);
+                        g.DrawString(label, f, Brushes.Gray, 12, y - 1, format);
+                    }
                 }
 
                 DrawIndexV(Transform(Value), g);

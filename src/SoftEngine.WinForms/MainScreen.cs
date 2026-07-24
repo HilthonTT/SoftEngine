@@ -473,6 +473,13 @@ public sealed partial class MainScreen : Form
         return new PerspectiveProjection(40f * (float)Math.PI / 180f, .01f, far);
     }
 
+    /// <summary>
+    /// Bundled models are copied next to the executable, so resolve them from the install
+    /// directory — the process working directory is whatever the app was launched from.
+    /// </summary>
+    private static string ModelPath(string fileName) =>
+        Path.Combine(AppContext.BaseDirectory, "Models", fileName);
+
     private static WorldSetup BuildWorld(string id, IProgress<float>? progress)
     {
         var world = new SimpleWorld();
@@ -482,29 +489,29 @@ public sealed partial class MainScreen : Form
         switch (id)
         {
             case "skull":
-                world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\skull.dae", progress));
+                world.Meshes.AddRange(MeshFactory.HackyImportCollada(ModelPath("skull.dae"), progress));
                 cameraPosition = new Vector3(0, 0, -5);
                 break;
 
             case "parrot":
-                world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\parrot.dae", progress));
+                world.Meshes.AddRange(MeshFactory.HackyImportCollada(ModelPath("parrot.dae"), progress));
                 cameraPosition = new Vector3(0, 0, -500);
                 world.Lights.Add(new PointLight { Position = new Vector3(150, 200, 400) });
                 break;
 
             case "teapot":
-                world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\teapot.dae", progress));
+                world.Meshes.AddRange(MeshFactory.HackyImportCollada(ModelPath("teapot.dae"), progress));
                 break;
 
             case "elefant":
-                world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\elefant.dae", progress));
+                world.Meshes.AddRange(MeshFactory.HackyImportCollada(ModelPath("elefant.dae"), progress));
                 cameraPosition = new Vector3(0, 0, -1500);
                 projection = new PerspectiveProjection(40f * (float)Math.PI / 180f, .01f, 65535f);
                 world.Lights.Add(new PointLight { Position = new Vector3(500, 800, 1200) });
                 break;
 
             case "Juliet":
-                world.Meshes.AddRange(MeshFactory.HackyImportCollada(@"models\Juliet.dae", progress));
+                world.Meshes.AddRange(MeshFactory.HackyImportCollada(ModelPath("Juliet.dae"), progress));
                 cameraPosition = new Vector3(0, 0, -500);
                 world.Lights.Add(new PointLight { Position = new Vector3(150, 200, 400) });
                 break;

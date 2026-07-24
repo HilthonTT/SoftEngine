@@ -39,7 +39,7 @@ public interface IMesh
     float BoundingRadius => float.PositiveInfinity;
 
     public Matrix4x4 WorldMatrix =>
+          Matrix4x4.CreateScale(Scale) *
           Matrix4x4.CreateFromYawPitchRoll(Rotation.YYaw, Rotation.XPitch, Rotation.ZRoll) *
-          Matrix4x4.CreateTranslation(Position) *
-          Matrix4x4.CreateScale(Scale);
+          Matrix4x4.CreateTranslation(Position);
 }
