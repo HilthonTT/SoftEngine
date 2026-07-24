@@ -2,6 +2,7 @@ using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Scenes;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 
 namespace SoftEngine.WinForms.Debugging;
@@ -41,7 +42,7 @@ internal sealed class SceneObjectCatalog
             return string.Empty;
         }
 
-        var row = Find(id);
+        SceneObjectRow? row = Find(id);
         return row is null ? $"obj:{id}" : $"obj:{id} ({row.Type})";
     }
 
@@ -141,7 +142,7 @@ internal sealed class SceneObjectCatalog
                $"{(meshes.Count > 0 ? meshes[^1].Vertices.Length : 0)}";
     }
 
-    private static string Format(System.Numerics.Vector3? position) =>
+    private static string Format(Vector3? position) =>
         position is { } p ? $"({p.X:0.##}, {p.Y:0.##}, {p.Z:0.##})" : string.Empty;
 
     private static long MeshBytes(IMesh mesh)

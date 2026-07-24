@@ -67,6 +67,14 @@ public sealed class FrameBuffer(int width, int height)
     public int GetDepth(int x, int y) => _zBuffer[x + y * Width];
 
     /// <summary>
+    /// Whether the incoming depth would pass the depth test at (x, y). Lets the
+    /// rasterizer reject occluded pixels before paying for interpolation and shading;
+    /// <see cref="PutPixel"/> re-runs the test, so passing here is a hint, not a claim.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool DepthTest(int x, int y, int z) => z <= _zBuffer[x + y * Width];
+
+    /// <summary>
     /// Depth-tests and writes one pixel. Returns true when the pixel was drawn, false
     /// when it was behind the z-buffer — callers batch these into stats themselves, so
     /// parallel rasterization doesn't contend on shared counters per pixel.
@@ -113,6 +121,9 @@ public sealed class FrameBuffer(int width, int height)
 
     private int _probeIndex = -1;
     private PixelHistory? _probeHistory;
+
+    /// <summary>Whether a pixel probe is recording this frame (see <see cref="BeginProbe"/>).</summary>
+    public bool IsProbing => _probeIndex >= 0;
 
     /// <summary>Starts recording every write attempt at <see cref="PixelHistory.X"/>, <see cref="PixelHistory.Y"/>.</summary>
     public void BeginProbe(PixelHistory history)

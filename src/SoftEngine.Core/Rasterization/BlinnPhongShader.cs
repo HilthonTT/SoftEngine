@@ -27,6 +27,11 @@ public readonly struct BlinnPhongShader(
     private readonly float _specularStrength = specularStrength;
     private readonly float _shininess = shininess;
 
+    // Shininess is almost always a small whole number (32 by default); exponentiation
+    // by squaring is then a handful of multiplies instead of a MathF.Pow per lit pixel.
+    private readonly int _shininessInt =
+        shininess > 0 && shininess <= 1024 && shininess == MathF.Floor(shininess) ? (int)shininess : 0;
+
     public ColorRGB Shade(in PhongVarying v)
     {
         var n = Vector3.Normalize(v.Normal);
@@ -41,12 +46,28 @@ public readonly struct BlinnPhongShader(
         {
             var view = Vector3.Normalize(_eye - v.World);
             var half = Vector3.Normalize(l + view);
-            var spec = MathF.Pow(MathF.Max(0, Vector3.Dot(n, half)), _shininess)
+            var nDotH = MathF.Max(0, Vector3.Dot(n, half));
+            var spec = (_shininessInt > 0 ? PowInt(nDotH, _shininessInt) : MathF.Pow(nDotH, _shininess))
                 * _specularStrength * _lightIntensity;
 
             shaded += spec * ColorRGB.White;
         }
 
         return shaded;
+    }
+
+    private static float PowInt(float x, int n)
+    {
+        var result = 1f;
+        while (n > 0)
+        {
+            if ((n & 1) != 0)
+            {
+                result *= x;
+            }
+            x *= x;
+            n >>= 1;
+        }
+        return result;
     }
 }

@@ -362,7 +362,7 @@ public sealed partial class MainScreen : Form
         statusStrip.BackColor = Theme.Surface;
         statusStrip.ForeColor = Theme.TextSecondary;
 
-        foreach (var split in new[] { splitMain, splitLeft, splitRight, splitCenter })
+        foreach (SplitContainer split in new[] { splitMain, splitLeft, splitRight, splitCenter })
         {
             split.BackColor = Theme.Background;
             split.Panel1.BackColor = Theme.Background;
@@ -379,7 +379,7 @@ public sealed partial class MainScreen : Form
     private Task PrepareWorldAsync(string id)
     {
         _currentDemoId = id;
-        var label = Demos.FirstOrDefault(demo => demo.Id == id)?.Display ?? id;
+        string label = Demos.FirstOrDefault(demo => demo.Id == id)?.Display ?? id;
 
         return PrepareWorldCoreAsync(progress => BuildWorld(id, progress), label);
     }
@@ -522,7 +522,8 @@ public sealed partial class MainScreen : Form
             case "town":
             {
                 world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.6f, -1f, -0.8f) });
-                var d = 50; var s = 2;
+                var d = 50;
+                var s = 2;
                 for (var x = -d; x <= d; x += s)
                 {
                     for (var z = -d; z <= d; z += s)
@@ -541,7 +542,8 @@ public sealed partial class MainScreen : Form
             case "littletown":
             {
                 world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.6f, -1f, -0.8f) });
-                var d = 10; var s = 2;
+                var d = 10; 
+                var s = 2;
                 for (var x = -d; x <= d; x += s)
                 {
                     for (var z = -d; z <= d; z += s)
@@ -560,7 +562,8 @@ public sealed partial class MainScreen : Form
             case "bigtown":
             {
                 world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.6f, -1f, -0.8f) });
-                var d = 200; var s = 2;
+                var d = 200; 
+                var s = 2;
                 for (var x = -d; x <= d; x += s)
                 {
                     for (var z = -d; z <= d; z += s)
@@ -616,7 +619,9 @@ public sealed partial class MainScreen : Form
 
             case "cubes":
             {
-                var d = 20; var s = 2; var r = new Random();
+                var d = 20; 
+                var s = 2; 
+                var r = new Random();
                 for (int x = -d; x <= d; x += s)
                 {
                     for (int y = -d; y <= d; y += s)

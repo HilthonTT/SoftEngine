@@ -274,7 +274,11 @@ public sealed class Renderer : IRenderer
 
                 if (drawEvents is not null)
                 {
-                    FrameBuffer.SetProbeContext(wireFrameEvent, PixelWriteSource.WireFrame, meshIdBase + meshIndex, vbx.SourceTriangleIndex(triangleIndex), vbx);
+                    FrameBuffer.SetProbeContext(
+                        wireFrameEvent, 
+                        PixelWriteSource.WireFrame, 
+                        meshIdBase + meshIndex, vbx.SourceTriangleIndex(triangleIndex), 
+                        vbx);
                 }
 
                 _internalWireFramePainter.DrawTriangle(surface, ColorRGB.Magenta, vbx, triangleIndex, RowSlice.Full);

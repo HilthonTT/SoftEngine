@@ -59,18 +59,18 @@ public static class ScanlineRasterizer
             (p0, p1) = (p1, p0); (v0, v1) = (v1, v0); (invW0, invW1) = (invW1, invW0);
         }
 
+        var yStart = System.Math.Max(FirstCenterAtOrAfter(p0.Y), 0);
+        var yEnd = System.Math.Min(FirstCenterAtOrAfter(p2.Y), surface.Height); // exclusive
+
+        if (yStart >= yEnd || slice.FirstOwnedRowAtOrAfter(yStart) >= yEnd)
+        {
+            return;
+        }
+
         // Pre-divide the varyings by w; in this form they interpolate linearly in screen space.
         v0 = TVarying.Scale(v0, invW0);
         v1 = TVarying.Scale(v1, invW1);
         v2 = TVarying.Scale(v2, invW2);
-
-        var yStart = System.Math.Max(FirstCenterAtOrAfter(p0.Y), 0);
-        var yEnd = System.Math.Min(FirstCenterAtOrAfter(p2.Y), surface.Height); // exclusive
-
-        if (yStart >= yEnd)
-        {
-            return;
-        }
 
         var yMiddle = System.Math.Clamp(FirstCenterAtOrAfter(p1.Y), yStart, yEnd);
 
@@ -167,15 +167,29 @@ public static class ScanlineRasterizer
         var drawn = 0;
         var behindZ = 0;
 
+        // While probing, every rejected write must still be shaded so the pixel history
+        // can show the colour the depth test discarded; otherwise pixels that fail the
+        // depth test skip interpolation and shading entirely.
+        var probing = surface.IsProbing;
+
         for (var x = xStart; x < xEnd; x++)
         {
+            var depth = (int)z;
+            z += dz;
+
+            if (!probing && !surface.DepthTest(x, y, depth))
+            {
+                behindZ++;
+                continue;
+            }
+
             var t = (x + 0.5f - sx) * invSpan;
 
             // Recover the perspective-correct varying: (varying/w) / (1/w).
             var oneOverW = float.Lerp(sw, ew, t);
             var varying = TVarying.Scale(TVarying.Lerp(sv, ev, t), 1f / oneOverW);
 
-            if (surface.PutPixel(x, y, (int)z, shader.Shade(varying)))
+            if (surface.PutPixel(x, y, depth, shader.Shade(varying)))
             {
                 drawn++;
             }
@@ -183,7 +197,6 @@ public static class ScanlineRasterizer
             {
                 behindZ++;
             }
-            z += dz;
         }
 
         surface.Stats?.AddPixelCounts(drawn, behindZ);
