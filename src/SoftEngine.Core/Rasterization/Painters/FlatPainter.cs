@@ -1,6 +1,7 @@
 using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Scenes.Lights;
+using SoftEngine.Core.Shading;
 
 namespace SoftEngine.Core.Rasterization.Painters;
 
@@ -19,7 +20,8 @@ public sealed class FlatPainter(ILight? light = null, float ambient = 0.12f) : L
         var normal = (a.Norm + b.Norm + c.Norm) / 3f;
         var centroid = (a.World + b.World + c.World) / 3f;
 
-        var lit = LitIntensity(centroid, normal) * color;
+        var intensity = LitIntensity(centroid, normal);
+        var lit = GammaCorrect ? ColorSpace.ScaleLinear(color, intensity) : intensity * color;
 
         ScanlineRasterizer.Fill(
             surface,
@@ -27,6 +29,7 @@ public sealed class FlatPainter(ILight? light = null, float ambient = 0.12f) : L
             1f / a.Proj.W, 1f / b.Proj.W, 1f / c.Proj.W,
             default(EmptyVarying), default, default,
             new SolidColorShader(lit),
+            StateFor(vertexBuffer.Mesh),
             slice);
     }
 }

@@ -26,6 +26,13 @@ public interface IMesh
     /// </summary>
     bool Visible => true;
 
+    /// <summary>
+    /// 1 is fully opaque; anything below routes the mesh through the renderer's
+    /// sorted back-to-front transparent pass, alpha-blended over what's behind it.
+    /// 0 skips the mesh entirely.
+    /// </summary>
+    float Opacity => 1f;
+
     /// <summary>Per-vertex texture coordinates, aligned with <see cref="Vertices"/>; null when the mesh is untextured.</summary>
     Vector2[]? TexCoords => null;
 

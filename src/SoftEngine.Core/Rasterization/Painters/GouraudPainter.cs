@@ -23,7 +23,8 @@ public sealed class GouraudPainter(ILight? light = null, float ambient = 0.12f) 
             new IntensityVarying(LitIntensity(a.World, a.Norm)),
             new IntensityVarying(LitIntensity(b.World, b.Norm)),
             new IntensityVarying(LitIntensity(c.World, c.Norm)),
-            new LambertShader(color),
+            new LambertShader(color, GammaCorrect),
+            StateFor(vertexBuffer.Mesh),
             slice);
     }
 }

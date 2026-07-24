@@ -46,6 +46,8 @@ public class Mesh : IMesh
 
     public bool Visible { get; set; } = true;
 
+    public float Opacity { get; set; } = 1f;
+
     public Vector2[]? TexCoords { get; set; }
 
     public Texture? Texture { get; set; }

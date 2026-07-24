@@ -1,4 +1,5 @@
-﻿using SoftEngine.Core.Geometry;
+﻿using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Math;
 using SoftEngine.Core.Rasterization.Painters;
@@ -32,6 +33,7 @@ public sealed partial class MainScreen : Form
         new("Cube", "cube"),
         new("Big cube", "bigcube"),
         new("Textured cube", "texturedcube"),
+        new("Transparency", "transparency"),
         new("Empty", "empty"),
     ];
 
@@ -136,7 +138,7 @@ public sealed partial class MainScreen : Form
             {
                 return;
             }
-            panel3D1.Painter = new TexturedPainter();
+            panel3D1.Painter = CreateTexturedPainter();
             panel3D1.Invalidate();
         };
 
@@ -153,7 +155,29 @@ public sealed partial class MainScreen : Form
         panel3D1.Scene = new Scene()
         {
             Projection = new PerspectiveProjection(40f * (float)Math.PI / 180f, .01f, 500f),
-            Camera = new ArcBallCamera(panel3D1) { Position = new Vector3(0, 0, -60) }
+            Camera = new ArcBallCamera(panel3D1) { Position = new Vector3(0, 0, -60) },
+            GammaCorrect = true,
+        };
+
+        chkGammaCorrect.Checked = panel3D1.Scene.GammaCorrect;
+        chkTextureFiltering.Checked = true;
+
+        chkFog.CheckedChanged += (s, e) => ApplyFog();
+        chkGammaCorrect.CheckedChanged += (s, e) =>
+        {
+            if (panel3D1.Scene is { } scene)
+            {
+                scene.GammaCorrect = chkGammaCorrect.Checked;
+                panel3D1.Invalidate();
+            }
+        };
+        chkTextureFiltering.CheckedChanged += (s, e) =>
+        {
+            if (panel3D1.Painter is TexturedPainter textured)
+            {
+                ApplyTextureFiltering(textured);
+                panel3D1.Invalidate();
+            }
         };
 
         InitializeDebugger();
@@ -358,6 +382,46 @@ public sealed partial class MainScreen : Form
         }
     }
 
+    /// <summary>A textured painter configured from the "Texture filtering" checkbox.</summary>
+    private TexturedPainter CreateTexturedPainter()
+    {
+        var painter = new TexturedPainter();
+        ApplyTextureFiltering(painter);
+        return painter;
+    }
+
+    private void ApplyTextureFiltering(TexturedPainter painter)
+    {
+        painter.Filtering = chkTextureFiltering.Checked ? TextureFiltering.Bilinear : TextureFiltering.Nearest;
+        painter.UseMipMaps = chkTextureFiltering.Checked;
+    }
+
+    /// <summary>
+    /// Turns the scene's fog on or off, scaled to the distance the current world is
+    /// framed from and fading into the viewport background colour.
+    /// </summary>
+    private void ApplyFog()
+    {
+        if (panel3D1.Scene is not { } scene)
+        {
+            return;
+        }
+
+        var fog = scene.Fog;
+        fog.Enabled = chkFog.Checked;
+
+        if (fog.Enabled)
+        {
+            var distance = panel3D1.ReferenceDistance;
+            fog.Mode = FogMode.Linear;
+            fog.Start = distance * 0.5f;
+            fog.End = distance * 4f;
+            fog.Color = new ColorRGB(Theme.Viewport.R, Theme.Viewport.G, Theme.Viewport.B);
+        }
+
+        panel3D1.Invalidate();
+    }
+
     private void ApplyTheme()
     {
         BackColor = Theme.Background;
@@ -452,6 +516,9 @@ public sealed partial class MainScreen : Form
 
             // The distance a world is framed from is what the zoom readout calls 100%.
             panel3D1.ReferenceDistance = setup.CameraPosition.Length();
+
+            // Fog distances are relative to the world's framing, which just changed.
+            ApplyFog();
 
             // Every load sets a projection: either the demo's own, or one whose far plane
             // is derived from the world's extent — a far plane closer than the world's
@@ -627,6 +694,30 @@ public sealed partial class MainScreen : Form
                 });
                 world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.35f, -0.5f, -1f) });
                 break;
+
+            case "transparency":
+            {
+                world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.4f, -0.7f, -1f) });
+
+                var floor = new Cube { Position = new Vector3(0, -3.5f, 0), Scale = new Vector3(14, 0.5f, 14) };
+                Array.Fill(floor.TriangleColors, ColorRGB.Gray);
+                world.Meshes.Add(floor);
+
+                var solid = new IcoSphere(2) { Position = new Vector3(0, 0, 2.5f), Scale = new Vector3(1.5f, 1.5f, 1.5f) };
+                Array.Fill(solid.TriangleColors, new ColorRGB(220, 60, 50));
+                world.Meshes.Add(solid);
+
+                var glass = new IcoSphere(2) { Position = new Vector3(-1.8f, 0, 0), Scale = new Vector3(2, 2, 2), Opacity = 0.55f };
+                Array.Fill(glass.TriangleColors, new ColorRGB(70, 200, 120));
+                world.Meshes.Add(glass);
+
+                var mist = new IcoSphere(2) { Position = new Vector3(1.8f, 0, -1f), Scale = new Vector3(2, 2, 2), Opacity = 0.35f };
+                Array.Fill(mist.TriangleColors, new ColorRGB(80, 140, 255));
+                world.Meshes.Add(mist);
+
+                cameraPosition = new Vector3(0, 0, -12);
+                break;
+            }
 
             case "spheres":
             {

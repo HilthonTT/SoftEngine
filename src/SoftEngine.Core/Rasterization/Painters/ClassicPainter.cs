@@ -1,11 +1,16 @@
 using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
+using SoftEngine.Core.Scenes;
 
 namespace SoftEngine.Core.Rasterization.Painters;
 
 public sealed class ClassicPainter : IPainter
 {
+    private RasterState _fogState;
+
+    public void Prepare(Scene scene) => _fogState = RasterState.From(scene);
+
     public void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in RowSlice slice)
     {
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
@@ -19,6 +24,7 @@ public sealed class ClassicPainter : IPainter
            1f / a.Proj.W, 1f / b.Proj.W, 1f / c.Proj.W,
            default(EmptyVarying), default, default,
            new SolidColorShader(color),
+           _fogState.WithOpacity(vertexBuffer.Mesh.Opacity),
            slice);
     }
 }

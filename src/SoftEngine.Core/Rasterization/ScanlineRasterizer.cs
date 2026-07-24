@@ -30,7 +30,7 @@ public static class ScanlineRasterizer
         in TShader shader)
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
-        => Fill(surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2, shader, RowSlice.Full);
+        => Fill(surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2, shader, default, RowSlice.Full);
 
     /// <summary>
     /// Same as the slice-less overload, but only writes rows owned by <paramref name="slice"/> —
@@ -42,6 +42,22 @@ public static class ScanlineRasterizer
         float invW0, float invW1, float invW2,
         TVarying v0, TVarying v1, TVarying v2,
         in TShader shader,
+        in RowSlice slice)
+        where TVarying : struct, IVarying<TVarying>
+        where TShader : struct, IPixelShader<TVarying>
+        => Fill(surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2, shader, default, slice);
+
+    /// <summary>
+    /// Full form: <paramref name="state"/> adds fog and alpha blending, applied per pixel
+    /// after the shader. The default state is opaque with no fog.
+    /// </summary>
+    public static void Fill<TVarying, TShader>(
+        FrameBuffer surface,
+        Vector3 p0, Vector3 p1, Vector3 p2,
+        float invW0, float invW1, float invW2,
+        TVarying v0, TVarying v1, TVarying v2,
+        in TShader shader,
+        in RasterState state,
         in RowSlice slice)
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
@@ -82,9 +98,9 @@ public static class ScanlineRasterizer
             //    p1        long edge on the left
             //  p2
             HalfTriangle(surface, yStart, yMiddle,
-                new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), new Edge<TVarying>(p0, p1, v0, v1, invW0, invW1), shader, slice);
+                new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), new Edge<TVarying>(p0, p1, v0, v1, invW0, invW1), shader, state, slice);
             HalfTriangle(surface, yMiddle, yEnd,
-                new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), new Edge<TVarying>(p1, p2, v1, v2, invW1, invW2), shader, slice);
+                new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), new Edge<TVarying>(p1, p2, v1, v2, invW1, invW2), shader, state, slice);
         }
         else
         {
@@ -92,9 +108,9 @@ public static class ScanlineRasterizer
             //  p1          long edge on the right
             //    p2
             HalfTriangle(surface, yStart, yMiddle,
-                new Edge<TVarying>(p0, p1, v0, v1, invW0, invW1), new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), shader, slice);
+                new Edge<TVarying>(p0, p1, v0, v1, invW0, invW1), new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), shader, state, slice);
             HalfTriangle(surface, yMiddle, yEnd,
-                new Edge<TVarying>(p1, p2, v1, v2, invW1, invW2), new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), shader, slice);
+                new Edge<TVarying>(p1, p2, v1, v2, invW1, invW2), new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), shader, state, slice);
         }
     }
 
@@ -106,6 +122,7 @@ public static class ScanlineRasterizer
         FrameBuffer surface, int yStart, int yEnd,
         in Edge<TVarying> left, in Edge<TVarying> right,
         in TShader shader,
+        in RasterState state,
         in RowSlice slice)
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
@@ -137,7 +154,7 @@ public static class ScanlineRasterizer
             var sv = TVarying.Lerp(left.VA, left.VB, gl);
             var ev = TVarying.Lerp(right.VA, right.VB, gr);
 
-            Scanline(surface, y, sx, ex, sz, ez, sw, ew, sv, ev, shader);
+            Scanline(surface, y, sx, ex, sz, ez, sw, ew, sv, ev, shader, state);
         }
     }
 
@@ -145,7 +162,8 @@ public static class ScanlineRasterizer
         FrameBuffer surface, int y,
         float sx, float ex, float sz, float ez, float sw, float ew,
         in TVarying sv, in TVarying ev,
-        in TShader shader)
+        in TShader shader,
+        in RasterState state)
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
     {
@@ -189,7 +207,19 @@ public static class ScanlineRasterizer
             var oneOverW = float.Lerp(sw, ew, t);
             var varying = TVarying.Scale(TVarying.Lerp(sv, ev, t), 1f / oneOverW);
 
-            if (surface.PutPixel(x, y, depth, shader.Shade(varying)))
+            var color = shader.Shade(varying);
+
+            // 1/w is already at hand, and w is the view-space depth fog runs on.
+            if (state.HasFog)
+            {
+                color = state.ApplyFog(color, 1f / oneOverW);
+            }
+
+            var written = state.IsOpaque
+                ? surface.PutPixel(x, y, depth, color)
+                : surface.PutPixelBlend(x, y, depth, color, state.Alpha);
+
+            if (written)
             {
                 drawn++;
             }

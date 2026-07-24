@@ -110,6 +110,45 @@ public sealed class FrameBuffer(int width, int height)
         return true;
     }
 
+    /// <summary>
+    /// Depth-tests and alpha-blends one pixel over the current contents. The depth
+    /// buffer is read but never written: transparent surfaces must not occlude what
+    /// is drawn after them, only sit behind opaque geometry. Callers are responsible
+    /// for drawing transparent geometry back-to-front.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool PutPixelBlend(int x, int y, int z, ColorRGB color, float alpha)
+    {
+#if DEBUG
+        if (x > Width - 1 || x < 0 || y > Height - 1 || y < 0)
+        {
+            throw new OverflowException($"PutPixelBlend X={x}/{Width}: Y={y}/{Height}, Depth={z}");
+        }
+#endif
+
+        int index = x + y * Width;
+        int previousDepth = _zBuffer[index];
+        bool passed = z <= previousDepth;
+
+        if (passed || index == _probeIndex)
+        {
+            var blended = ColorRGB.Lerp(ColorRGB.FromPacked(Screen[index]), color, alpha);
+
+            if (index == _probeIndex)
+            {
+                RecordProbe(index, z, blended, previousDepth, passed);
+            }
+
+            if (passed)
+            {
+                Screen[index] = blended.Color;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     #region Pixel probe
 
     // What is currently drawing, for the pixel history. Thread-static because the paint

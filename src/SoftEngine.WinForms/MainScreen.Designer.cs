@@ -42,6 +42,9 @@ public sealed partial class MainScreen
         chkShowBackFacesCulling = new CheckBox();
         chkShowXZGrid = new CheckBox();
         chkShowAxes = new CheckBox();
+        chkFog = new CheckBox();
+        chkGammaCorrect = new CheckBox();
+        chkTextureFiltering = new CheckBox();
         lblShadingHeader = new Label();
         flpShading = new FlowLayoutPanel();
         rdbNoneShading = new RadioButton();
@@ -192,6 +195,9 @@ public sealed partial class MainScreen
         flpDisplay.Controls.Add(chkShowBackFacesCulling);
         flpDisplay.Controls.Add(chkShowXZGrid);
         flpDisplay.Controls.Add(chkShowAxes);
+        flpDisplay.Controls.Add(chkFog);
+        flpDisplay.Controls.Add(chkGammaCorrect);
+        flpDisplay.Controls.Add(chkTextureFiltering);
         flpDisplay.FlowDirection = FlowDirection.TopDown;
         flpDisplay.Margin = new Padding(0);
         flpDisplay.Name = "flpDisplay";
@@ -228,6 +234,33 @@ public sealed partial class MainScreen
         chkShowAxes.Name = "chkShowAxes";
         chkShowAxes.Text = "Axes";
         chkShowAxes.UseVisualStyleBackColor = true;
+        //
+        // chkFog
+        //
+        chkFog.AutoSize = true;
+        chkFog.Margin = new Padding(2, 2, 0, 2);
+        chkFog.Name = "chkFog";
+        chkFog.Text = "Fog";
+        chkFog.UseVisualStyleBackColor = true;
+        toolTip1.SetToolTip(chkFog, "Fade distant geometry into the background");
+        //
+        // chkGammaCorrect
+        //
+        chkGammaCorrect.AutoSize = true;
+        chkGammaCorrect.Margin = new Padding(2, 2, 0, 2);
+        chkGammaCorrect.Name = "chkGammaCorrect";
+        chkGammaCorrect.Text = "Gamma-correct light";
+        chkGammaCorrect.UseVisualStyleBackColor = true;
+        toolTip1.SetToolTip(chkGammaCorrect, "Shade in linear light and encode to sRGB on output");
+        //
+        // chkTextureFiltering
+        //
+        chkTextureFiltering.AutoSize = true;
+        chkTextureFiltering.Margin = new Padding(2, 2, 0, 2);
+        chkTextureFiltering.Name = "chkTextureFiltering";
+        chkTextureFiltering.Text = "Texture filtering";
+        chkTextureFiltering.UseVisualStyleBackColor = true;
+        toolTip1.SetToolTip(chkTextureFiltering, "Bilinear filtering with mip-mapping (Textured shading)");
         //
         // lblShadingHeader
         //
@@ -611,6 +644,9 @@ public sealed partial class MainScreen
     private CheckBox chkShowBackFacesCulling;
     private CheckBox chkShowXZGrid;
     private CheckBox chkShowAxes;
+    private CheckBox chkFog;
+    private CheckBox chkGammaCorrect;
+    private CheckBox chkTextureFiltering;
     private Label lblShadingHeader;
     private FlowLayoutPanel flpShading;
     private RadioButton rdbNoneShading;

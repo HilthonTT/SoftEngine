@@ -54,6 +54,13 @@ public readonly struct ColorRGB
             (byte)System.Math.Min(255, x.G + y.G),
             (byte)System.Math.Min(255, x.B + y.B));
 
+    /// <summary>Per-channel blend from <paramref name="from"/> to <paramref name="to"/>; <paramref name="t"/> must be in [0, 1].</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ColorRGB Lerp(ColorRGB from, ColorRGB to, float t) =>
+        new((byte)(from.R + (to.R - from.R) * t),
+            (byte)(from.G + (to.G - from.G) * t),
+            (byte)(from.B + (to.B - from.B) * t));
+
     public static readonly ColorRGB White = new(255, 255, 255);
 
     public static readonly ColorRGB Yellow = new(255, 255, 0);
