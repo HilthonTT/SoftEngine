@@ -5,6 +5,7 @@ using SoftEngine.Core.Pipeline.PostProcess;
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
+using SoftEngine.WinForms.Cameras;
 using SoftEngine.WinForms.Interop;
 using SoftEngine.WinForms.Utilities;
 using System.ComponentModel;
@@ -23,6 +24,12 @@ public partial class Panel3D : UserControl
 
     /// <summary>One notch of a standard mouse wheel.</summary>
     private const int WheelNotch = 120;
+
+    /// <summary>How much of the distance to the scene a wheel notch closes.</summary>
+    private const float ZoomPerNotch = 1.15f;
+
+    /// <summary>How close the camera may get to what it is looking at.</summary>
+    private const float MinCameraDistance = 0.001f;
 
     private readonly StringBuilder StatDisplay;
     private readonly System.Windows.Forms.Timer _moveTimer;
@@ -161,11 +168,17 @@ public partial class Panel3D : UserControl
     /// </summary>
     public float Zoom => _referenceDistance / MathF.Max(0.0001f, CameraDistance);
 
-    private float CameraDistance => Scene?.Camera is { } camera ? camera.Position.Length() : 1f;
+    /// <summary>
+    /// How far the camera stands off the scene, measured along the view axis rather than as
+    /// the length of its position: panning slides the camera sideways without bringing it any
+    /// closer, and the zoom readout shouldn't claim otherwise.
+    /// </summary>
+    private float CameraDistance =>
+        Scene?.Camera is { } camera ? MathF.Max(MinCameraDistance, MathF.Abs(camera.Position.Z)) : 1f;
 
-    public void ZoomIn() => Dolly(1);
+    public void ZoomIn() => Dolly(1f);
 
-    public void ZoomOut() => Dolly(-1);
+    public void ZoomOut() => Dolly(-1f);
 
     /// <summary>Puts the camera back at the distance the current world was framed from.</summary>
     public void ZoomActualSize()
@@ -181,21 +194,39 @@ public partial class Panel3D : UserControl
     }
 
     /// <summary>
-    /// Moves the camera along its view axis by a fraction of its current distance, so one
-    /// notch covers as much ground on a 1500-unit elephant as on a 5-unit skull.
+    /// Moves the camera along its view axis, scaling its distance rather than stepping it: one
+    /// notch covers as much ground on a 1500-unit elephant as on a 5-unit skull, the approach
+    /// slows as the camera closes in, and it can never overshoot through what it is looking at.
     /// </summary>
-    private void Dolly(int notches)
+    private void Dolly(float notches)
     {
         if (Scene?.Camera is not { } camera)
         {
             return;
         }
 
-        var step = MathF.Max(0.05f, CameraDistance * 0.1f) * notches;
+        var distance = MathF.Max(MinCameraDistance, CameraDistance * MathF.Pow(ZoomPerNotch, -notches));
+        var position = camera.Position;
 
-        camera.Position += new Vector3(0, 0, step);
+        camera.Position = ClampToPivot(new Vector3(position.X, position.Y, MathF.CopySign(distance, position.Z)), position);
         ZoomChanged?.Invoke(this, EventArgs.Empty);
         Invalidate();
+    }
+
+    /// <summary>
+    /// Holds the camera on its own side of what it is looking at. Flying or dollying past the
+    /// pivot turns the view inside out — the scene swings around and is drawn back to front —
+    /// and there is no way to tell from the picture how to get back.
+    /// </summary>
+    private static Vector3 ClampToPivot(Vector3 position, Vector3 previous)
+    {
+        // Every world here is framed from negative Z, so that is the side to stay on unless
+        // the camera was explicitly placed on the other one.
+        var side = previous.Z > 0f ? 1f : -1f;
+
+        return position.Z * side >= MinCameraDistance
+            ? position
+            : new Vector3(position.X, position.Y, side * MinCameraDistance);
     }
 
     #endregion
@@ -267,6 +298,10 @@ public partial class Panel3D : UserControl
     {
         Keys.W or Keys.A or Keys.S or Keys.D or Keys.Q or Keys.E => true,
         Keys.Up or Keys.Down or Keys.Left or Keys.Right => true,
+        Keys.X or Keys.Y or Keys.Z => true,
+        Keys.NumPad0 or Keys.NumPad1 or Keys.NumPad2 or Keys.NumPad3 or Keys.NumPad4 => true,
+        Keys.NumPad5 or Keys.NumPad6 or Keys.NumPad7 or Keys.NumPad8 or Keys.NumPad9 => true,
+        Keys.Home => true,
         _ => base.IsInputKey(keyData),
     };
 
@@ -277,6 +312,20 @@ public partial class Panel3D : UserControl
         if (e.KeyCode == Keys.Escape)
         {
             ClearSelectedPixel();
+            return;
+        }
+
+        // Somewhere to come back to when a fly-through has left the model off screen.
+        if (e.KeyCode == Keys.Home)
+        {
+            ZoomActualSize();
+            e.Handled = true;
+            return;
+        }
+
+        if (HandleViewKey(e.KeyCode, e.Shift, e.Control))
+        {
+            e.Handled = true;
             return;
         }
 
@@ -349,17 +398,38 @@ public partial class Panel3D : UserControl
         // once per notch rather than once per message.
         _wheelDelta += e.Delta;
 
+        // The same modifiers the keyboard fly uses, for a coarse sweep or a fine approach.
+        var notch = SpeedModifier();
+
         while (_wheelDelta >= WheelNotch)
         {
             _wheelDelta -= WheelNotch;
-            ZoomIn();
+            Dolly(notch);
         }
 
         while (_wheelDelta <= -WheelNotch)
         {
             _wheelDelta += WheelNotch;
-            ZoomOut();
+            Dolly(-notch);
         }
+    }
+
+    /// <summary>Shift for a coarse move, Control for a fine one.</summary>
+    private static float SpeedModifier()
+    {
+        var speed = 1f;
+
+        if (ModifierKeys.HasFlag(Keys.Shift))
+        {
+            speed *= 4f;
+        }
+
+        if (ModifierKeys.HasFlag(Keys.Control))
+        {
+            speed *= 0.25f;
+        }
+
+        return speed;
     }
 
     private static bool IsMovementKey(Keys key) => key switch
@@ -397,19 +467,116 @@ public partial class Panel3D : UserControl
 
         // Step with the scale of the scene: models here range from a 2-unit skull to a
         // 1500-unit elephant, and a fixed step would be useless for one of them.
-        var speed = MathF.Max(0.02f, camera.Position.Length() * 0.015f);
+        var speed = MathF.Max(0.02f, CameraDistance * 0.015f) * SpeedModifier();
 
-        if (ModifierKeys.HasFlag(Keys.Shift))
-        {
-            speed *= 4f;
-        }
-        if (ModifierKeys.HasFlag(Keys.Control))
-        {
-            speed *= 0.25f;
-        }
+        var position = camera.Position;
 
-        camera.Position += Vector3.Normalize(direction) * speed;
+        camera.Position = ClampToPivot(position + (Vector3.Normalize(direction) * speed), position);
+        ZoomChanged?.Invoke(this, EventArgs.Empty);
         Invalidate();
+    }
+
+    #endregion
+
+    #region View orientation
+
+    /// <summary>How far one keyed turn takes the view.</summary>
+    public const float RotationStep = 15f * MathF.PI / 180f;
+
+    /// <summary>The scene's camera when it is one that can be aimed; null for any other.</summary>
+    private ArcBallCamera? ArcBall => Scene?.Camera as ArcBallCamera;
+
+    /// <summary>Snaps the view straight down a world axis, keeping what it is centred on.</summary>
+    public void LookAlong(AxisView view)
+    {
+        if (ArcBall is not { } camera)
+        {
+            return;
+        }
+
+        camera.LookAlong(view);
+        Invalidate();
+    }
+
+    /// <summary>Swings the view round to the other side of what it is centred on.</summary>
+    public void FlipView()
+    {
+        if (ArcBall is not { } camera)
+        {
+            return;
+        }
+
+        camera.FlipView();
+        Invalidate();
+    }
+
+    /// <summary>Turns the model one step about a world axis, leaving the other two alone.</summary>
+    public void RotateAroundWorldAxis(Vector3 axis, float radians)
+    {
+        if (ArcBall is not { } camera)
+        {
+            return;
+        }
+
+        camera.RotateAroundWorldAxis(axis, radians);
+        Invalidate();
+    }
+
+    /// <summary>Turns the view one step about an axis of the screen.</summary>
+    public void RotateInView(Vector3 axis, float radians)
+    {
+        if (ArcBall is not { } camera)
+        {
+            return;
+        }
+
+        camera.RotateInView(axis, radians);
+        Invalidate();
+    }
+
+    /// <summary>
+    /// The keys that aim the view rather than fly it, following the numpad Blender uses as
+    /// closely as a Y-up world allows. Returns whether the key was one of them.
+    /// </summary>
+    private bool HandleViewKey(Keys key, bool shift, bool control)
+    {
+        if (ArcBall is null)
+        {
+            return false;
+        }
+
+        switch (key)
+        {
+            // Down an axis, or with Control down the axis facing it.
+            case Keys.NumPad1: LookAlong(control ? AxisView.Back : AxisView.Front); return true;
+            case Keys.NumPad3: LookAlong(control ? AxisView.Left : AxisView.Right); return true;
+            case Keys.NumPad7: LookAlong(control ? AxisView.Bottom : AxisView.Top); return true;
+            case Keys.NumPad9: FlipView(); return true;
+
+            // Orbit a step at a time: 4 and 6 spin the model on its turntable, 8 and 2 tip it
+            // towards the viewer and away.
+            case Keys.NumPad4: RotateAroundWorldAxis(Vector3.UnitY, RotationStep); return true;
+            case Keys.NumPad6: RotateAroundWorldAxis(Vector3.UnitY, -RotationStep); return true;
+            case Keys.NumPad8: RotateInView(Vector3.UnitX, RotationStep); return true;
+            case Keys.NumPad2: RotateInView(Vector3.UnitX, -RotationStep); return true;
+        }
+
+        // A step about the world axis the key names — the whole point of turning by keyboard —
+        // and the other way round with Shift.
+        if (control)
+        {
+            return false;
+        }
+
+        var step = shift ? -RotationStep : RotationStep;
+
+        switch (key)
+        {
+            case Keys.X: RotateAroundWorldAxis(Vector3.UnitX, step); return true;
+            case Keys.Y: RotateAroundWorldAxis(Vector3.UnitY, step); return true;
+            case Keys.Z: RotateAroundWorldAxis(Vector3.UnitZ, step); return true;
+            default: return false;
+        }
     }
 
     #endregion

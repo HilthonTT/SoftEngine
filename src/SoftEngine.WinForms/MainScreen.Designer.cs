@@ -86,6 +86,17 @@ public sealed partial class MainScreen
         mnuZoomOut = new ToolStripMenuItem();
         mnuZoomActual = new ToolStripMenuItem();
         mnuClearPixel = new ToolStripMenuItem();
+        mnuAxisViews = new ToolStripMenuItem();
+        mnuViewFront = new ToolStripMenuItem();
+        mnuViewBack = new ToolStripMenuItem();
+        mnuViewRight = new ToolStripMenuItem();
+        mnuViewLeft = new ToolStripMenuItem();
+        mnuViewTop = new ToolStripMenuItem();
+        mnuViewBottom = new ToolStripMenuItem();
+        mnuViewOpposite = new ToolStripMenuItem();
+        mnuTurnX = new ToolStripMenuItem();
+        mnuTurnY = new ToolStripMenuItem();
+        mnuTurnZ = new ToolStripMenuItem();
 
         statusStrip = new StatusStrip();
         lblZoomStatus = new ToolStripStatusLabel();
@@ -543,11 +554,83 @@ public sealed partial class MainScreen
         {
             mnuPixelHistory, mnuObjectTable, mnuEventList, new ToolStripSeparator(),
             mnuStatsOverlay, mnuRecordEvents, new ToolStripSeparator(),
+            mnuAxisViews, new ToolStripSeparator(),
             mnuZoomIn, mnuZoomOut, mnuZoomActual, new ToolStripSeparator(),
             mnuClearPixel,
         });
         mnuView.Name = "mnuView";
         mnuView.Text = "&View";
+        //
+        // mnuAxisViews
+        //
+        mnuAxisViews.DropDownItems.AddRange(new ToolStripItem[]
+        {
+            mnuViewFront, mnuViewBack, mnuViewRight, mnuViewLeft, mnuViewTop, mnuViewBottom,
+            new ToolStripSeparator(), mnuViewOpposite, new ToolStripSeparator(),
+            mnuTurnX, mnuTurnY, mnuTurnZ,
+        });
+        mnuAxisViews.Name = "mnuAxisViews";
+        mnuAxisViews.Text = "&Axis view";
+        //
+        // mnuViewFront
+        //
+        mnuViewFront.Name = "mnuViewFront";
+        mnuViewFront.ShortcutKeyDisplayString = "Numpad 1";
+        mnuViewFront.Text = "&Front  (+Z)";
+        //
+        // mnuViewBack
+        //
+        mnuViewBack.Name = "mnuViewBack";
+        mnuViewBack.ShortcutKeyDisplayString = "Ctrl+Numpad 1";
+        mnuViewBack.Text = "&Back  (−Z)";
+        //
+        // mnuViewRight
+        //
+        mnuViewRight.Name = "mnuViewRight";
+        mnuViewRight.ShortcutKeyDisplayString = "Numpad 3";
+        mnuViewRight.Text = "&Right  (+X)";
+        //
+        // mnuViewLeft
+        //
+        mnuViewLeft.Name = "mnuViewLeft";
+        mnuViewLeft.ShortcutKeyDisplayString = "Ctrl+Numpad 3";
+        mnuViewLeft.Text = "&Left  (−X)";
+        //
+        // mnuViewTop
+        //
+        mnuViewTop.Name = "mnuViewTop";
+        mnuViewTop.ShortcutKeyDisplayString = "Numpad 7";
+        mnuViewTop.Text = "&Top  (+Y)";
+        //
+        // mnuViewBottom
+        //
+        mnuViewBottom.Name = "mnuViewBottom";
+        mnuViewBottom.ShortcutKeyDisplayString = "Ctrl+Numpad 7";
+        mnuViewBottom.Text = "B&ottom  (−Y)";
+        //
+        // mnuViewOpposite
+        //
+        mnuViewOpposite.Name = "mnuViewOpposite";
+        mnuViewOpposite.ShortcutKeyDisplayString = "Numpad 9";
+        mnuViewOpposite.Text = "&Opposite side";
+        //
+        // mnuTurnX
+        //
+        mnuTurnX.Name = "mnuTurnX";
+        mnuTurnX.ShortcutKeyDisplayString = "X · Shift+X";
+        mnuTurnX.Text = "Turn 15° about &X";
+        //
+        // mnuTurnY
+        //
+        mnuTurnY.Name = "mnuTurnY";
+        mnuTurnY.ShortcutKeyDisplayString = "Y · Shift+Y";
+        mnuTurnY.Text = "Turn 15° about &Y";
+        //
+        // mnuTurnZ
+        //
+        mnuTurnZ.Name = "mnuTurnZ";
+        mnuTurnZ.ShortcutKeyDisplayString = "Z · Shift+Z";
+        mnuTurnZ.Text = "Turn 15° about &Z";
         //
         // mnuPixelHistory
         //
@@ -840,6 +923,17 @@ public sealed partial class MainScreen
     private ToolStripMenuItem mnuZoomOut;
     private ToolStripMenuItem mnuZoomActual;
     private ToolStripMenuItem mnuClearPixel;
+    private ToolStripMenuItem mnuAxisViews;
+    private ToolStripMenuItem mnuViewFront;
+    private ToolStripMenuItem mnuViewBack;
+    private ToolStripMenuItem mnuViewRight;
+    private ToolStripMenuItem mnuViewLeft;
+    private ToolStripMenuItem mnuViewTop;
+    private ToolStripMenuItem mnuViewBottom;
+    private ToolStripMenuItem mnuViewOpposite;
+    private ToolStripMenuItem mnuTurnX;
+    private ToolStripMenuItem mnuTurnY;
+    private ToolStripMenuItem mnuTurnZ;
 
     private StatusStrip statusStrip;
     private ToolStripStatusLabel lblZoomStatus;

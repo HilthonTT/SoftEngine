@@ -19,6 +19,12 @@ namespace SoftEngine.WinForms;
 
 public sealed partial class MainScreen : Form
 {
+    /// <summary>
+    /// The vertical field of view every world is rendered with. The camera solves its pan
+    /// against this too, so the two have to stay the same number.
+    /// </summary>
+    private const float FieldOfView = 40f * MathF.PI / 180f;
+
     /// <summary>The bundled worlds offered by the model picker.</summary>
     private static readonly DemoEntry[] Demos =
     [
@@ -172,8 +178,8 @@ public sealed partial class MainScreen : Form
 
         panel3D1.Scene = new Scene()
         {
-            Projection = new PerspectiveProjection(40f * (float)Math.PI / 180f, .01f, 500f),
-            Camera = new ArcBallCamera(panel3D1) { Position = new Vector3(0, 0, -60) },
+            Projection = new PerspectiveProjection(FieldOfView, .01f, 500f),
+            Camera = new ArcBallCamera(panel3D1) { Position = new Vector3(0, 0, -60), FieldOfView = FieldOfView },
             GammaCorrect = true,
             HighDynamicRange = true,
         };
@@ -282,6 +288,18 @@ public sealed partial class MainScreen : Form
             panel3D1.Invalidate();
         };
 
+        mnuViewFront.Click += (s, e) => panel3D1.LookAlong(AxisView.Front);
+        mnuViewBack.Click += (s, e) => panel3D1.LookAlong(AxisView.Back);
+        mnuViewRight.Click += (s, e) => panel3D1.LookAlong(AxisView.Right);
+        mnuViewLeft.Click += (s, e) => panel3D1.LookAlong(AxisView.Left);
+        mnuViewTop.Click += (s, e) => panel3D1.LookAlong(AxisView.Top);
+        mnuViewBottom.Click += (s, e) => panel3D1.LookAlong(AxisView.Bottom);
+        mnuViewOpposite.Click += (s, e) => panel3D1.FlipView();
+
+        mnuTurnX.Click += (s, e) => panel3D1.RotateAroundWorldAxis(Vector3.UnitX, Panel3D.RotationStep);
+        mnuTurnY.Click += (s, e) => panel3D1.RotateAroundWorldAxis(Vector3.UnitY, Panel3D.RotationStep);
+        mnuTurnZ.Click += (s, e) => panel3D1.RotateAroundWorldAxis(Vector3.UnitZ, Panel3D.RotationStep);
+
         mnuZoomIn.Click += (s, e) => panel3D1.ZoomIn();
         mnuZoomOut.Click += (s, e) => panel3D1.ZoomOut();
         mnuZoomActual.Click += (s, e) => panel3D1.ZoomActualSize();
@@ -340,7 +358,13 @@ public sealed partial class MainScreen : Form
         if (panel3D1.Scene?.Camera is { } camera)
         {
             var position = camera.Position;
-            lblCameraStatus.Text = $"Camera: ({position.X:0.##}, {position.Y:0.##}, {position.Z:0.##})";
+
+            // The named view, when the camera is lined up with one: worth saying, because
+            // that is the difference between a view you can reason about and one that is
+            // merely close to it.
+            var view = camera is ArcBallCamera { CurrentAxisView: { } axisView } ? $" · {axisView}" : string.Empty;
+
+            lblCameraStatus.Text = $"Camera: ({position.X:0.##}, {position.Y:0.##}, {position.Z:0.##}){view}";
         }
 
         var stats = panel3D1.Stats;
@@ -729,7 +753,7 @@ public sealed partial class MainScreen : Form
 
         var far = Math.Max(500f, (setup.CameraPosition.Length() + worldRadius) * 2f);
 
-        return new PerspectiveProjection(40f * (float)Math.PI / 180f, .01f, far);
+        return new PerspectiveProjection(FieldOfView, .01f, far);
     }
 
     /// <summary>
@@ -778,7 +802,7 @@ public sealed partial class MainScreen : Form
             case "elefant":
                 world.Meshes.AddRange(MeshFactory.HackyImportCollada(ModelPath("elefant.dae"), progress));
                 cameraPosition = new Vector3(0, 0, -1500);
-                projection = new PerspectiveProjection(40f * (float)Math.PI / 180f, .01f, 65535f);
+                projection = new PerspectiveProjection(FieldOfView, .01f, 65535f);
                 world.Lights.Add(new PointLight
                 {
                     Position = new Vector3(500, 800, 1200),
@@ -1051,7 +1075,7 @@ public sealed partial class MainScreen : Form
         }
 
         var cameraPosition = new Vector3(0, 0, -radius * 3f);
-        var projection = new PerspectiveProjection(40f * (float)Math.PI / 180f, .01f, Math.Max(500f, radius * 20f));
+        var projection = new PerspectiveProjection(FieldOfView, .01f, Math.Max(500f, radius * 20f));
 
         return new WorldSetup(world, cameraPosition, projection);
     }
