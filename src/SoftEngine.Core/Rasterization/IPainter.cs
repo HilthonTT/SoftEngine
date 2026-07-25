@@ -15,16 +15,16 @@ public interface IPainter
     }
 
     /// <summary>
-    /// Whether <see cref="DrawTriangle"/> honors the row slice it is given. Painters that
-    /// ignore the slice (line drawing crosses arbitrary rows) must return false so the
-    /// renderer keeps them on the sequential path instead of racing the z-buffer.
+    /// Whether <see cref="DrawTriangle"/> honors the tile it is given. Painters that ignore
+    /// it (line drawing crosses arbitrary pixels) must return false so the renderer keeps
+    /// them on the sequential path instead of racing the z-buffer.
     /// </summary>
-    bool SupportsRowSlices => true;
+    bool SupportsTiles => true;
 
     /// <summary>
-    /// Draws one triangle, restricted to the rows owned by <paramref name="slice"/>.
-    /// The renderer calls this concurrently with disjoint slices; implementations must
+    /// Draws one triangle, restricted to the pixels owned by <paramref name="tile"/>.
+    /// The renderer calls this concurrently with disjoint tiles; implementations must
     /// not mutate shared state here.
     /// </summary>
-    void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in RowSlice slice);
+    void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in ScreenTile tile);
 }

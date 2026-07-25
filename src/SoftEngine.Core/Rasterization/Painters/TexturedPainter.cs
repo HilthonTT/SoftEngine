@@ -33,7 +33,7 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
         }
     }
 
-    public override void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in RowSlice slice)
+    public override void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in ScreenTile tile)
     {
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
@@ -63,7 +63,7 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
                 new IntensityVarying(ia), new IntensityVarying(ib), new IntensityVarying(ic),
                 new LambertShader(color, GammaCorrect),
                 StateFor(mesh),
-                slice);
+                tile);
             return;
         }
 
@@ -84,6 +84,6 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
             new TextureVarying(uv2, ic),
             new TexturedShader(texture, mipLevel, Filtering, GammaCorrect),
             StateFor(mesh),
-            slice);
+            tile);
     }
 }

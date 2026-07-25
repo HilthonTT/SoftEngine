@@ -117,10 +117,13 @@ public class ScanlineRasterizerTests
     }
 
     [Fact]
-    public void Fill_RowSlices_PartitionTheTriangle()
+    public void Fill_Tiles_PartitionTheTriangle()
     {
-        var (sliced, slicedStats) = MakeSurface();
-        var (full, fullStats) = MakeSurface();
+        const int size = 64;
+        const int tile = 16;
+
+        var (tiled, tiledStats) = MakeSurface(size);
+        var (full, fullStats) = MakeSurface(size);
 
         ScanlineRasterizer.Fill(
             full,
@@ -129,17 +132,59 @@ public class ScanlineRasterizerTests
             default(EmptyVarying), default, default,
             new SolidColorShader(ColorRGB.Red));
 
-        for (var s = 0; s < 4; s++)
+        for (var ty = 0; ty < size / tile; ty++)
         {
-            ScanlineRasterizer.Fill(
-                sliced,
-                new Vector3(10, 10, 100), new Vector3(40, 10, 100), new Vector3(10, 40, 100),
-                1f, 1f, 1f,
-                default(EmptyVarying), default, default,
-                new SolidColorShader(ColorRGB.Red),
-                new RowSlice(s, 4));
+            for (var tx = 0; tx < size / tile; tx++)
+            {
+                ScanlineRasterizer.Fill(
+                    tiled,
+                    new Vector3(10, 10, 100), new Vector3(40, 10, 100), new Vector3(10, 40, 100),
+                    1f, 1f, 1f,
+                    default(EmptyVarying), default, default,
+                    new SolidColorShader(ColorRGB.Red),
+                    new ScreenTile(tx * tile, ty * tile, (tx + 1) * tile, (ty + 1) * tile));
+            }
         }
 
-        Assert.Equal(fullStats.DrawnPixelCount, slicedStats.DrawnPixelCount);
+        Assert.Equal(fullStats.DrawnPixelCount, tiledStats.DrawnPixelCount);
+
+        // Every pixel, not just the count: a tile must cover exactly its own share, with
+        // no pixel dropped at a seam and none drawn twice.
+        for (var y = 0; y < size; y++)
+        {
+            for (var x = 0; x < size; x++)
+            {
+                Assert.Equal(full.GetColor(x, y), tiled.GetColor(x, y));
+            }
+        }
+    }
+
+    [Fact]
+    public void Fill_Tile_WritesNothingOutsideItsBounds()
+    {
+        var (surface, _) = MakeSurface();
+
+        ScanlineRasterizer.Fill(
+            surface,
+            new Vector3(0, 0, 100), new Vector3(60, 0, 100), new Vector3(0, 60, 100),
+            1f, 1f, 1f,
+            default(EmptyVarying), default, default,
+            new SolidColorShader(ColorRGB.Red),
+            new ScreenTile(16, 16, 32, 32));
+
+        for (var y = 0; y < 64; y++)
+        {
+            for (var x = 0; x < 64; x++)
+            {
+                var inside = x >= 16 && x < 32 && y >= 16 && y < 32;
+
+                if (!inside)
+                {
+                    Assert.Equal(0, surface.GetColor(x, y));
+                }
+            }
+        }
+
+        Assert.Equal(ColorRGB.Red.Color, surface.GetColor(20, 20));
     }
 }

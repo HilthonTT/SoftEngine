@@ -13,11 +13,20 @@ using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.Core.Shading;
 using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace SoftEngine.Core.Pipeline;
 
 public sealed class Renderer : IRenderer
 {
+    // Below this many triangles, binning and scheduling cost more than the parallel fill
+    // saves, so the frame is filled on the calling thread.
+    private const int ParallelFillThreshold = 32;
+
+    // How many triangles a tile draws before it re-reads its farthest depth. Rescanning
+    // after every triangle would cost more than the rejections it buys.
+    private const int DepthBoundRefreshInterval = 4;
+
     private readonly WireFramePainter _internalWireFramePainter = new();
 
     // Visible (mesh, triangle) pairs collected by the sequential cull phase and
@@ -29,6 +38,11 @@ public sealed class Renderer : IRenderer
     private readonly List<(int MeshIndex, int TriangleIndex)> _transparent = [];
     private float[] _transparentKeys = [];
     private (int MeshIndex, int TriangleIndex)[] _transparentOrder = [];
+
+    // Which triangles reach which screen tile, for the parallel fill phase. Opaque and
+    // transparent geometry are drawn in two passes, so each keeps its own bins.
+    private readonly TileBinner _opaqueBins = new();
+    private readonly TileBinner _transparentBins = new();
 
     // Per-mesh index of the PainterDrawTriangles event, so a probed pixel write can point
     // back at the event that produced it. Grown to the mesh count, reused across frames.
@@ -283,38 +297,43 @@ public sealed class Renderer : IRenderer
         // fill so the event list keeps pipeline order even though the fill runs in parallel.
         var drawEvents = RecordDrawEvents(events, meshIdBase, volumeCount, history is not null);
 
-        // Phase 2 (parallel): fill the visible triangles. Each worker owns an
-        // interleaved set of screen rows, so pixel writes never overlap.
-        var sliceCount = System.Math.Clamp(Environment.ProcessorCount, 1, 16);
+        // Phase 2 (parallel): fill the visible triangles. Each worker owns one screen tile,
+        // so pixel writes never overlap, and only the triangles binned into that tile are
+        // drawn there.
+        var parallelFill = painter is { SupportsTiles: true } && Environment.ProcessorCount > 1;
 
         if (painter is not null && _visible.Count > 0)
         {
-            if (sliceCount == 1 || _visible.Count < 32 || !painter.SupportsRowSlices)
+            if (!parallelFill || _visible.Count < ParallelFillThreshold)
             {
-                PaintSlice(painter, surface, meshes, worldBuffer, RowSlice.Full, drawEvents, meshIdBase);
+                PaintAll(painter, surface, meshes, worldBuffer, drawEvents, meshIdBase);
             }
             else
             {
-                Parallel.For(0, sliceCount, s =>
-                    PaintSlice(painter, surface, meshes, worldBuffer, new RowSlice(s, sliceCount), drawEvents, meshIdBase));
+                BinTriangles(_opaqueBins, surface, worldBuffer, _visible, _visible.Count);
+
+                Parallel.For(0, _opaqueBins.TileCount, t =>
+                    PaintOpaqueTile(painter, surface, meshes, worldBuffer, t, drawEvents, meshIdBase));
             }
         }
 
         // Phase 2b: transparent triangles blend over the finished opaque image, farthest
-        // first. Row slices still parallelize safely — every worker walks the same sorted
-        // order, so the blend order at any single pixel is preserved.
+        // first. Tiles still parallelize safely — every tile walks the sorted order, so the
+        // blend order at any single pixel is preserved.
         var transparentCount = SortTransparent(worldBuffer);
 
         if (painter is not null && transparentCount > 0)
         {
-            if (sliceCount == 1 || transparentCount < 32 || !painter.SupportsRowSlices)
+            if (!parallelFill || transparentCount < ParallelFillThreshold)
             {
-                PaintTransparentSlice(painter, surface, meshes, worldBuffer, transparentCount, RowSlice.Full, drawEvents, meshIdBase);
+                PaintTransparentAll(painter, surface, meshes, worldBuffer, transparentCount, drawEvents, meshIdBase);
             }
             else
             {
-                Parallel.For(0, sliceCount, s =>
-                    PaintTransparentSlice(painter, surface, meshes, worldBuffer, transparentCount, new RowSlice(s, sliceCount), drawEvents, meshIdBase));
+                BinTriangles(_transparentBins, surface, worldBuffer, _transparentOrder, transparentCount);
+
+                Parallel.For(0, _transparentBins.TileCount, t =>
+                    PaintTransparentTile(painter, surface, meshes, worldBuffer, t, drawEvents, meshIdBase));
             }
         }
 
@@ -469,26 +488,160 @@ public sealed class Renderer : IRenderer
         }
     }
 
-    private void PaintSlice(IPainter painter, FrameBuffer surface, List<IMesh> meshes, WorldBuffer worldBuffer, in RowSlice slice, int[]? drawEvents, int meshIdBase)
+    /// <summary>
+    /// Bins a draw list's triangles by the screen tiles their bounding boxes touch. The
+    /// projection to screen space is repeated by the painter that eventually fills the
+    /// triangle, but doing it here — once, sequentially — is what lets a tile skip the
+    /// triangles that never reach it.
+    /// </summary>
+    private static void BinTriangles(
+        TileBinner bins,
+        FrameBuffer surface,
+        WorldBuffer worldBuffer,
+        ReadOnlySpan<(int MeshIndex, int TriangleIndex)> list,
+        int count)
+    {
+        bins.Reset(surface.Width, surface.Height);
+
+        for (var i = 0; i < count; i++)
+        {
+            var (meshIndex, triangleIndex) = list[i];
+            var vbx = worldBuffer.VertexBuffers[meshIndex];
+            var t = vbx.GetTriangle(triangleIndex);
+
+            var p0 = surface.ToScreen3(vbx.GetVertex(t.I0).Proj);
+            var p1 = surface.ToScreen3(vbx.GetVertex(t.I1).Proj);
+            var p2 = surface.ToScreen3(vbx.GetVertex(t.I2).Proj);
+
+            bins.Add(
+                MathF.Min(p0.X, MathF.Min(p1.X, p2.X)),
+                MathF.Min(p0.Y, MathF.Min(p1.Y, p2.Y)),
+                MathF.Max(p0.X, MathF.Max(p1.X, p2.X)),
+                MathF.Max(p0.Y, MathF.Max(p1.Y, p2.Y)),
+                MathF.Min(p0.Z, MathF.Min(p1.Z, p2.Z)));
+        }
+
+        bins.Build();
+    }
+
+    private static void BinTriangles(TileBinner bins, FrameBuffer surface, WorldBuffer worldBuffer, List<(int MeshIndex, int TriangleIndex)> list, int count) =>
+        BinTriangles(bins, surface, worldBuffer, CollectionsMarshal.AsSpan(list), count);
+
+    private static void BinTriangles(TileBinner bins, FrameBuffer surface, WorldBuffer worldBuffer, (int MeshIndex, int TriangleIndex)[] list, int count) =>
+        BinTriangles(bins, surface, worldBuffer, list.AsSpan(0, count), count);
+
+    private void PaintOpaqueTile(IPainter painter, FrameBuffer surface, List<IMesh> meshes, WorldBuffer worldBuffer, int tileIndex, int[]? drawEvents, int meshIdBase)
+    {
+        var ordinals = _opaqueBins.TrianglesIn(tileIndex);
+        if (ordinals.Length == 0)
+        {
+            return;
+        }
+
+        var tile = _opaqueBins.TileAt(tileIndex);
+
+        // Coarse depth rejection. The bound is the farthest depth anywhere in the tile, so a
+        // triangle whose nearest point is behind it cannot be seen here — no rows walked, no
+        // pixels tested. It is refreshed every few triangles rather than after each one: the
+        // scan costs a tile's worth of reads, and one bound covers a run of triangles.
+        //
+        // A refresh that buys no rejection at all doubles the interval to the next one, so a
+        // scene with no depth complexity — where the bound can never reject anything — stops
+        // paying for the scans after a few of them instead of on every triangle.
+        //
+        // A probed frame skips this: the pixel history has to show the writes the depth test
+        // rejects, and a triangle dropped here never attempts them.
+        var hierarchicalZ = Settings.HierarchicalZ && !surface.IsProbing;
+        var bound = int.MaxValue;
+        var interval = DepthBoundRefreshInterval;
+        var sinceRefresh = 0;
+        var rejectedSinceRefresh = 0;
+        var rejected = 0;
+
+        foreach (var ordinal in ordinals)
+        {
+            if (_opaqueBins.NearestDepth(ordinal) > bound)
+            {
+                rejected++;
+                rejectedSinceRefresh++;
+                continue;
+            }
+
+            var (meshIndex, triangleIndex) = _visible[ordinal];
+            PaintTriangle(painter, surface, meshes, worldBuffer, meshIndex, triangleIndex, tile, drawEvents, meshIdBase);
+
+            if (hierarchicalZ && ++sinceRefresh >= interval)
+            {
+                bound = surface.MaxDepthIn(tile.XFrom, tile.YFrom, tile.XTo, tile.YTo);
+
+                interval = rejectedSinceRefresh == 0 ? interval * 2 : DepthBoundRefreshInterval;
+                sinceRefresh = 0;
+                rejectedSinceRefresh = 0;
+            }
+        }
+
+        if (rejected > 0)
+        {
+            Stats.AddOccludedTriangles(rejected);
+        }
+    }
+
+    private void PaintTransparentTile(IPainter painter, FrameBuffer surface, List<IMesh> meshes, WorldBuffer worldBuffer, int tileIndex, int[]? drawEvents, int meshIdBase)
+    {
+        var ordinals = _transparentBins.TrianglesIn(tileIndex);
+        if (ordinals.Length == 0)
+        {
+            return;
+        }
+
+        var tile = _transparentBins.TileAt(tileIndex);
+
+        // Transparent geometry is depth-tested but never depth-written, so the bound cannot
+        // move while this pass runs: one scan of the finished opaque depth covers the tile.
+        var bound = Settings.HierarchicalZ && !surface.IsProbing
+            ? surface.MaxDepthIn(tile.XFrom, tile.YFrom, tile.XTo, tile.YTo)
+            : int.MaxValue;
+
+        var rejected = 0;
+
+        foreach (var ordinal in ordinals)
+        {
+            if (_transparentBins.NearestDepth(ordinal) > bound)
+            {
+                rejected++;
+                continue;
+            }
+
+            var (meshIndex, triangleIndex) = _transparentOrder[ordinal];
+            PaintTriangle(painter, surface, meshes, worldBuffer, meshIndex, triangleIndex, tile, drawEvents, meshIdBase);
+        }
+
+        if (rejected > 0)
+        {
+            Stats.AddOccludedTriangles(rejected);
+        }
+    }
+
+    private void PaintAll(IPainter painter, FrameBuffer surface, List<IMesh> meshes, WorldBuffer worldBuffer, int[]? drawEvents, int meshIdBase)
     {
         var count = _visible.Count;
         for (var i = 0; i < count; i++)
         {
             var (meshIndex, triangleIndex) = _visible[i];
-            PaintTriangle(painter, surface, meshes, worldBuffer, meshIndex, triangleIndex, slice, drawEvents, meshIdBase);
+            PaintTriangle(painter, surface, meshes, worldBuffer, meshIndex, triangleIndex, ScreenTile.Full, drawEvents, meshIdBase);
         }
     }
 
-    private void PaintTransparentSlice(IPainter painter, FrameBuffer surface, List<IMesh> meshes, WorldBuffer worldBuffer, int count, in RowSlice slice, int[]? drawEvents, int meshIdBase)
+    private void PaintTransparentAll(IPainter painter, FrameBuffer surface, List<IMesh> meshes, WorldBuffer worldBuffer, int count, int[]? drawEvents, int meshIdBase)
     {
         for (var i = 0; i < count; i++)
         {
             var (meshIndex, triangleIndex) = _transparentOrder[i];
-            PaintTriangle(painter, surface, meshes, worldBuffer, meshIndex, triangleIndex, slice, drawEvents, meshIdBase);
+            PaintTriangle(painter, surface, meshes, worldBuffer, meshIndex, triangleIndex, ScreenTile.Full, drawEvents, meshIdBase);
         }
     }
 
-    private static void PaintTriangle(IPainter painter, FrameBuffer surface, List<IMesh> meshes, WorldBuffer worldBuffer, int meshIndex, int triangleIndex, in RowSlice slice, int[]? drawEvents, int meshIdBase)
+    private static void PaintTriangle(IPainter painter, FrameBuffer surface, List<IMesh> meshes, WorldBuffer worldBuffer, int meshIndex, int triangleIndex, in ScreenTile tile, int[]? drawEvents, int meshIdBase)
     {
         var vbx = worldBuffer.VertexBuffers[meshIndex];
 
@@ -506,7 +659,7 @@ public sealed class Renderer : IRenderer
             meshes[meshIndex].TriangleColors[sourceIndex],
             vbx,
             triangleIndex,
-            slice);
+            tile);
     }
 
     /// <summary>
@@ -559,7 +712,7 @@ public sealed class Renderer : IRenderer
                     vbx);
             }
 
-            _internalWireFramePainter.DrawTriangle(surface, ColorRGB.Magenta, vbx, triangleIndex, RowSlice.Full);
+            _internalWireFramePainter.DrawTriangle(surface, ColorRGB.Magenta, vbx, triangleIndex, ScreenTile.Full);
         }
     }
 

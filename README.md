@@ -16,6 +16,7 @@ A **software 3D rasterizer** written in C#. The entire pipeline — model transf
 - Casts **shadows** with a shadow-map pass rendered from the light's point of view.
 - Shades **materials**: albedo, tangent-space normal and specular maps, loaded from a model's `.mtl`.
 - Runs a **post-process stack** over the finished frame — bloom, tone mapping, FXAA, vignette.
+- Anti-aliases by **supersampling**: render at a multiple of the display resolution and average down.
 - Provides an interactive arc-ball camera, WASD fly controls, gizmos (world axes, ground grid), and a live stats overlay.
 - Ships a **graphics debugger** — event list, object table and per-pixel history — built on the renderer's own instrumentation.
 
@@ -101,11 +102,48 @@ Per frame, the `Renderer` ([`Pipeline/Renderer.cs`](src/SoftEngine.Core/Pipeline
 2. Renders the shadow map from the light, if the scene casts shadows — before any painter prepares, since every shade that follows reads it.
 3. Transforms each mesh's vertices into view space (pooled `VertexBuffer` per mesh).
 4. Rejects triangles behind the far plane, back-facing triangles (optional culling), and triangles outside the view frustum.
-5. Projects survivors into clip space, maps to screen space, and hands them to the active painter.
-6. Draws optional gizmos (XZ grid, world axes).
-7. Runs the post-process stack over the finished image.
+5. Projects survivors into clip space, maps to screen space, and bins them into the screen tiles they cover.
+6. Fills the tiles in parallel through the active painter.
+7. Draws optional gizmos (XZ grid, world axes).
+8. Runs the post-process stack over the finished image.
 
 The rasterizer ([`Rasterization/ScanlineRasterizer.cs`](src/SoftEngine.Core/Rasterization/ScanlineRasterizer.cs)) sorts a triangle's vertices by Y, splits it at the middle vertex, and walks two half-triangles, interpolating depth plus an arbitrary *varying* payload. Painters only supply a **varying** type and a **shader** — both are `struct` generics, so the JIT devirtualizes and inlines the per-pixel shade call with no allocation on the hot path.
+
+## Tiled rasterization
+
+The fill phase is split by **screen tile**, not by triangle: [`TileBinner`](src/SoftEngine.Core/Rasterization/TileBinner.cs)
+sorts each frame's triangles into the 32×32-pixel tiles their bounding boxes touch, and one
+worker owns each tile ([`ScreenTile`](src/SoftEngine.Core/Rasterization/ScreenTile.cs)). Because
+tiles never overlap, the z-buffer needs no locking — and because a triangle only reaches the
+tiles it covers, its per-triangle setup is paid once per tile instead of once per core.
+
+Three things fall out of owning a rectangle of pixels:
+
+- **Coarse depth rejection.** Before drawing a triangle into a tile, its nearest depth is
+  compared against the farthest depth currently stored anywhere in that tile. If it is behind,
+  the triangle is dropped whole — no rows walked, no pixels tested. The bound is re-read every
+  few triangles, and a scan that buys no rejection doubles the interval to the next one, so a
+  scene with no depth complexity stops paying for it. `Settings.HierarchicalZ` turns it off.
+- **Vectorized depth tests.** Runs of `Vector<int>.Count` pixels are depth-tested at once, and
+  a run entirely behind the z-buffer is skipped without interpolating or shading any of it.
+  Depth is evaluated as an affine function of x rather than a running sum, so the vector test
+  and the scalar loop agree exactly.
+- **Contiguous memory.** A tile walks the framebuffer the way it is laid out, rather than
+  every n-th row.
+
+Measured at 1280×720 on eight hardware threads, the three together render a dense model about
+**1.5–1.8×** faster than the row-interleaved fill they replace, and a scene with heavy overdraw
+about **2×** faster.
+
+## Supersampling
+
+[`SuperSampler`](src/SoftEngine.Core/Pipeline/SuperSampler.cs) resolves a render target drawn
+at an integer multiple of the display resolution back down to it. It is the one kind of
+anti-aliasing that asks nothing of the rasterizer — the whole pipeline just runs larger — so
+unlike FXAA it smooths specular glints and texture shimmer as well as silhouettes. Colours are
+averaged in linear light, and alpha along with them, which leaves the edge pixels of a shape
+over the cleared background correctly premultiplied for presentation. A 2× frame fills four
+times the pixels, which is exactly what it costs.
 
 ## Interactive app
 
@@ -120,7 +158,7 @@ The WinForms app ([`SoftEngine.WinForms`](src/SoftEngine.WinForms)) renders the 
 | **Left-click the viewport** | Probe that pixel — its full write history appears in the Pixel History panel (**Esc** clears it) |
 | **Load model…** | Pick a bundled world (skull, parrot, elephant, teapot, cubes, spheres, towns, shadows, normal mapping…) or open an OBJ/Collada file from disk |
 | **Shading radios** | Switch between None / Classic / Flat / Gouraud / Phong / Textured / Material |
-| **Display checkboxes** | Toggle wireframe triangles, back-face culling, XZ grid, world axes, fog, shadows, gamma-correct light, texture filtering |
+| **Display checkboxes** | Toggle wireframe triangles, back-face culling, XZ grid, world axes, fog, shadows, gamma-correct light, texture filtering, 2× supersampling |
 | **Post-processing checkboxes** | Toggle bloom, tone mapping, FXAA and vignette independently |
 
 A stats overlay reports triangle counts (total / back-facing / out-of-view / behind), pixel counts (drawn / z-rejected), and calculation vs. paint timing per frame.
@@ -186,6 +224,11 @@ The renderer avoids managed-heap traffic on the pixel hot path:
 - **`ColorRGB` is a `readonly struct`** — shaders can produce a color per pixel without allocating.
 - **Struct-based varyings and shaders** let the JIT inline the shade call instead of dispatching through an interface.
 - **`ArrayPool`-backed vertex buffers** are rented per frame rather than allocated.
+- **Tile bins are flat arrays filled by a counting sort**, reused across frames, so binning tens of thousands of triangles allocates nothing either.
+
+Work is measured rather than assumed: the numbers above come from a headless harness that
+renders fixed scenes — dense models, heavy overdraw, a few huge triangles — and reports the
+median frame time.
 
 ## Roadmap
 

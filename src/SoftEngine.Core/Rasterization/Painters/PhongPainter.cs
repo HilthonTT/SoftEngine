@@ -30,7 +30,7 @@ public sealed class PhongPainter(
             : scene.Camera.Position;
     }
 
-    public override void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in RowSlice slice)
+    public override void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in ScreenTile tile)
     {
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
@@ -56,6 +56,6 @@ public sealed class PhongPainter(
             new PhongVarying(c.World, c.Norm),
             new BlinnPhongShader(color, lightVector, isDirectional, Light.Intensity, _eye, Ambient, _specularStrength, _shininess, GammaCorrect, Shadows),
             StateFor(vertexBuffer.Mesh),
-            slice);
+            tile);
     }
 }

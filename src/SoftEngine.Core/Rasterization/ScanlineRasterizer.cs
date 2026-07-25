@@ -30,10 +30,10 @@ public static class ScanlineRasterizer
         in TShader shader)
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
-        => Fill(surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2, shader, default, RowSlice.Full);
+        => Fill(surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2, shader, default, ScreenTile.Full);
 
     /// <summary>
-    /// Same as the slice-less overload, but only writes rows owned by <paramref name="slice"/> —
+    /// Same as the tile-less overload, but only writes pixels owned by <paramref name="tile"/> —
     /// the unit of work for parallel rasterization.
     /// </summary>
     public static void Fill<TVarying, TShader>(
@@ -42,10 +42,10 @@ public static class ScanlineRasterizer
         float invW0, float invW1, float invW2,
         TVarying v0, TVarying v1, TVarying v2,
         in TShader shader,
-        in RowSlice slice)
+        in ScreenTile tile)
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
-        => Fill(surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2, shader, default, slice);
+        => Fill(surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2, shader, default, tile);
 
     /// <summary>
     /// Full form: <paramref name="state"/> adds fog and alpha blending, applied per pixel
@@ -58,7 +58,7 @@ public static class ScanlineRasterizer
         TVarying v0, TVarying v1, TVarying v2,
         in TShader shader,
         in RasterState state,
-        in RowSlice slice)
+        in ScreenTile tile)
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
     {
@@ -75,10 +75,10 @@ public static class ScanlineRasterizer
             (p0, p1) = (p1, p0); (v0, v1) = (v1, v0); (invW0, invW1) = (invW1, invW0);
         }
 
-        var yStart = System.Math.Max(FirstCenterAtOrAfter(p0.Y), 0);
-        var yEnd = System.Math.Min(FirstCenterAtOrAfter(p2.Y), surface.Height); // exclusive
+        var yStart = System.Math.Max(FirstCenterAtOrAfter(p0.Y), System.Math.Max(tile.YFrom, 0));
+        var yEnd = System.Math.Min(FirstCenterAtOrAfter(p2.Y), System.Math.Min(tile.YTo, surface.Height)); // exclusive
 
-        if (yStart >= yEnd || slice.FirstOwnedRowAtOrAfter(yStart) >= yEnd)
+        if (yStart >= yEnd)
         {
             return;
         }
@@ -98,9 +98,9 @@ public static class ScanlineRasterizer
             //    p1        long edge on the left
             //  p2
             HalfTriangle(surface, yStart, yMiddle,
-                new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), new Edge<TVarying>(p0, p1, v0, v1, invW0, invW1), shader, state, slice);
+                new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), new Edge<TVarying>(p0, p1, v0, v1, invW0, invW1), shader, state, tile);
             HalfTriangle(surface, yMiddle, yEnd,
-                new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), new Edge<TVarying>(p1, p2, v1, v2, invW1, invW2), shader, state, slice);
+                new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), new Edge<TVarying>(p1, p2, v1, v2, invW1, invW2), shader, state, tile);
         }
         else
         {
@@ -108,9 +108,9 @@ public static class ScanlineRasterizer
             //  p1          long edge on the right
             //    p2
             HalfTriangle(surface, yStart, yMiddle,
-                new Edge<TVarying>(p0, p1, v0, v1, invW0, invW1), new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), shader, state, slice);
+                new Edge<TVarying>(p0, p1, v0, v1, invW0, invW1), new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), shader, state, tile);
             HalfTriangle(surface, yMiddle, yEnd,
-                new Edge<TVarying>(p1, p2, v1, v2, invW1, invW2), new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), shader, state, slice);
+                new Edge<TVarying>(p1, p2, v1, v2, invW1, invW2), new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), shader, state, tile);
         }
     }
 
@@ -118,19 +118,61 @@ public static class ScanlineRasterizer
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int FirstCenterAtOrAfter(float coordinate) => (int)MathF.Ceiling(coordinate - 0.5f);
 
+    // Lane offsets 0, 1, 2, … so one vector can hold a run of consecutive pixels.
+    private static readonly Vector<float> _laneOffsets = CreateLaneOffsets();
+
+    // The largest float below the depth buffer's resolution. Converting the resolution
+    // itself would round up to 2^31, which no longer fits an int.
+    private static readonly float _maxDepth = MathF.BitDecrement(FrameBuffer.DepthResolution);
+
+    private static Vector<float> CreateLaneOffsets()
+    {
+        Span<float> lanes = stackalloc float[Vector<float>.Count];
+
+        for (var i = 0; i < lanes.Length; i++)
+        {
+            lanes[i] = i;
+        }
+
+        return new Vector<float>(lanes);
+    }
+
+    /// <summary>
+    /// Quantized depth of the run of pixels starting at <paramref name="x"/>, one lane each.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector<int> BlockDepths(float zBase, float dz, int x)
+    {
+        var z = new Vector<float>(zBase) + (new Vector<float>(x) + _laneOffsets) * dz;
+
+        return Vector.ConvertToInt32(
+            Vector.Min(Vector.Max(z, Vector<float>.Zero), new Vector<float>(_maxDepth)));
+    }
+
+    /// <summary>
+    /// Device depth as the buffer stores it. Clamping is what keeps this and
+    /// <see cref="BlockDepths"/> in agreement: a float-to-int conversion outside the int
+    /// range is not defined to produce the same answer in both.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int QuantizeDepth(float z) => (int)System.Math.Clamp(z, 0f, _maxDepth);
+
     private static void HalfTriangle<TVarying, TShader>(
         FrameBuffer surface, int yStart, int yEnd,
         in Edge<TVarying> left, in Edge<TVarying> right,
         in TShader shader,
         in RasterState state,
-        in RowSlice slice)
+        in ScreenTile tile)
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
     {
         var invLeft = left.InvHeight;
         var invRight = right.InvHeight;
 
-        for (var y = slice.FirstOwnedRowAtOrAfter(yStart); y < yEnd; y += slice.Stride)
+        var xLimit = System.Math.Min(tile.XTo, surface.Width);
+        var xFloor = System.Math.Max(tile.XFrom, 0);
+
+        for (var y = yStart; y < yEnd; y++)
         {
             var yCenter = y + 0.5f;
 
@@ -154,7 +196,7 @@ public static class ScanlineRasterizer
             var sv = TVarying.Lerp(left.VA, left.VB, gl);
             var ev = TVarying.Lerp(right.VA, right.VB, gr);
 
-            Scanline(surface, y, sx, ex, sz, ez, sw, ew, sv, ev, shader, state);
+            Scanline(surface, y, sx, ex, sz, ez, sw, ew, sv, ev, shader, state, xFloor, xLimit);
         }
     }
 
@@ -163,12 +205,13 @@ public static class ScanlineRasterizer
         float sx, float ex, float sz, float ez, float sw, float ew,
         in TVarying sv, in TVarying ev,
         in TShader shader,
-        in RasterState state)
+        in RasterState state,
+        int xFloor, int xLimit)
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
     {
-        var xStart = System.Math.Max(FirstCenterAtOrAfter(sx), 0);
-        var xEnd = System.Math.Min(FirstCenterAtOrAfter(ex), surface.Width); // exclusive
+        var xStart = System.Math.Max(FirstCenterAtOrAfter(sx), xFloor);
+        var xEnd = System.Math.Min(FirstCenterAtOrAfter(ex), xLimit); // exclusive
 
         if (xStart >= xEnd)
         {
@@ -178,10 +221,14 @@ public static class ScanlineRasterizer
         var invSpan = 1f / (ex - sx);
 
         var dz = (ez - sz) * invSpan;
-        var z = sz + (xStart + 0.5f - sx) * dz;
+
+        // Depth as an affine function of x rather than a running sum: the value at a pixel
+        // no longer depends on how many pixels came before it, which is what lets a whole
+        // run of them be tested at once below and still agree with this loop exactly.
+        var zBase = sz + (0.5f - sx) * dz;
 
         // Pixel stats are accumulated locally and flushed once per scanline, so parallel
-        // slices don't contend on the shared counters at every pixel.
+        // tiles don't contend on the shared counters at every pixel.
         var drawn = 0;
         var behindZ = 0;
 
@@ -190,10 +237,23 @@ public static class ScanlineRasterizer
         // depth test skip interpolation and shading entirely.
         var probing = surface.IsProbing;
 
+        // Runs of pixels that are entirely behind the z-buffer — the common case in a scene
+        // with depth complexity — are rejected a vector at a time and never shaded. The
+        // block test only runs where a whole vector fits inside the span.
+        var blockEnd = Vector.IsHardwareAccelerated && !probing
+            ? xEnd - Vector<int>.Count
+            : int.MinValue;
+
         for (var x = xStart; x < xEnd; x++)
         {
-            var depth = (int)z;
-            z += dz;
+            if (x <= blockEnd && surface.NoDepthPasses(x, y, BlockDepths(zBase, dz, x)))
+            {
+                behindZ += Vector<int>.Count;
+                x += Vector<int>.Count - 1;
+                continue;
+            }
+
+            var depth = QuantizeDepth(zBase + x * dz);
 
             if (!probing && !surface.DepthTest(x, y, depth))
             {

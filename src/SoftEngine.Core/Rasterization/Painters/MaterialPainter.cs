@@ -61,7 +61,7 @@ public sealed class MaterialPainter(ILight? light = null, float ambient = 0.12f)
         }
     }
 
-    public override void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in RowSlice slice)
+    public override void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in ScreenTile tile)
     {
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
@@ -129,7 +129,7 @@ public sealed class MaterialPainter(ILight? light = null, float ambient = 0.12f)
             new MaterialVarying(c.World, c.Norm, tangent2, uv2),
             shader,
             StateFor(mesh),
-            slice);
+            tile);
     }
 
     /// <summary>Binds one map at the mip level this triangle's screen footprint calls for.</summary>

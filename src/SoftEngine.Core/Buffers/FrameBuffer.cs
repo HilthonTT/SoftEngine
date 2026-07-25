@@ -93,6 +93,65 @@ public sealed class FrameBuffer(int width, int height)
     public bool DepthTest(int x, int y, int z) => z <= _zBuffer[x + y * Width];
 
     /// <summary>
+    /// Whether not one of the <see cref="Vector{T}.Count"/> pixels starting at (x, y) can
+    /// pass the depth test against <paramref name="depths"/>. A run that is entirely behind
+    /// what is already drawn can be skipped whole, without interpolating or shading any of
+    /// it. The caller must keep the run inside one row: <c>x + Vector&lt;int&gt;.Count ≤ Width</c>.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool NoDepthPasses(int x, int y, in Vector<int> depths) =>
+        Vector.GreaterThanAll(depths, new Vector<int>(_zBuffer.AsSpan(x + y * Width, Vector<int>.Count)));
+
+    /// <summary>
+    /// The farthest depth currently stored anywhere in the given rectangle. Nothing behind
+    /// it can be seen there, so a triangle whose nearest point is farther still can be
+    /// dropped without rasterizing it at all.
+    ///
+    /// The scan stops at the first row holding a pixel nothing has written yet: the clear
+    /// value is the largest depth the buffer can hold, so the answer is already known, and
+    /// a rectangle that is still partly background — the case where the bound would buy
+    /// nothing — is left after a handful of reads instead of a full sweep.
+    /// </summary>
+    internal int MaxDepthIn(int xFrom, int yFrom, int xTo, int yTo)
+    {
+        var max = 0;
+        var lanes = Vector<int>.Count;
+
+        for (var y = yFrom; y < yTo; y++)
+        {
+            var row = _zBuffer.AsSpan(y * Width + xFrom, xTo - xFrom);
+            var i = 0;
+
+            if (Vector.IsHardwareAccelerated && row.Length >= lanes)
+            {
+                var accumulator = new Vector<int>(row);
+
+                for (i = lanes; i <= row.Length - lanes; i += lanes)
+                {
+                    accumulator = Vector.Max(accumulator, new Vector<int>(row[i..]));
+                }
+
+                for (var lane = 0; lane < lanes; lane++)
+                {
+                    max = System.Math.Max(max, accumulator[lane]);
+                }
+            }
+
+            for (; i < row.Length; i++)
+            {
+                max = System.Math.Max(max, row[i]);
+            }
+
+            if (max >= DepthResolution)
+            {
+                return DepthResolution;
+            }
+        }
+
+        return max;
+    }
+
+    /// <summary>
     /// Depth-tests and writes one pixel. Returns true when the pixel was drawn, false
     /// when it was behind the z-buffer — callers batch these into stats themselves, so
     /// parallel rasterization doesn't contend on shared counters per pixel.

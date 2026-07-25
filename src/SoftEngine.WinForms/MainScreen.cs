@@ -191,6 +191,7 @@ public sealed partial class MainScreen : Form
             ApplyTextureFiltering(panel3D1.Painter);
             panel3D1.Invalidate();
         };
+        chkSuperSampling.CheckedChanged += (s, e) => panel3D1.SuperSampling = chkSuperSampling.Checked ? 2 : 1;
 
         InitializePostProcessing();
 

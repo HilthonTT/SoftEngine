@@ -29,6 +29,17 @@ public partial class Panel3D : UserControl
     private readonly HashSet<Keys> _heldKeys = [];
 
     private Size _bufferSize;
+    private int _superSampling = 1;
+
+    // Set when the render target has to be rebuilt for a reason the control's size doesn't
+    // show — a change of sample count, which resizes the target but not the viewport.
+    private bool _renderTargetStale;
+
+    // The frame at display resolution, when it is rendered at a higher one. Reused across
+    // frames, and left empty while supersampling is off — the render target is presentable
+    // as it stands then.
+    private int[] _resolved = [];
+
     private Bitmap? bmp;
     private float _referenceDistance = 1f;
     private int _wheelDelta;
@@ -64,6 +75,33 @@ public partial class Panel3D : UserControl
     /// <summary>Draws the per-frame counters over the top-left of the viewport.</summary>
     [DefaultValue(true)]
     public bool ShowStatsOverlay { get; set; } = true;
+
+    /// <summary>
+    /// Samples per screen pixel along each axis. 1 renders one framebuffer pixel per screen
+    /// pixel; 2 renders four and averages them down, which anti-aliases everything the
+    /// pipeline produces — silhouettes, highlights and texture detail alike — for four times
+    /// the fill. Everything the control exposes stays in screen pixels either way.
+    /// </summary>
+    [DefaultValue(1)]
+    public int SuperSampling
+    {
+        get => _superSampling;
+        set
+        {
+            var factor = SuperSampler.ClampFactor(value);
+
+            if (factor == _superSampling)
+            {
+                return;
+            }
+
+            _superSampling = factor;
+            _renderTargetStale = true;
+
+            ApplyProbe();
+            Invalidate();
+        }
+    }
 
     /// <summary>Raised after every rendered frame, on the UI thread.</summary>
     public event EventHandler? FrameRendered;
@@ -191,17 +229,29 @@ public partial class Panel3D : UserControl
 
         _selectedPixel = pixel;
 
-        if (pixel is { } probe)
+        ApplyProbe();
+
+        SelectedPixelChanged?.Invoke(this, EventArgs.Empty);
+        Invalidate();
+    }
+
+    /// <summary>
+    /// Points the renderer's probe at the selected screen pixel. Under supersampling a screen
+    /// pixel is a block of samples, so the probe takes the one nearest its centre — the
+    /// history then describes a sample that actually contributed to what was clicked.
+    /// </summary>
+    private void ApplyProbe()
+    {
+        if (_selectedPixel is { } probe)
         {
-            Diagnostics.SetProbe(probe.X, probe.Y);
+            Diagnostics.SetProbe(
+                probe.X * _superSampling + _superSampling / 2,
+                probe.Y * _superSampling + _superSampling / 2);
         }
         else
         {
             Diagnostics.ClearProbe();
         }
-
-        SelectedPixelChanged?.Invoke(this, EventArgs.Empty);
-        Invalidate();
     }
 
     public void ClearSelectedPixel() => SelectPixel(null);
@@ -372,7 +422,7 @@ public partial class Panel3D : UserControl
     /// </summary>
     public bool SaveScreenshot(string path)
     {
-        if (Scene?.Surface is not { } surface || surface.Width <= 0 || surface.Height <= 0)
+        if (Scene?.Surface is not { Width: > 0, Height: > 0 } || _bufferSize.Width <= 0 || _bufferSize.Height <= 0)
         {
             return false;
         }
@@ -382,8 +432,13 @@ public partial class Panel3D : UserControl
             return false;
         }
 
-        var screen = surface.Screen;
-        var pixels = new uint[surface.Width * surface.Height];
+        // The resolved frame rather than the render target: a supersampled capture should be
+        // the image on screen, not the larger one it was averaged down from.
+        var width = _bufferSize.Width;
+        var height = _bufferSize.Height;
+
+        var screen = PresentablePixels();
+        var pixels = new uint[width * height];
 
         // The framebuffer is packed ARGB (blue in the low byte); PngWriter wants packed
         // RGBA (red in the low byte). Swap R and B, and force alpha opaque — cleared
@@ -397,7 +452,7 @@ public partial class Panel3D : UserControl
                 | ((argb & 0x000000FF) << 16); // B: bits 0-7 -> 16-23
         }
 
-        PngWriter.Save(path, pixels, surface.Width, surface.Height);
+        PngWriter.Save(path, pixels, width, height);
         return true;
     }
 
@@ -410,12 +465,16 @@ public partial class Panel3D : UserControl
 
         var bufferSize = new Size(Math.Max(1, ClientSize.Width), Math.Max(1, ClientSize.Height));
 
-        if (bufferSize != _bufferSize)
+        if (bufferSize != _bufferSize || _renderTargetStale)
         {
-            Scene.Surface = new FrameBuffer(bufferSize.Width, bufferSize.Height) { Stats = Stats };
+            _renderTargetStale = false;
+
+            Scene.Surface = new FrameBuffer(bufferSize.Width * _superSampling, bufferSize.Height * _superSampling) { Stats = Stats };
 
             bmp?.Dispose();
             bmp = new Bitmap(bufferSize.Width, bufferSize.Height, PixelFormat.Format32bppPArgb);
+
+            _resolved = _superSampling > 1 ? new int[bufferSize.Width * bufferSize.Height] : [];
 
             _bufferSize = bufferSize;
 
@@ -435,7 +494,7 @@ public partial class Panel3D : UserControl
         var g = e.Graphics;
 
         Renderer.Render(Scene, Painter);
-        BitmapBlitter.FillBitmap(bmp, Scene.Surface.Screen);
+        BitmapBlitter.FillBitmap(bmp, PresentablePixels());
 
         g.DrawImage(bmp, Point.Empty);
 
@@ -447,6 +506,26 @@ public partial class Panel3D : UserControl
         }
 
         FrameRendered?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// The last rendered frame at display resolution: the render target itself, or the
+    /// average of each block of samples when it was drawn larger than the control.
+    /// </summary>
+    private int[] PresentablePixels()
+    {
+        if (Scene?.Surface is not { } surface)
+        {
+            return [];
+        }
+
+        if (_superSampling <= 1)
+        {
+            return surface.Screen;
+        }
+
+        SuperSampler.Resolve(surface, _resolved, _bufferSize.Width, _bufferSize.Height, _superSampling);
+        return _resolved;
     }
 
     /// <summary>Releases the render bitmap and the movement timer; called from the designer's Dispose.</summary>

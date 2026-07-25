@@ -22,10 +22,21 @@ public sealed class RenderStats
 
     private int _drawnPixelCount;
     private int _behindZPixelCount;
+    private int _occludedTriangleCount;
 
     public int DrawnPixelCount => _drawnPixelCount;
 
     public int BehindZPixelCount => _behindZPixelCount;
+
+    /// <summary>
+    /// Triangle-in-tile pairs the fill phase dropped whole because the tile was already
+    /// covered by nearer geometry. Counted per tile, so a triangle spanning several tiles
+    /// can be rejected by some and drawn by others.
+    /// </summary>
+    public int OccludedTriangleCount => _occludedTriangleCount;
+
+    /// <summary>Thread-safe batched count of coarse-depth rejections, flushed once per tile.</summary>
+    public void AddOccludedTriangles(int count) => Interlocked.Add(ref _occludedTriangleCount, count);
 
     /// <summary>Thread-safe batched pixel counts, flushed by the rasterizer per scanline.</summary>
     public void AddPixelCounts(int drawn, int behindZ)
@@ -75,5 +86,6 @@ public sealed class RenderStats
         NearClippedTriangleCount = 0;
         _drawnPixelCount = 0;
         _behindZPixelCount = 0;
+        _occludedTriangleCount = 0;
     }
 }

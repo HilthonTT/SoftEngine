@@ -19,7 +19,7 @@ public static class NormalMapBuilder
     /// </summary>
     public static Texture FromHeight(Texture height, float strength = 1f)
     {
-        ArgumentNullException.ThrowIfNull(height);
+        ArgumentNullException.ThrowIfNull(height, nameof(height));
 
         var width = height.Width;
         var rows = height.Height;

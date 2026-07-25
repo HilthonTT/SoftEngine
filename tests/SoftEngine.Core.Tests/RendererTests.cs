@@ -148,4 +148,75 @@ public class RendererTests
 
         Assert.True(renderer.Stats.DrawnPixelCount > 0);
     }
+
+    /// <summary>
+    /// Two spheres, the second squarely behind the first: enough triangles for the parallel
+    /// tiled fill and enough depth complexity for a tile to reject some of them.
+    /// </summary>
+    private static (Renderer Renderer, Scene Scene) MakeOccludedScene()
+    {
+        var renderer = new Renderer();
+        renderer.Settings.BackFaceCulling = true;
+
+        var scene = new Scene
+        {
+            Surface = new FrameBuffer(256, 256) { Stats = renderer.Stats },
+            Camera = new FixedCamera(new Vector3(0, 0, 6)),
+            Projection = new PerspectiveProjection(MathF.PI / 4f, 0.1f, 100f),
+            World = new SimpleWorld
+            {
+                Meshes =
+                [
+                    new IcoSphere(3) { Scale = new Vector3(1.5f) },
+                    new IcoSphere(3) { Position = new Vector3(0, 0, -1.2f), Scale = new Vector3(1.5f) },
+                ],
+                Lights = [],
+            },
+        };
+
+        return (renderer, scene);
+    }
+
+    [Fact]
+    public void Render_HierarchicalZ_RejectsOccludedTrianglesWithoutChangingTheImage()
+    {
+        var (rejecting, rejectingScene) = MakeOccludedScene();
+        var (plain, plainScene) = MakeOccludedScene();
+
+        rejecting.Settings.HierarchicalZ = true;
+        plain.Settings.HierarchicalZ = false;
+
+        rejecting.Render(rejectingScene, new PhongPainter());
+        plain.Render(plainScene, new PhongPainter());
+
+        // The rejection has to be doing something here, or the comparison proves nothing.
+        Assert.True(rejecting.Stats.OccludedTriangleCount > 0);
+        Assert.Equal(0, plain.Stats.OccludedTriangleCount);
+
+        for (var y = 0; y < 256; y++)
+        {
+            for (var x = 0; x < 256; x++)
+            {
+                Assert.Equal(plainScene.Surface.GetColor(x, y), rejectingScene.Surface.GetColor(x, y));
+                Assert.Equal(plainScene.Surface.GetDepth(x, y), rejectingScene.Surface.GetDepth(x, y));
+            }
+        }
+    }
+
+    [Fact]
+    public void Render_HierarchicalZ_DrawsTheSamePixelsAsTheDepthTestWould()
+    {
+        var (renderer, scene) = MakeOccludedScene();
+        var (reference, referenceScene) = MakeOccludedScene();
+
+        reference.Settings.HierarchicalZ = false;
+
+        renderer.Render(scene, new PhongPainter());
+        reference.Render(referenceScene, new PhongPainter());
+
+        // Rejected triangles never reach the depth test, so they stop being counted as
+        // z-rejected pixels — but the pixels that actually get drawn must not change.
+        Assert.Equal(reference.Stats.DrawnPixelCount, renderer.Stats.DrawnPixelCount);
+        Assert.True(renderer.Stats.BehindZPixelCount < reference.Stats.BehindZPixelCount);
+    }
 }

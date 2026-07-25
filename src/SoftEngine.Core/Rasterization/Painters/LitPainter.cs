@@ -47,7 +47,7 @@ public abstract class LitPainter(ILight? light, float ambient) : IPainter
     {
     }
 
-    public abstract void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in RowSlice slice);
+    public abstract void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in ScreenTile tile);
 
     /// <summary>
     /// Ambient plus Lambert diffuse, clamped to 1. When the scene casts shadows the diffuse

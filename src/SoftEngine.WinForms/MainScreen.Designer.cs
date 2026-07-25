@@ -47,6 +47,7 @@ public sealed partial class MainScreen
         chkShadows = new CheckBox();
         chkGammaCorrect = new CheckBox();
         chkTextureFiltering = new CheckBox();
+        chkSuperSampling = new CheckBox();
         lblShadingHeader = new Label();
         flpShading = new FlowLayoutPanel();
         rdbNoneShading = new RadioButton();
@@ -225,6 +226,7 @@ public sealed partial class MainScreen
         flpDisplay.Controls.Add(chkShadows);
         flpDisplay.Controls.Add(chkGammaCorrect);
         flpDisplay.Controls.Add(chkTextureFiltering);
+        flpDisplay.Controls.Add(chkSuperSampling);
         flpDisplay.FlowDirection = FlowDirection.TopDown;
         flpDisplay.Margin = new Padding(0);
         flpDisplay.Name = "flpDisplay";
@@ -297,6 +299,15 @@ public sealed partial class MainScreen
         chkTextureFiltering.Text = "Texture filtering";
         chkTextureFiltering.UseVisualStyleBackColor = true;
         toolTip1.SetToolTip(chkTextureFiltering, "Bilinear filtering with mip-mapping (Textured shading)");
+        //
+        // chkSuperSampling
+        //
+        chkSuperSampling.AutoSize = true;
+        chkSuperSampling.Margin = new Padding(2, 2, 0, 2);
+        chkSuperSampling.Name = "chkSuperSampling";
+        chkSuperSampling.Text = "Supersample 2×";
+        chkSuperSampling.UseVisualStyleBackColor = true;
+        toolTip1.SetToolTip(chkSuperSampling, "Render at twice the resolution and average down — anti-aliases everything, fills four times the pixels");
         //
         // lblShadingHeader
         //
@@ -757,6 +768,7 @@ public sealed partial class MainScreen
     private CheckBox chkShadows;
     private CheckBox chkGammaCorrect;
     private CheckBox chkTextureFiltering;
+    private CheckBox chkSuperSampling;
     private Label lblShadingHeader;
     private FlowLayoutPanel flpShading;
     private RadioButton rdbNoneShading;

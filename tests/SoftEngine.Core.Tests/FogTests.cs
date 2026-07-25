@@ -101,7 +101,7 @@ public class FogTests
             default(EmptyVarying), default, default,
             new SolidColorShader(ColorRGB.Red),
             state,
-            RowSlice.Full);
+            ScreenTile.Full);
 
         Assert.True(stats.DrawnPixelCount > 0);
         Assert.Equal(ColorRGB.Blue.Color, surface.GetColor(12, 12));
@@ -123,7 +123,7 @@ public class FogTests
             default(EmptyVarying), default, default,
             new SolidColorShader(ColorRGB.Red),
             state,
-            RowSlice.Full);
+            ScreenTile.Full);
 
         Assert.Equal(ColorRGB.Red.Color, surface.GetColor(12, 12));
     }

@@ -11,7 +11,7 @@ public sealed class ClassicPainter : IPainter
 
     public void Prepare(Scene scene) => _fogState = RasterState.From(scene);
 
-    public void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in RowSlice slice)
+    public void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in ScreenTile tile)
     {
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
@@ -25,6 +25,6 @@ public sealed class ClassicPainter : IPainter
            default(EmptyVarying), default, default,
            new SolidColorShader(color),
            _fogState.WithOpacity(vertexBuffer.Mesh.Opacity),
-           slice);
+           tile);
     }
 }

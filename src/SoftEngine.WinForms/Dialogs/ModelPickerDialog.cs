@@ -2,12 +2,6 @@ using System.Drawing.Drawing2D;
 
 namespace SoftEngine.WinForms.Dialogs;
 
-/// <summary>A built-in demo world, or a model file somewhere on the machine.</summary>
-internal sealed record ModelChoice(string? DemoId, string? FilePath);
-
-/// <summary>One entry of the bundled world list.</summary>
-internal sealed record DemoEntry(string Display, string Id);
-
 /// <summary>
 /// Picks what to render: one of the bundled demo worlds, or any OBJ/Collada file the
 /// user browses to. Replaces the sidebar list, which had no room left once the
@@ -21,10 +15,15 @@ internal sealed class ModelPickerDialog : Form
     {
         Text = "Load model";
         StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
+
+        // Sizable rather than fixed: the list is the point of the dialog, and a longer one
+        // is worth more room. The minimum keeps the button row from ever being squeezed.
+        FormBorderStyle = FormBorderStyle.Sizable;
+        SizeGripStyle = SizeGripStyle.Show;
         MinimizeBox = false;
         MaximizeBox = false;
-        ClientSize = new Size(380, 460);
+        ClientSize = new Size(480, 560);
+        MinimumSize = new Size(440, 380);
         BackColor = Theme.Background;
         ForeColor = Theme.TextPrimary;
         Font = new Font("Segoe UI", 9.75f);
@@ -59,16 +58,7 @@ internal sealed class ModelPickerDialog : Form
         }
 
         var selected = demos.Select((demo, index) => (demo, index)).FirstOrDefault(pair => pair.demo.Id == currentId).index;
-        _list.SelectedIndex = System.Math.Clamp(selected, 0, System.Math.Max(0, demos.Count - 1));
-
-        var buttons = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Bottom,
-            FlowDirection = FlowDirection.RightToLeft,
-            Height = 52,
-            Padding = new Padding(0, 10, 0, 0),
-            BackColor = Theme.Background,
-        };
+        _list.SelectedIndex = Math.Clamp(selected, 0, Math.Max(0, demos.Count - 1));
 
         var load = MakeButton("Load", accent: true);
         load.Click += (s, e) => Accept();
@@ -77,19 +67,53 @@ internal sealed class ModelPickerDialog : Form
         cancel.Click += (s, e) => DialogResult = DialogResult.Cancel;
 
         var browse = MakeButton("Open file from my PC…");
-        browse.Width = 180;
         browse.Click += (s, e) => Browse();
 
-        buttons.Controls.Add(load);
-        buttons.Controls.Add(cancel);
-        buttons.Controls.Add(browse);
+        // Browse sits on the left and the two verbs on the right, each in its own flow
+        // panel. Sharing one row is what used to wrap the widest button onto a second line
+        // and then clip it — this way the row's width never decides what stays visible.
+        var confirm = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Right,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            BackColor = Theme.Background,
+        };
+
+        confirm.Controls.Add(load);
+        confirm.Controls.Add(cancel);
+
+        var alternatives = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Left,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            BackColor = Theme.Background,
+        };
+
+        alternatives.Controls.Add(browse);
+
+        var buttons = new Panel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 62,
+            Padding = new Padding(14, 12, 14, 14),
+            BackColor = Theme.Background,
+        };
+
+        buttons.Controls.Add(confirm);
+        buttons.Controls.Add(alternatives);
 
         var content = new Panel { Dock = DockStyle.Fill, Padding = new Padding(14, 10, 14, 6) };
         content.Controls.Add(_list);
         content.Controls.Add(header);
 
         Controls.Add(content);
-        Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 58, Padding = new Padding(14, 0, 14, 12), Controls = { buttons } });
+        Controls.Add(buttons);
 
         AcceptButton = load;
         CancelButton = cancel;
@@ -98,11 +122,14 @@ internal sealed class ModelPickerDialog : Form
     /// <summary>What the user picked, or null when the dialog was cancelled.</summary>
     public ModelChoice? Choice { get; private set; }
 
+    // Sized from its own text, so a longer label widens the button instead of being cut off.
     private Button MakeButton(string text, bool accent = false) => new()
     {
         Text = text,
-        Width = 100,
-        Height = 30,
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
+        MinimumSize = new Size(100, 32),
+        Padding = new Padding(14, 4, 14, 4),
         FlatStyle = FlatStyle.Flat,
         BackColor = accent ? Theme.Accent : Theme.Surface,
         ForeColor = accent ? Color.White : Theme.TextPrimary,

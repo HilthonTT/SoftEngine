@@ -7,7 +7,7 @@ namespace SoftEngine.Core.Rasterization.Painters;
 /// <summary>Per-vertex Lambert intensity, interpolated across the triangle.</summary>
 public sealed class GouraudPainter(ILight? light = null, float ambient = 0.12f) : LitPainter(light, ambient)
 {
-    public override void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in RowSlice slice)
+    public override void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in ScreenTile tile)
     {
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
@@ -25,6 +25,6 @@ public sealed class GouraudPainter(ILight? light = null, float ambient = 0.12f) 
             new IntensityVarying(LitIntensity(c.World, c.Norm)),
             new LambertShader(color, GammaCorrect),
             StateFor(vertexBuffer.Mesh),
-            slice);
+            tile);
     }
 }
