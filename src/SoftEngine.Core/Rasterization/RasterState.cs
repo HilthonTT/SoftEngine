@@ -1,5 +1,6 @@
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Scenes;
+using SoftEngine.Core.Shading;
 
 namespace SoftEngine.Core.Rasterization;
 
@@ -20,9 +21,9 @@ public readonly struct RasterState
     private readonly byte _fogMode;
     private readonly float _fogA; // linear: End / (End - Start); exponential: density
     private readonly float _fogB; // linear: -1 / (End - Start)
-    private readonly ColorRGB _fogColor;
+    private readonly LinearColor _fogColor;
 
-    private RasterState(float transparency, byte fogMode, float fogA, float fogB, ColorRGB fogColor)
+    private RasterState(float transparency, byte fogMode, float fogA, float fogB, LinearColor fogColor)
     {
         _transparency = transparency;
         _fogMode = fogMode;
@@ -63,14 +64,18 @@ public readonly struct RasterState
     /// <summary>
     /// Blends a shaded colour toward the fog colour by the view-space depth
     /// <paramref name="w"/> (the clip-space w recovered by the rasterizer).
+    ///
+    /// The blend runs in linear light, which also means fog does what it physically does
+    /// to an over-bright surface: a specular glint seen through thick fog is attenuated
+    /// toward the fog's own brightness rather than clipped to white first.
     /// </summary>
-    public ColorRGB ApplyFog(ColorRGB color, float w)
+    public LinearColor ApplyFog(LinearColor color, float w)
     {
         // Visibility: 1 keeps the surface colour, 0 is fully fogged.
         var visibility = _fogMode == FogLinear
             ? System.Math.Clamp(_fogA + _fogB * w, 0f, 1f)
             : MathF.Exp(-_fogA * w);
 
-        return ColorRGB.Lerp(_fogColor, color, visibility);
+        return LinearColor.Lerp(_fogColor, color, visibility);
     }
 }

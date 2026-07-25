@@ -22,7 +22,12 @@ public sealed class BloomEffect : IPostEffect
 
     public bool Enabled { get; set; }
 
-    /// <summary>Linear luminance a pixel must exceed to bloom. The render target tops out at 1.</summary>
+    /// <summary>
+    /// Linear luminance a pixel must exceed to bloom. An 8-bit render target tops out at 1,
+    /// so a threshold near it leaves only the few pixels that clipped; an
+    /// <see cref="Buffers.FrameBuffer.IsHighDynamicRange">HDR</see> one carries the real
+    /// values, and the threshold then means what it says.
+    /// </summary>
     public float Threshold { get; set; } = 0.65f;
 
     /// <summary>How much of the blurred result is added back over the image.</summary>

@@ -1,13 +1,12 @@
-using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Shading;
 
 namespace SoftEngine.Core.Rasterization;
 
 /// <summary>
-/// Samples a texture at the interpolated UV and applies the interpolated light
-/// intensity. Samples one mip level, chosen per triangle by the painter; filtering is
-/// nearest or bilinear, and the intensity can be applied in linear light (gamma-correct).
+/// Samples a texture at the interpolated UV and applies the interpolated light. Samples
+/// one mip level, chosen per triangle by the painter; filtering is nearest or bilinear,
+/// and the light can be applied in linear space (gamma-correct).
 /// </summary>
 public readonly struct TexturedShader : IPixelShader<TextureVarying>
 {
@@ -25,18 +24,12 @@ public readonly struct TexturedShader : IPixelShader<TextureVarying>
         _gammaCorrect = gammaCorrect;
     }
 
-    public ColorRGB Shade(in TextureVarying v)
+    public LinearColor Shade(in TextureVarying v)
     {
         var texel = _albedo.Sample(v.UV);
 
-        if (!_gammaCorrect)
-        {
-            return v.Intensity * texel;
-        }
-
-        return new ColorRGB(
-            ColorSpace.ToSrgb(v.Intensity * ColorSpace.ToLinear(texel.R)),
-            ColorSpace.ToSrgb(v.Intensity * ColorSpace.ToLinear(texel.G)),
-            ColorSpace.ToSrgb(v.Intensity * ColorSpace.ToLinear(texel.B)));
+        return _gammaCorrect
+            ? v.Light * (LinearColor)texel
+            : v.Light.ScaleBytes(texel);
     }
 }

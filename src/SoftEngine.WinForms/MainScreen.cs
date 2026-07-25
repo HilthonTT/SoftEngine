@@ -46,6 +46,10 @@ public sealed partial class MainScreen : Form
     private readonly Label lblLoading;
     private readonly FlatProgressBar prgLoading;
 
+    /// <summary>The generated sky, and the sun direction it was generated around.</summary>
+    private CubeMap? _sky;
+    private Vector3 _skySunDirection;
+
     /// <summary>Set by every rendered frame, cleared when the debugger panels have caught up.</summary>
     private bool _frameDirty;
 
@@ -171,18 +175,34 @@ public sealed partial class MainScreen : Form
             Projection = new PerspectiveProjection(40f * (float)Math.PI / 180f, .01f, 500f),
             Camera = new ArcBallCamera(panel3D1) { Position = new Vector3(0, 0, -60) },
             GammaCorrect = true,
+            HighDynamicRange = true,
         };
 
         chkGammaCorrect.Checked = panel3D1.Scene.GammaCorrect;
+        chkHighDynamicRange.Checked = panel3D1.Scene.HighDynamicRange;
+        chkSky.Checked = true;
         chkTextureFiltering.Checked = true;
 
         chkFog.CheckedChanged += (s, e) => ApplyFog();
         chkShadows.CheckedChanged += (s, e) => ApplyShadows();
+        chkSky.CheckedChanged += (s, e) =>
+        {
+            ApplySky(panel3D1.Scene?.World);
+            panel3D1.Invalidate();
+        };
         chkGammaCorrect.CheckedChanged += (s, e) =>
         {
             if (panel3D1.Scene is { } scene)
             {
                 scene.GammaCorrect = chkGammaCorrect.Checked;
+                panel3D1.Invalidate();
+            }
+        };
+        chkHighDynamicRange.CheckedChanged += (s, e) =>
+        {
+            if (panel3D1.Scene is { } scene)
+            {
+                scene.HighDynamicRange = chkHighDynamicRange.Checked;
                 panel3D1.Invalidate();
             }
         };
@@ -435,6 +455,7 @@ public sealed partial class MainScreen : Form
     /// <summary>Points each post-processing checkbox at its effect in the viewport's stack.</summary>
     private void InitializePostProcessing()
     {
+        Bind(chkSsao, panel3D1.PostProcess.Find<SsaoEffect>());
         Bind(chkBloom, panel3D1.PostProcess.Find<BloomEffect>());
         Bind(chkToneMap, panel3D1.PostProcess.Find<ToneMapEffect>());
         Bind(chkFxaa, panel3D1.PostProcess.Find<FxaaEffect>());
@@ -573,6 +594,51 @@ public sealed partial class MainScreen : Form
         return PrepareWorldCoreAsync(progress => BuildWorldFromFile(path, progress), Path.GetFileName(path));
     }
 
+    /// <summary>
+    /// Gives the scene a procedural sky, with the sun placed where the world's first
+    /// directional light points — a sky whose sun is somewhere other than where the
+    /// shadows come from is the one thing that reads as obviously wrong.
+    /// </summary>
+    private void ApplySky(IWorld? world)
+    {
+        if (panel3D1.Scene is not { } scene)
+        {
+            return;
+        }
+
+        var sunDirection = world?.Lights.OfType<DirectionalLight>().FirstOrDefault()?.Direction
+            ?? new Vector3(-0.35f, -0.6f, -1f);
+
+        // Generating the cube map walks six faces of texels, so it is kept until the sun
+        // it was built around moves.
+        if (_sky is null || _skySunDirection != sunDirection)
+        {
+            _sky = SkyBox.Gradient(sunDirection);
+            _skySunDirection = sunDirection;
+        }
+
+        scene.Environment = chkSky.Checked ? _sky : null;
+    }
+
+    /// <summary>
+    /// Scales the occlusion radius to the world just loaded. It is a distance in world
+    /// units, and the demos span three orders of magnitude of them — a radius that finds
+    /// the creases in a 2-unit skull sees nothing at all on a 1500-unit elephant. Deriving
+    /// it from the distance the camera was framed at makes it one number for all of them.
+    /// </summary>
+    private void ApplyAmbientOcclusion()
+    {
+        if (panel3D1.PostProcess.Find<SsaoEffect>() is not { } ssao)
+        {
+            return;
+        }
+
+        var reference = panel3D1.ReferenceDistance;
+
+        ssao.Radius = reference > 0f ? reference * 0.02f : 0.5f;
+        ssao.Bias = ssao.Radius * 0.04f;
+    }
+
     private async Task PrepareWorldCoreAsync(Func<IProgress<float>?, WorldSetup> build, string label)
     {
         btnLoadModel.Enabled = false;
@@ -607,6 +673,12 @@ public sealed partial class MainScreen : Form
             // framing and the viewport, either of which may have changed.
             ApplyFog();
             ApplyShadows();
+
+            // The sky is built from the new world's own key light, so the sun in it lines
+            // up with the direction the scene is actually lit from.
+            ApplySky(setup.World);
+
+            ApplyAmbientOcclusion();
 
             // Every load sets a projection: either the demo's own, or one whose far plane
             // is derived from the world's extent — a far plane closer than the world's
@@ -683,7 +755,20 @@ public sealed partial class MainScreen : Form
             case "parrot":
                 world.Meshes.AddRange(MeshFactory.HackyImportCollada(ModelPath("parrot.dae"), progress));
                 cameraPosition = new Vector3(0, 0, -500);
-                world.Lights.Add(new PointLight { Position = new Vector3(150, 200, 400) });
+
+                // A warm key and a cool fill from the other side — the classic two-light
+                // setup, and the clearest demonstration that lights sum and carry colour.
+                world.Lights.Add(new PointLight
+                {
+                    Position = new Vector3(150, 200, 400),
+                    Color = new ColorRGB(255, 236, 205),
+                });
+                world.Lights.Add(new PointLight
+                {
+                    Position = new Vector3(-300, 100, -200),
+                    Color = new ColorRGB(120, 170, 255),
+                    Intensity = 0.55f,
+                });
                 break;
 
             case "teapot":
@@ -694,7 +779,17 @@ public sealed partial class MainScreen : Form
                 world.Meshes.AddRange(MeshFactory.HackyImportCollada(ModelPath("elefant.dae"), progress));
                 cameraPosition = new Vector3(0, 0, -1500);
                 projection = new PerspectiveProjection(40f * (float)Math.PI / 180f, .01f, 65535f);
-                world.Lights.Add(new PointLight { Position = new Vector3(500, 800, 1200) });
+                world.Lights.Add(new PointLight
+                {
+                    Position = new Vector3(500, 800, 1200),
+                    Color = new ColorRGB(255, 240, 214),
+                });
+                world.Lights.Add(new PointLight
+                {
+                    Position = new Vector3(-900, 300, -600),
+                    Color = new ColorRGB(130, 175, 255),
+                    Intensity = 0.5f,
+                });
                 break;
 
             case "Juliet":

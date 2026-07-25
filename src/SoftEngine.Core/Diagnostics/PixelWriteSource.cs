@@ -5,6 +5,7 @@ public enum PixelWriteSource
 {
     Clear,
     Triangle,
+    Sky,
     WireFrame,
     Grid,
     Axes,

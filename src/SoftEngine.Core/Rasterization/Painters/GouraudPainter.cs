@@ -20,9 +20,9 @@ public sealed class GouraudPainter(ILight? light = null, float ambient = 0.12f) 
             surface,
             surface.ToScreen3(a.Proj), surface.ToScreen3(b.Proj), surface.ToScreen3(c.Proj),
             1f / a.Proj.W, 1f / b.Proj.W, 1f / c.Proj.W,
-            new IntensityVarying(LitIntensity(a.World, a.Norm)),
-            new IntensityVarying(LitIntensity(b.World, b.Norm)),
-            new IntensityVarying(LitIntensity(c.World, c.Norm)),
+            new IntensityVarying(LitColor(a.World, a.Norm)),
+            new IntensityVarying(LitColor(b.World, b.Norm)),
+            new IntensityVarying(LitColor(c.World, c.Norm)),
             new LambertShader(color, GammaCorrect),
             StateFor(vertexBuffer.Mesh),
             tile);

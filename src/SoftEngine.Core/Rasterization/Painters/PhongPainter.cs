@@ -39,14 +39,6 @@ public sealed class PhongPainter(
 
         var (a, b, c) = (vertexBuffer.GetVertex(t.I0), vertexBuffer.GetVertex(t.I1), vertexBuffer.GetVertex(t.I2));
 
-        // Resolve the light to plain vectors so the per-pixel shader stays dispatch-free.
-        var (lightVector, isDirectional) = Light switch
-        {
-            DirectionalLight d => (d.DirectionFrom(Vector3.Zero), true),
-            PointLight p => (p.Position, false),
-            _ => (Light.DirectionFrom((a.World + b.World + c.World) / 3f), true),
-        };
-
         ScanlineRasterizer.Fill(
             surface,
             surface.ToScreen3(a.Proj), surface.ToScreen3(b.Proj), surface.ToScreen3(c.Proj),
@@ -54,7 +46,7 @@ public sealed class PhongPainter(
             new PhongVarying(a.World, a.Norm),
             new PhongVarying(b.World, b.Norm),
             new PhongVarying(c.World, c.Norm),
-            new BlinnPhongShader(color, lightVector, isDirectional, Light.Intensity, _eye, Ambient, _specularStrength, _shininess, GammaCorrect, Shadows),
+            new BlinnPhongShader(color, Lights, _eye, AmbientLight, _specularStrength, _shininess, GammaCorrect, Shadows),
             StateFor(vertexBuffer.Mesh),
             tile);
     }

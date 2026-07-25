@@ -96,24 +96,14 @@ public sealed class MaterialPainter(ILight? light = null, float ambient = 0.12f)
         var tangent1 = hasTangents ? vertexBuffer.GetTangent(t.I1) : Vector4.Zero;
         var tangent2 = hasTangents ? vertexBuffer.GetTangent(t.I2) : Vector4.Zero;
 
-        // Resolve the light to plain vectors so the per-pixel shader stays dispatch-free.
-        var (lightVector, isDirectional) = Light switch
-        {
-            DirectionalLight d => (d.DirectionFrom(Vector3.Zero), true),
-            PointLight p => (p.Position, false),
-            _ => (Light.DirectionFrom((a.World + b.World + c.World) / 3f), true),
-        };
-
         var shader = new MaterialShader(
             material?.Diffuse ?? color,
             albedo,
             normalMap,
             specularMap,
-            lightVector,
-            isDirectional,
-            Light.Intensity,
+            Lights,
             _eye,
-            Ambient,
+            AmbientLight,
             material?.SpecularStrength ?? DefaultSpecularStrength,
             material?.Shininess ?? DefaultShininess,
             material?.NormalStrength ?? 1f,

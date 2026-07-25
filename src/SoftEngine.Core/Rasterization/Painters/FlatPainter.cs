@@ -20,8 +20,8 @@ public sealed class FlatPainter(ILight? light = null, float ambient = 0.12f) : L
         var normal = (a.Norm + b.Norm + c.Norm) / 3f;
         var centroid = (a.World + b.World + c.World) / 3f;
 
-        var intensity = LitIntensity(centroid, normal);
-        var lit = GammaCorrect ? ColorSpace.ScaleLinear(color, intensity) : intensity * color;
+        var light = LitColor(centroid, normal);
+        LinearColor lit = GammaCorrect ? light * (LinearColor)color : light.ScaleBytes(color);
 
         ScanlineRasterizer.Fill(
             surface,

@@ -131,6 +131,7 @@ internal sealed class PixelHistoryPanel : UserControl
         {
             PixelWriteSource.Clear => "ClearRenderTarget",
             PixelWriteSource.Triangle => $"DrawTriangle {_catalog.Describe(write.ObjectId)} tri:{write.TriangleIndex}",
+            PixelWriteSource.Sky => "SkyRender",
             PixelWriteSource.WireFrame => $"WireFrame {_catalog.Describe(write.ObjectId)} tri:{write.TriangleIndex}",
             PixelWriteSource.Grid => "GizmoDrawGrid",
             PixelWriteSource.Axes => "GizmoDrawAxes",

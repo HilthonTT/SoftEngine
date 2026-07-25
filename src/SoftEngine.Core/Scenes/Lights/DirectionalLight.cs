@@ -1,3 +1,4 @@
+using SoftEngine.Core.Diagnostics;
 using System.Numerics;
 
 namespace SoftEngine.Core.Scenes.Lights;
@@ -20,6 +21,8 @@ public sealed class DirectionalLight : ILight
     }
 
     public float Intensity { get; set; } = 1f;
+
+    public ColorRGB Color { get; set; } = ColorRGB.White;
 
     public Vector3 DirectionFrom(Vector3 worldPosition) => _towardLight;
 }

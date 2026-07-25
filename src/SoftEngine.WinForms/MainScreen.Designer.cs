@@ -46,6 +46,8 @@ public sealed partial class MainScreen
         chkFog = new CheckBox();
         chkShadows = new CheckBox();
         chkGammaCorrect = new CheckBox();
+        chkHighDynamicRange = new CheckBox();
+        chkSky = new CheckBox();
         chkTextureFiltering = new CheckBox();
         chkSuperSampling = new CheckBox();
         lblShadingHeader = new Label();
@@ -59,6 +61,7 @@ public sealed partial class MainScreen
         rdbMaterialShading = new RadioButton();
         lblPostHeader = new Label();
         flpPost = new FlowLayoutPanel();
+        chkSsao = new CheckBox();
         chkBloom = new CheckBox();
         chkToneMap = new CheckBox();
         chkFxaa = new CheckBox();
@@ -224,7 +227,9 @@ public sealed partial class MainScreen
         flpDisplay.Controls.Add(chkShowAxes);
         flpDisplay.Controls.Add(chkFog);
         flpDisplay.Controls.Add(chkShadows);
+        flpDisplay.Controls.Add(chkSky);
         flpDisplay.Controls.Add(chkGammaCorrect);
+        flpDisplay.Controls.Add(chkHighDynamicRange);
         flpDisplay.Controls.Add(chkTextureFiltering);
         flpDisplay.Controls.Add(chkSuperSampling);
         flpDisplay.FlowDirection = FlowDirection.TopDown;
@@ -282,6 +287,15 @@ public sealed partial class MainScreen
         chkShadows.UseVisualStyleBackColor = true;
         toolTip1.SetToolTip(chkShadows, "Shadow-map the world from the first light (lit shading modes)");
         //
+        // chkSky
+        //
+        chkSky.AutoSize = true;
+        chkSky.Margin = new Padding(2, 2, 0, 2);
+        chkSky.Name = "chkSky";
+        chkSky.Text = "Sky";
+        chkSky.UseVisualStyleBackColor = true;
+        toolTip1.SetToolTip(chkSky, "Draw a procedural sky behind the scene, and take the ambient light from it");
+        //
         // chkGammaCorrect
         //
         chkGammaCorrect.AutoSize = true;
@@ -290,6 +304,15 @@ public sealed partial class MainScreen
         chkGammaCorrect.Text = "Gamma-correct light";
         chkGammaCorrect.UseVisualStyleBackColor = true;
         toolTip1.SetToolTip(chkGammaCorrect, "Shade in linear light and encode to sRGB on output");
+        //
+        // chkHighDynamicRange
+        //
+        chkHighDynamicRange.AutoSize = true;
+        chkHighDynamicRange.Margin = new Padding(2, 2, 0, 2);
+        chkHighDynamicRange.Name = "chkHighDynamicRange";
+        chkHighDynamicRange.Text = "HDR target";
+        chkHighDynamicRange.UseVisualStyleBackColor = true;
+        toolTip1.SetToolTip(chkHighDynamicRange, "Keep highlights brighter than white in a linear float buffer, for bloom and tone mapping to work with");
         //
         // chkTextureFiltering
         //
@@ -409,6 +432,7 @@ public sealed partial class MainScreen
         //
         flpPost.AutoSize = true;
         flpPost.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        flpPost.Controls.Add(chkSsao);
         flpPost.Controls.Add(chkBloom);
         flpPost.Controls.Add(chkToneMap);
         flpPost.Controls.Add(chkFxaa);
@@ -444,6 +468,15 @@ public sealed partial class MainScreen
         chkFxaa.Text = "FXAA";
         chkFxaa.UseVisualStyleBackColor = true;
         toolTip1.SetToolTip(chkFxaa, "Smooth stair-stepped edges after rasterization");
+        //
+        // chkSsao
+        //
+        chkSsao.AutoSize = true;
+        chkSsao.Margin = new Padding(2, 2, 0, 2);
+        chkSsao.Name = "chkSsao";
+        chkSsao.Text = "Ambient occlusion";
+        chkSsao.UseVisualStyleBackColor = true;
+        toolTip1.SetToolTip(chkSsao, "Darken creases and contact points, from the depth buffer");
         //
         // chkVignette
         //
@@ -767,6 +800,8 @@ public sealed partial class MainScreen
     private CheckBox chkFog;
     private CheckBox chkShadows;
     private CheckBox chkGammaCorrect;
+    private CheckBox chkHighDynamicRange;
+    private CheckBox chkSky;
     private CheckBox chkTextureFiltering;
     private CheckBox chkSuperSampling;
     private Label lblShadingHeader;
@@ -784,6 +819,7 @@ public sealed partial class MainScreen
     private CheckBox chkToneMap;
     private CheckBox chkFxaa;
     private CheckBox chkVignette;
+    private CheckBox chkSsao;
     private Panel pnlViewport;
     private Panel3D panel3D1;
     private ToolTip toolTip1;

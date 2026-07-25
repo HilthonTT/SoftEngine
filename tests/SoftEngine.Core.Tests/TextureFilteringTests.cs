@@ -18,7 +18,8 @@ public class TextureFilteringTests
 
     private static ColorRGB ShadeBilinear(Texture texture, float u, float v) =>
         new TexturedShader(texture, 0, TextureFiltering.Bilinear, false)
-            .Shade(new TextureVarying(new Vector2(u, v), 1f));
+            .Shade(new TextureVarying(new Vector2(u, v), 1f))
+            .ToColorRGB();
 
     [Fact]
     public void Bilinear_AtTexelCenter_ReturnsThatTexel()
@@ -65,7 +66,7 @@ public class TextureFilteringTests
         for (var i = 0; i < 8; i++)
         {
             var u = (i + 0.5f) / 8f;
-            Assert.Equal(texture.Sample(u, 0.3f).Color, shader.Shade(new TextureVarying(new Vector2(u, 0.3f), 1f)).Color);
+            Assert.Equal(texture.Sample(u, 0.3f).Color, shader.Shade(new TextureVarying(new Vector2(u, 0.3f), 1f)).ToColorRGB().Color);
         }
     }
 

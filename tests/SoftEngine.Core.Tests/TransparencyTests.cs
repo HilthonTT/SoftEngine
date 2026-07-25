@@ -66,9 +66,11 @@ public class TransparencyTests
 
         Assert.True(surface.PutPixelBlend(1, 1, 50, ColorRGB.Blue, 0.5f));
 
+        // Half the red's light plus half the blue's. The blend happens in linear light, so
+        // the result is half of full intensity — which encodes to about 188, not to 128.
         var blended = ColorRGB.FromPacked(surface.GetColor(1, 1));
-        Assert.InRange(blended.R, 126, 128);
-        Assert.InRange(blended.B, 126, 128);
+        Assert.InRange(blended.R, 186, 190);
+        Assert.InRange(blended.B, 186, 190);
 
         // The opaque write's depth must survive the blend.
         Assert.Equal(100, surface.GetDepth(1, 1));
@@ -98,11 +100,13 @@ public class TransparencyTests
 
         renderer.Render(scene, new ClassicPainter());
 
-        // Black background, then 50% red, then 50% blue over that: (63, 0, 127).
+        // Black background, then 50% red, then 50% blue over that. In linear light that is
+        // a quarter of the red's intensity left under half the blue's — (0.25, 0, 0.5),
+        // which encodes to roughly (137, 0, 188).
         var center = ColorRGB.FromPacked(scene.Surface.GetColor(64, 64));
-        Assert.InRange(center.R, 62, 65);
+        Assert.InRange(center.R, 135, 139);
         Assert.Equal(0, center.G);
-        Assert.InRange(center.B, 126, 128);
+        Assert.InRange(center.B, 186, 190);
     }
 
     [Fact]

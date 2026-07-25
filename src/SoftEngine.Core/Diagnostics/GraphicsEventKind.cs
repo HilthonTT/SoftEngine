@@ -17,6 +17,7 @@ public enum GraphicsEventKind
     MeshTransformVertices,
     MeshCullTriangles,
     PainterDrawTriangles,
+    SkyRender,
     WireFrameOverlayDraw,
     GizmoDrawGrid,
     GizmoDrawAxes,

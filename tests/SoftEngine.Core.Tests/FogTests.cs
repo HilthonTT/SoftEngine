@@ -41,7 +41,7 @@ public class FogTests
     {
         var state = RasterState.From(LinearFog(10f, 20f));
 
-        Assert.Equal(ColorRGB.Red.Color, state.ApplyFog(ColorRGB.Red, 5f).Color);
+        Assert.Equal(ColorRGB.Red.Color, state.ApplyFog(ColorRGB.Red, 5f).ToColorRGB().Color);
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public class FogTests
     {
         var state = RasterState.From(LinearFog(10f, 20f));
 
-        Assert.Equal(ColorRGB.Blue.Color, state.ApplyFog(ColorRGB.Red, 30f).Color);
+        Assert.Equal(ColorRGB.Blue.Color, state.ApplyFog(ColorRGB.Red, 30f).ToColorRGB().Color);
     }
 
     [Fact]
@@ -59,9 +59,17 @@ public class FogTests
 
         var foggy = state.ApplyFog(ColorRGB.Red, 15f);
 
-        Assert.InRange(foggy.R, 126, 128);
-        Assert.Equal(0, foggy.G);
-        Assert.InRange(foggy.B, 126, 128);
+        // Halfway in linear light, which is where mixing light is defined — not halfway in
+        // sRGB bytes. Half the light of a full-intensity channel encodes to about 188, not
+        // to 128; the latter is a good deal darker than half the light.
+        Assert.Equal(0.5f, foggy.R, 3);
+        Assert.Equal(0f, foggy.G);
+        Assert.Equal(0.5f, foggy.B, 3);
+
+        var encoded = foggy.ToColorRGB();
+        Assert.InRange(encoded.R, 186, 190);
+        Assert.Equal(0, encoded.G);
+        Assert.InRange(encoded.B, 186, 190);
     }
 
     [Fact]
@@ -75,8 +83,8 @@ public class FogTests
             Color = ColorRGB.Blue,
         });
 
-        var near = state.ApplyFog(ColorRGB.Red, 1f);
-        var far = state.ApplyFog(ColorRGB.Red, 50f);
+        var near = state.ApplyFog(ColorRGB.Red, 1f).ToColorRGB();
+        var far = state.ApplyFog(ColorRGB.Red, 50f).ToColorRGB();
 
         Assert.True(near.R > far.R);
         Assert.True(near.B < far.B);

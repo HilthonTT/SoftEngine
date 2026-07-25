@@ -5,17 +5,16 @@ using System.Runtime.CompilerServices;
 namespace SoftEngine.Core.Rasterization;
 
 /// <summary>
-/// Modulates a base colour by the interpolated intensity. Used by Gouraud. With gamma
-/// correction the base colour is decoded once here, scaled in linear light per pixel,
-/// and re-encoded to sRGB.
+/// Modulates a base colour by the interpolated light. Used by Gouraud. With gamma
+/// correction the base colour is decoded once here and multiplied by the light per pixel,
+/// leaving the result in linear space; without it the light scales the sRGB bytes
+/// directly, which is what the engine did before it shaded in linear light.
 /// </summary>
 public readonly struct LambertShader : IPixelShader<IntensityVarying>
 {
     private readonly ColorRGB _color;
+    private readonly LinearColor _linear;
     private readonly bool _gammaCorrect;
-    private readonly float _linearR;
-    private readonly float _linearG;
-    private readonly float _linearB;
 
     public LambertShader(ColorRGB color)
         : this(color, false)
@@ -26,20 +25,11 @@ public readonly struct LambertShader : IPixelShader<IntensityVarying>
     {
         _color = color;
         _gammaCorrect = gammaCorrect;
-
-        if (gammaCorrect)
-        {
-            _linearR = ColorSpace.ToLinear(color.R);
-            _linearG = ColorSpace.ToLinear(color.G);
-            _linearB = ColorSpace.ToLinear(color.B);
-        }
+        _linear = gammaCorrect ? color : default;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ColorRGB Shade(in IntensityVarying v) => _gammaCorrect
-        ? new ColorRGB(
-            ColorSpace.ToSrgb(v.Intensity * _linearR),
-            ColorSpace.ToSrgb(v.Intensity * _linearG),
-            ColorSpace.ToSrgb(v.Intensity * _linearB))
-        : v.Intensity * _color;
+    public LinearColor Shade(in IntensityVarying v) => _gammaCorrect
+        ? v.Light * _linear
+        : v.Light.ScaleBytes(_color);
 }

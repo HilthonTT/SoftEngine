@@ -1,13 +1,17 @@
-﻿using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Shading;
 using System.Runtime.CompilerServices;
 
 namespace SoftEngine.Core.Rasterization;
 
-/// <summary>Emits one constant colour. Used by the classic and flat painters.</summary>
-public readonly struct SolidColorShader(ColorRGB color) : IPixelShader<EmptyVarying>
+/// <summary>
+/// Emits one constant colour. Used by the classic and flat painters. It takes a
+/// <see cref="LinearColor"/> so a flat-shaded triangle can carry light above white, and a
+/// <see cref="Diagnostics.ColorRGB"/> converts to one implicitly.
+/// </summary>
+public readonly struct SolidColorShader(LinearColor color) : IPixelShader<EmptyVarying>
 {
-    private readonly ColorRGB _color = color;
+    private readonly LinearColor _color = color;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ColorRGB Shade(in EmptyVarying _) => _color;
+    public LinearColor Shade(in EmptyVarying _) => _color;
 }

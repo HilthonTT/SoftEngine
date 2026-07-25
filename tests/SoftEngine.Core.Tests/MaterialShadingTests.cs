@@ -9,6 +9,7 @@ using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Cameras;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
+using SoftEngine.Core.Shading;
 using System.Numerics;
 
 namespace SoftEngine.Core.Tests;
@@ -36,11 +37,9 @@ public class MaterialShadingTests
             default,
             new TextureSampler(normalMap, 0, TextureFiltering.Nearest),
             new TextureSampler(specularMap, 0, TextureFiltering.Nearest),
-            Vector3.UnitZ,
-            isDirectional: true,
-            lightIntensity: 1f,
+            LightSet.Of(new DirectionalLight { Direction = -Vector3.UnitZ }),
             eye: new Vector3(0, 0, 5f),
-            ambient: 0.1f,
+            ambient: new AmbientCube(0.1f),
             specularStrength: specularStrength,
             shininess: 32f,
             normalStrength: 1f,
@@ -78,7 +77,7 @@ public class MaterialShadingTests
 
         var untangented = new MaterialVarying(Vector3.Zero, Vector3.UnitZ, Vector4.Zero, new Vector2(0.5f, 0.5f));
 
-        Assert.Equal(Shader(null).Shade(Varying()).Color, shader.Shade(untangented).Color);
+        Assert.Equal(Shader(null).Shade(Varying()).ToColorRGB().Color, shader.Shade(untangented).ToColorRGB().Color);
     }
 
     [Fact]

@@ -65,8 +65,8 @@ public class ColorSpaceTests
     {
         var varying = new IntensityVarying(0.5f);
 
-        var naive = new LambertShader(ColorRGB.White).Shade(varying);
-        var gamma = new LambertShader(ColorRGB.White, gammaCorrect: true).Shade(varying);
+        var naive = new LambertShader(ColorRGB.White).Shade(varying).ToColorRGB();
+        var gamma = new LambertShader(ColorRGB.White, gammaCorrect: true).Shade(varying).ToColorRGB();
 
         Assert.Equal(127, naive.R);
         Assert.InRange(gamma.R, 186, 190);

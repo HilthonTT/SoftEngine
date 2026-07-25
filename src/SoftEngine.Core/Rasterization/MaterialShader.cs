@@ -5,9 +5,10 @@ using System.Numerics;
 namespace SoftEngine.Core.Rasterization;
 
 /// <summary>
-/// Per-pixel Blinn-Phong over a <see cref="Geometry.Material"/>: albedo from a diffuse map,
-/// the shading normal perturbed by a tangent-space normal map, and the highlight's strength
-/// masked by a specular map. Shadows, when the scene casts them, are sampled here too.
+/// Per-pixel Blinn-Phong over a <see cref="Geometry.Material"/>, summed over every light in
+/// the scene: albedo from a diffuse map, the shading normal perturbed by a tangent-space
+/// normal map, and the highlight's strength masked by a specular map. Shadows, when the
+/// scene casts them, are sampled here too, for the one light the map was rendered from.
 ///
 /// The interesting part is the normal map. It replaces the one thing interpolation cannot
 /// give you — surface detail finer than a vertex — without adding a single triangle: the
@@ -23,11 +24,9 @@ public readonly struct MaterialShader : IPixelShader<MaterialVarying>
     private readonly TextureSampler _specularMap;
 
     private readonly ColorRGB _color;
-    private readonly Vector3 _lightVector;
-    private readonly bool _isDirectional;
-    private readonly float _lightIntensity;
+    private readonly LightSet _lights;
     private readonly Vector3 _eye;
-    private readonly float _ambient;
+    private readonly AmbientCube _ambient;
     private readonly float _specularStrength;
     private readonly float _shininess;
     private readonly float _normalStrength;
@@ -43,11 +42,9 @@ public readonly struct MaterialShader : IPixelShader<MaterialVarying>
         in TextureSampler albedo,
         in TextureSampler normalMap,
         in TextureSampler specularMap,
-        Vector3 lightVector,
-        bool isDirectional,
-        float lightIntensity,
+        LightSet lights,
         Vector3 eye,
-        float ambient,
+        AmbientCube ambient,
         float specularStrength,
         float shininess,
         float normalStrength,
@@ -58,9 +55,7 @@ public readonly struct MaterialShader : IPixelShader<MaterialVarying>
         _albedo = albedo;
         _normalMap = normalMap;
         _specularMap = specularMap;
-        _lightVector = lightVector;
-        _isDirectional = isDirectional;
-        _lightIntensity = lightIntensity;
+        _lights = lights;
         _eye = eye;
         _ambient = ambient;
         _specularStrength = specularStrength;
@@ -74,17 +69,11 @@ public readonly struct MaterialShader : IPixelShader<MaterialVarying>
             : 0;
     }
 
-    public ColorRGB Shade(in MaterialVarying v)
+    public LinearColor Shade(in MaterialVarying v)
     {
         var albedo = _albedo.HasTexture ? _albedo.Sample(v.UV) : _color;
         var n = ShadingNormal(v);
-        var l = _isDirectional ? _lightVector : Vector3.Normalize(_lightVector - v.World);
-
-        var nDotL = Vector3.Dot(n, l);
-        var visibility = _shadows is null || nDotL <= 0f ? 1f : _shadows.Visibility(v.World, nDotL);
-
-        var diffuse = MathF.Max(0f, nDotL) * _lightIntensity * visibility;
-        var lit = MathF.Min(1f, _ambient + diffuse);
+        var view = Vector3.Normalize(_eye - v.World);
 
         var specularStrength = _specularStrength;
         if (_specularMap.HasTexture)
@@ -93,33 +82,65 @@ public readonly struct MaterialShader : IPixelShader<MaterialVarying>
             specularStrength *= _specularMap.Sample(v.UV).R * (1f / 255f);
         }
 
-        var spec = 0f;
-        if (nDotL > 0f && specularStrength > 0f && visibility > 0f)
-        {
-            var view = Vector3.Normalize(_eye - v.World);
-            var half = Vector3.Normalize(l + view);
-            var nDotH = MathF.Max(0f, Vector3.Dot(n, half));
+        // Evaluated with the shading normal, so a normal map shapes the ambient the same
+        // way it shapes the lights — which is most of what makes it read as detail rather
+        // than as a pattern printed on a flat surface.
+        var diffuse = _ambient.Evaluate(n);
+        var specular = LinearColor.Black;
 
-            spec = (_shininessInt > 0 ? PowInt(nDotH, _shininessInt) : MathF.Pow(nDotH, _shininess))
-                * specularStrength * _lightIntensity * visibility;
+        for (var i = 0; i < _lights.Count; i++)
+        {
+            ref readonly var light = ref _lights[i];
+
+            if (!light.Sample(v.World, out var l, out var attenuation))
+            {
+                continue;
+            }
+
+            var nDotL = Vector3.Dot(n, l);
+            if (nDotL <= 0f)
+            {
+                continue;
+            }
+
+            if (light.CastsShadow && _shadows is { } shadows)
+            {
+                attenuation *= shadows.Visibility(v.World, nDotL);
+                if (attenuation <= 0f)
+                {
+                    continue;
+                }
+            }
+
+            diffuse += nDotL * attenuation * light.Color;
+
+            if (specularStrength > 0f)
+            {
+                var half = Vector3.Normalize(l + view);
+                var nDotH = MathF.Max(0f, Vector3.Dot(n, half));
+
+                var power = _shininessInt > 0 ? PowInt(nDotH, _shininessInt) : MathF.Pow(nDotH, _shininess);
+
+                specular += power * specularStrength * attenuation * light.Color;
+            }
         }
 
         if (_gammaCorrect)
         {
-            return new ColorRGB(
-                ColorSpace.ToSrgb(lit * ColorSpace.ToLinear(albedo.R) + spec),
-                ColorSpace.ToSrgb(lit * ColorSpace.ToLinear(albedo.G) + spec),
-                ColorSpace.ToSrgb(lit * ColorSpace.ToLinear(albedo.B) + spec));
+            // Unclamped, as in BlinnPhongShader: the highlight is allowed above white so an
+            // HDR target can keep it and the tone-map can shape it.
+            LinearColor linear = albedo;
+
+            return new LinearColor(
+                linear.R * diffuse.R + specular.R,
+                linear.G * diffuse.G + specular.G,
+                linear.B * diffuse.B + specular.B);
         }
 
-        var shaded = lit * albedo;
-
-        if (spec > 0f)
-        {
-            shaded += spec * ColorRGB.White;
-        }
-
-        return shaded;
+        return new ColorRGB(
+            Saturate(albedo.R * diffuse.R + specular.R * 255f),
+            Saturate(albedo.G * diffuse.G + specular.G * 255f),
+            Saturate(albedo.B * diffuse.B + specular.B * 255f));
     }
 
     /// <summary>
@@ -163,6 +184,8 @@ public readonly struct MaterialShader : IPixelShader<MaterialVarying>
 
         return Normalize(perturbed, n);
     }
+
+    private static byte Saturate(float channel) => (byte)System.Math.Clamp(channel, 0f, 255f);
 
     private static Vector3 Normalize(Vector3 v, Vector3 fallback) =>
         v.LengthSquared() > 1e-12f ? Vector3.Normalize(v) : fallback;

@@ -43,9 +43,9 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
 
         var (a, b, c) = (vertexBuffer.GetVertex(t.I0), vertexBuffer.GetVertex(t.I1), vertexBuffer.GetVertex(t.I2));
 
-        var ia = LitIntensity(a.World, a.Norm);
-        var ib = LitIntensity(b.World, b.Norm);
-        var ic = LitIntensity(c.World, c.Norm);
+        var ia = LitColor(a.World, a.Norm);
+        var ib = LitColor(b.World, b.Norm);
+        var ic = LitColor(c.World, c.Norm);
 
         var p0 = surface.ToScreen3(a.Proj);
         var p1 = surface.ToScreen3(b.Proj);

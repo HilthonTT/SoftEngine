@@ -13,7 +13,10 @@ A **software 3D rasterizer** written in C#. The entire pipeline — model transf
 - Loads and renders 3D models (Wavefront `.obj`, Collada `.dae`) and procedural primitives in real time.
 - Rasterizes triangles with a generic scanline filler and a depth (z) buffer.
 - Supports several shading modes — wireframe, solid, flat, Gouraud, Phong, textured and full material — selectable at runtime.
-- Casts **shadows** with a shadow-map pass rendered from the light's point of view.
+- Lights a scene with **any number of coloured lights** — directional, point with distance falloff, and spot.
+- Rasterizes into an **HDR linear float target**, so highlights brighter than white survive to the post-process stack.
+- Surrounds the scene with an **environment cube map**, drawn as a skybox and reduced to the ambient light the painters use.
+- Casts **shadows** with a shadow-map pass rendered from the light's point of view, and **screen-space ambient occlusion** for the contact detail a shadow map cannot resolve.
 - Shades **materials**: albedo, tangent-space normal and specular maps, loaded from a model's `.mtl`.
 - Runs a **post-process stack** over the finished frame — bloom, tone mapping, FXAA, vignette.
 - Anti-aliases by **supersampling**: render at a multiple of the display resolution and average down.
@@ -30,13 +33,79 @@ A **software 3D rasterizer** written in C#. The entire pipeline — model transf
 | --- | --- | --- |
 | **None** | — | Geometry only (combine with the wireframe overlay to see edges). |
 | **Classic** | `ClassicPainter` | Flat per-triangle base color, no lighting. |
-| **Flat** | `FlatPainter` | One Lambert (N·L) intensity per triangle from its centroid normal. |
-| **Gouraud** | `GouraudPainter` | Per-vertex Lambert intensity interpolated across the triangle. |
+| **Flat** | `FlatPainter` | One Lambert (N·L) light per triangle from its centroid normal. |
+| **Gouraud** | `GouraudPainter` | Per-vertex Lambert light interpolated across the triangle. |
 | **Phong** | `PhongPainter` | Per-pixel Blinn-Phong from an interpolated world position and normal. |
 | **Textured** | `TexturedPainter` | Perspective-correct texturing with Gouraud lighting, bilinear filtering and mip-maps. |
 | **Material** | `MaterialPainter` | Per-pixel albedo, normal and specular maps over Blinn-Phong — the full material path. |
 
 A `WireFramePainter` overlay (Liang–Barsky homogeneous line clipping) can be drawn on top of any mode.
+
+## Lighting
+
+A scene's lights are a list, and every lit painter sums over all of them. Each carries a
+colour as well as an intensity, so a warm key and a cool fill produce a surface whose lit
+side and shadowed side differ in hue rather than only in brightness — and the sum is never
+clamped, because two lights on one surface really do deliver twice the light.
+
+| Light | Falls off | Notes |
+| --- | --- | --- |
+| [`DirectionalLight`](src/SoftEngine.Core/Scenes/Lights/DirectionalLight.cs) | Never | Parallel rays; the sun. |
+| [`PointLight`](src/SoftEngine.Core/Scenes/Lights/PointLight.cs) | With distance, if given a `Range` | Windowed inverse-square, reaching exactly zero at the range rather than trailing off forever. `Range` is infinite by default, which is the no-falloff behaviour the engine had before. |
+| [`SpotLight`](src/SoftEngine.Core/Scenes/Lights/SpotLight.cs) | With distance and angle | Two cone angles, so the beam's edge ramps instead of stepping — a single angle aliases in the lighting, where no amount of supersampling can reach it. |
+
+The `ILight` interface is not what a shader talks to. Every light is flattened once per
+frame into a [`ShaderLight`](src/SoftEngine.Core/Shading/ShaderLight.cs) — a struct of plain
+floats — and the frame's set into a [`LightSet`](src/SoftEngine.Core/Shading/LightSet.cs),
+so the per-pixel loop is a branch on a field rather than a virtual call that also forfeits
+inlining. The array is reused across frames.
+
+Only the first light casts a shadow: the shadow map is one depth buffer taken from one point
+of view, so a second shadowed light would need a second pass and a second buffer.
+
+## High dynamic range
+
+An 8-bit render target cannot hold a value above white. A specular glint five times paper
+white and one exactly at it are the same pixel by the time anything downstream sees them —
+which means bloom deciding what is "bright" and tone mapping "compressing the range" are both
+working on an image whose brights were flattened before they arrived.
+
+`Scene.HighDynamicRange` rasterizes into a linear float buffer instead
+([`FrameBuffer.SetHighDynamicRange`](src/SoftEngine.Core/Buffers/FrameBuffer.cs)). A shader
+returns a [`LinearColor`](src/SoftEngine.Core/Shading/LinearColor.cs) — linear light with no
+ceiling — and the value is clamped once, at the very end of the frame, after the effects have
+had it. It pairs with `GammaCorrect`, which is the path where the shaders produce light rather
+than pre-encoded bytes and so the only one with a range above white to keep.
+
+Two things moved into linear light along with it, because that is where mixing light is
+defined: **alpha blending** and **fog**. Half of a full-intensity channel encodes to about
+188, not to 128 — the latter is a good deal darker than half the light.
+
+## Environment and ambient
+
+`Scene.Environment` is a [`CubeMap`](src/SoftEngine.Core/Geometry/CubeMap.cs), and it does two
+jobs.
+
+[`SkyRenderer`](src/SoftEngine.Core/Pipeline/SkyRenderer.cs) draws it behind the scene. There
+is no cube to rasterize: a skybox drawn as geometry is really just a way of getting a
+direction interpolated per pixel, and here the direction comes straight from the pixel's
+position through the inverse projection — no seams where the cube's own triangles meet, and
+nothing that can be clipped by the near plane. It runs *between* the opaque and transparent
+passes, filling only pixels whose depth is still the cleared value: after the opaque fill so
+it shades nothing that was covered, and before the transparent one because that blends
+without writing depth, so a sky drawn last would paint over the glass rather than behind it.
+
+The same map also becomes the ambient term, as an
+[`AmbientCube`](src/SoftEngine.Core/Shading/AmbientCube.cs) — six directional averages instead
+of one constant. A flat ambient says a ceiling and a floor in the same room receive the same
+light from their surroundings, which is never true: one faces the sky and the other faces the
+ground. Averaging each face and blending the three a normal points toward is the cheapest
+correction that says otherwise. The per-pixel painters evaluate it with the *shading* normal,
+so a normal map shapes the ambient the same way it shapes the lights.
+
+[`SkyBox.Gradient`](src/SoftEngine.Core/Geometry/SkyBox.cs) generates one procedurally — zenith,
+horizon, ground and a sun disc — so a scene can have a sky, and therefore directional ambient,
+with no asset to load.
 
 ## Shadow mapping
 
@@ -76,19 +145,40 @@ into a normal map, since `map_Bump` was specified as one and is used as the othe
 ![Post-processing](docs/screenshots/post-processing.png)
 
 [`PostProcessStack`](src/SoftEngine.Core/Pipeline/PostProcess/PostProcessStack.cs) runs
-full-screen effects over the finished render target. It decodes the framebuffer's sRGB
-bytes to linear float once on the way in and encodes once on the way out, so effects only
-ever see linear light — the space blurring and adding light are actually defined in.
+full-screen effects over the finished render target. It owns the conversion at both ends, so
+effects only ever see linear float RGB — the space blurring and adding light are actually
+defined in. Against an HDR surface the image arrives already linear and unbounded and no
+decode happens at all; against an 8-bit one the stack decodes sRGB on the way in, and nothing
+downstream can recover highlights the rasterizer already clipped.
 
 | Effect | What it does |
 | --- | --- |
+| **SSAO** | Reconstructs a position and a normal per pixel from the depth buffer, samples a hemisphere around each, and darkens by the fraction of samples something else is in front of. |
 | **Bloom** | Bright-passes and blurs at a quarter resolution, then adds the result back — a wide blur is what sells the effect, and it costs a sixteenth of the samples downsampled. |
 | **Tone map** | Exposure plus a Reinhard or ACES filmic curve, so values above white roll off instead of flattening into one clipped patch. |
 | **FXAA** | Detects luminance edges, works out which way each runs, and blurs across it — never along it. Fixed screen-sized cost rather than a multiple of the whole render. |
 | **Vignette** | Darkens the frame toward its corners, normalized so it behaves the same at any aspect ratio. |
 
-The source is an 8-bit LDR image, so tone mapping re-expands the range it was given rather
-than recovering highlights the rasterizer already clipped.
+### Ambient occlusion
+
+[`SsaoEffect`](src/SoftEngine.Core/Pipeline/PostProcess/SsaoEffect.cs) finds the creases and
+contact points a shadow map at any sane resolution cannot resolve, from nothing but the depth
+buffer the frame already has. The depth buffer is a partial model of the scene: one point in
+space per pixel, and — by differencing its neighbours — the surface's orientation there. A
+point is occluded to the extent that other points sit above its own tangent plane nearby.
+
+Effects that want this declare `NeedsDepth`, and the stack then reads the z-buffer back as
+*view-space distance* ([`FrameBuffer.ReadViewDepth`](src/SoftEngine.Core/Buffers/FrameBuffer.cs))
+rather than as the quantized device depth the depth test uses — a screen-space effect's radius
+is measured in world units, so it needs the distance, not something merely monotonic in it.
+The read costs a full-screen pass, so it only happens when something enabled asked for it, and
+it is only possible under a perspective projection.
+
+Two honest limitations. It only knows what is on screen, so geometry outside the frame or
+hidden behind something nearer occludes nothing — inherent to the technique. And it multiplies
+the finished image, which darkens direct light along with ambient; separating the two in a
+forward renderer means carrying the ambient in a buffer of its own through the whole frame.
+`Radius` is a world-space distance and is the one number that must be scaled to the scene.
 
 ## Rendering pipeline
 
@@ -104,8 +194,10 @@ Per frame, the `Renderer` ([`Pipeline/Renderer.cs`](src/SoftEngine.Core/Pipeline
 4. Rejects triangles behind the far plane, back-facing triangles (optional culling), and triangles outside the view frustum.
 5. Projects survivors into clip space, maps to screen space, and bins them into the screen tiles they cover.
 6. Fills the tiles in parallel through the active painter.
-7. Draws optional gizmos (XZ grid, world axes).
-8. Runs the post-process stack over the finished image.
+7. Draws the sky into whatever pixels the opaque pass left untouched.
+8. Blends the transparent triangles over the result, farthest first.
+9. Draws optional gizmos (XZ grid, world axes).
+10. Runs the post-process stack over the finished image, and encodes it for presentation.
 
 The rasterizer ([`Rasterization/ScanlineRasterizer.cs`](src/SoftEngine.Core/Rasterization/ScanlineRasterizer.cs)) sorts a triangle's vertices by Y, splits it at the middle vertex, and walks two half-triangles, interpolating depth plus an arbitrary *varying* payload. Painters only supply a **varying** type and a **shader** — both are `struct` generics, so the JIT devirtualizes and inlines the per-pixel shade call with no allocation on the hot path.
 
@@ -158,8 +250,8 @@ The WinForms app ([`SoftEngine.WinForms`](src/SoftEngine.WinForms)) renders the 
 | **Left-click the viewport** | Probe that pixel — its full write history appears in the Pixel History panel (**Esc** clears it) |
 | **Load model…** | Pick a bundled world (skull, parrot, elephant, teapot, cubes, spheres, towns, shadows, normal mapping…) or open an OBJ/Collada file from disk |
 | **Shading radios** | Switch between None / Classic / Flat / Gouraud / Phong / Textured / Material |
-| **Display checkboxes** | Toggle wireframe triangles, back-face culling, XZ grid, world axes, fog, shadows, gamma-correct light, texture filtering, 2× supersampling |
-| **Post-processing checkboxes** | Toggle bloom, tone mapping, FXAA and vignette independently |
+| **Display checkboxes** | Toggle wireframe triangles, back-face culling, XZ grid, world axes, fog, shadows, sky, gamma-correct light, HDR target, texture filtering, 2× supersampling |
+| **Post-processing checkboxes** | Toggle ambient occlusion, bloom, tone mapping, FXAA and vignette independently |
 
 A stats overlay reports triangle counts (total / back-facing / out-of-view / behind), pixel counts (drawn / z-rejected), and calculation vs. paint timing per frame.
 
@@ -191,12 +283,12 @@ src/
 │   ├── Buffers/            # FrameBuffer (color + z-buffer + pixel probe), pooled Vertex/World buffers
 │   ├── Diagnostics/        # render stats, graphics event log, pixel history
 │   ├── Geometry/           # IMesh/Mesh, Material, Triangle, tangents, primitives, OBJ/Collada importers
-│   ├── Pipeline/           # Renderer, settings, homogeneous clipping
-│   │   ├── PostProcess/    # effect stack: bloom, tone map, FXAA, vignette
+│   ├── Pipeline/           # Renderer, settings, homogeneous clipping, sky pass
+│   │   ├── PostProcess/    # effect stack: SSAO, bloom, tone map, FXAA, vignette
 │   │   └── Shadows/        # depth-only shadow-map pass
 │   ├── Rasterization/      # scanline filler, painters, shaders, varyings, texture sampling
 │   ├── Scenes/             # world, camera, projections, lights, fog and shadow settings
-│   └── Shading/            # Lambert lighting, sRGB/linear conversion, shadow map
+│   └── Shading/            # linear colour, light sets, ambient cube, sRGB conversion, shadow map
 └── SoftEngine.WinForms/    # interactive front-end (net10.0-windows)
     ├── Debugging/          # event list, object table and pixel history panels
     └── Dialogs/            # model picker
@@ -225,6 +317,12 @@ The renderer avoids managed-heap traffic on the pixel hot path:
 - **Struct-based varyings and shaders** let the JIT inline the shade call instead of dispatching through an interface.
 - **`ArrayPool`-backed vertex buffers** are rented per frame rather than allocated.
 - **Tile bins are flat arrays filled by a counting sort**, reused across frames, so binning tens of thousands of triangles allocates nothing either.
+- **The frame's lights are flattened into structs once**, so the per-pixel loop over them branches on a field instead of dispatching through `ILight`.
+
+One cost was accepted rather than avoided: shaders now return `LinearColor`, so a shader with
+no HDR range to give converts a `ColorRGB` in and the framebuffer converts it back out —
+six lookup-table reads per pixel that the old packed-byte path did not pay. Both tables are
+small enough to stay in L1, and the alternative was two parallel shading paths.
 
 Work is measured rather than assumed: the numbers above come from a headless harness that
 renders fixed scenes — dense models, heavy overdraw, a few huge triangles — and reports the
@@ -233,7 +331,8 @@ median frame time.
 ## Roadmap
 
 - Cascaded shadow maps, so a large scene doesn't spend one uniform resolution on all of it.
-- An HDR float render target, which would let tone mapping recover highlights instead of re-expanding clipped ones.
+- Physically-based shading (metallic–roughness), which the environment map is already most of the way to supporting.
+- A glTF 2.0 importer, which would bring PBR materials and skinning in one well-specified format.
 - Replace `Rotation3D` (Euler angles) with quaternion-based rotation.
 - Frame capture history, so the debugger can step back through earlier frames.
 - Buffer visualizers in the debugger: depth, normals, overdraw, mip level, the shadow map itself.

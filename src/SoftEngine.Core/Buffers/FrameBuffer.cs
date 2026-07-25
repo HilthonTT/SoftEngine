@@ -1,5 +1,6 @@
 ﻿using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
+using SoftEngine.Core.Shading;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -25,6 +26,12 @@ public sealed class FrameBuffer(int width, int height)
     // formula above would collapse to a constant: the projected z is the device depth already.
     private bool _linearDepth;
 
+    // Linear RGB, three floats per pixel, allocated only in HDR mode. When it is live it —
+    // not Screen — is what the rasterizer writes to; Screen is filled once at the end of
+    // the frame by the resolve.
+    private float[] _hdr = [];
+    private bool _hdrEnabled;
+
     public RenderStats? Stats { get; set; }
 
     public int[] Screen { get; set; } = new int[width * height];
@@ -32,6 +39,35 @@ public sealed class FrameBuffer(int width, int height)
     public int Width { get; set; } = width;
 
     public int Height { get; set; } = height;
+
+    /// <summary>
+    /// Whether pixels are being kept as unbounded linear floats rather than sRGB bytes.
+    /// See <see cref="SetHighDynamicRange"/>.
+    /// </summary>
+    public bool IsHighDynamicRange => _hdrEnabled;
+
+    /// <summary>
+    /// Linear RGB, three floats per pixel, row-major — the render target itself while
+    /// <see cref="IsHighDynamicRange"/>, and an empty array otherwise. Exposed the same way
+    /// <see cref="Screen"/> is, so a post-process pass can read the frame without a copy.
+    /// </summary>
+    public float[] HdrColor => _hdr;
+
+    /// <summary>
+    /// Switches the render target between 8-bit sRGB and unbounded linear float.
+    ///
+    /// An 8-bit target cannot hold a value above white, so a specular highlight five times
+    /// paper white and one exactly at it are the same pixel by the time anything downstream
+    /// sees them. Every effect that claims to work with brightness — bloom deciding what is
+    /// bright enough to bleed, tone mapping compressing a range — is then working on an
+    /// image whose brights have already been flattened. In HDR mode the rasterizer writes
+    /// linear floats instead, and the range survives to <see cref="ResolveToScreen"/> or to
+    /// the post-process stack, whichever ends the frame.
+    ///
+    /// Costs one float triple per pixel of memory and the encode at resolve; take it when
+    /// the scene has highlights worth keeping.
+    /// </summary>
+    public void SetHighDynamicRange(bool enabled) => _hdrEnabled = enabled;
 
     /// <summary>
     /// Defines the depth mapping from the active projection's clip planes. Device depth is 0 at
@@ -43,6 +79,69 @@ public sealed class FrameBuffer(int width, int height)
         _depthScale = zFar / (zFar - zNear);
         _depthBias = zFar * zNear / (zFar - zNear);
         _linearDepth = false;
+    }
+
+    /// <summary>
+    /// Whether stored depth can be turned back into a view-space distance — true under a
+    /// perspective projection, where <see cref="SetDepthRange"/> defined the mapping, and
+    /// false under a parallel one, whose depth carries no w to recover.
+    /// </summary>
+    public bool HasRecoverableDepth => !_linearDepth && _depthBias > 0f;
+
+    /// <summary>
+    /// Fills <paramref name="destination"/> with the view-space distance at every pixel —
+    /// the clip-space w the rasterizer had — inverting the mapping
+    /// <see cref="SetDepthRange"/> set up. Pixels nothing drew get
+    /// <see cref="float.PositiveInfinity"/>, so a screen-space effect can tell background
+    /// from geometry without a second buffer.
+    ///
+    /// This is what makes the depth buffer usable by something other than the depth test.
+    /// A screen-space effect does not want a number that is only monotonic in distance; it
+    /// wants the distance, because the radius it works over is measured in world units.
+    /// </summary>
+    public void ReadViewDepth(float[] destination)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+
+        var count = Width * Height;
+        if (destination.Length < count)
+        {
+            throw new ArgumentException($"Expected room for {count} pixels, got {destination.Length}.", nameof(destination));
+        }
+
+        if (!HasRecoverableDepth)
+        {
+            Array.Fill(destination, float.PositiveInfinity, 0, count);
+            return;
+        }
+
+        var zBuffer = _zBuffer;
+        var scale = _depthScale;
+        var bias = _depthBias;
+        var width = Width;
+
+        const float toNormalized = 1f / DepthResolution;
+
+        Parallel.For(0, Height, y =>
+        {
+            var i = y * width;
+
+            for (var x = 0; x < width; x++, i++)
+            {
+                var stored = zBuffer[i];
+
+                if (stored >= DepthResolution)
+                {
+                    destination[i] = float.PositiveInfinity;
+                    continue;
+                }
+
+                // depth = scale - bias / w, inverted.
+                var denominator = scale - stored * toNormalized;
+
+                destination[i] = denominator > 1e-9f ? bias / denominator : float.PositiveInfinity;
+            }
+        });
     }
 
     /// <summary>
@@ -74,15 +173,133 @@ public sealed class FrameBuffer(int width, int height)
 
     public void Clear()
     {
+        if (_hdrEnabled)
+        {
+            var length = Width * Height * 3;
+            if (_hdr.Length < length)
+            {
+                _hdr = new float[length];
+            }
+
+            Array.Clear(_hdr, 0, length);
+        }
+
         Array.Fill(Screen, 0);
         Array.Fill(_zBuffer, DepthResolution);
+    }
+
+    /// <summary>
+    /// Encodes the HDR buffer into <see cref="Screen"/>, clamping anything above white.
+    /// Ends an HDR frame that no post-process stack is going to end for it — with a stack,
+    /// its own encode does this job after the effects have had the unclamped range.
+    /// </summary>
+    public void ResolveToScreen()
+    {
+        if (!_hdrEnabled)
+        {
+            return;
+        }
+
+        var hdr = _hdr;
+        var screen = Screen;
+        var width = Width;
+
+        Parallel.For(0, Height, y =>
+        {
+            var pixel = y * width;
+            var i = pixel * 3;
+
+            for (var x = 0; x < width; x++, pixel++, i += 3)
+            {
+                // Alpha is forced opaque, as in the post-process encode: the render target
+                // is presented, never composited.
+                screen[pixel] = unchecked((int)0xFF000000)
+                    | (ColorSpace.ToSrgb(hdr[i]) << 16)
+                    | (ColorSpace.ToSrgb(hdr[i + 1]) << 8)
+                    | ColorSpace.ToSrgb(hdr[i + 2]);
+            }
+        });
     }
 
     /// <summary>Reads back one pixel of the render target, packed ARGB.</summary>
     public int GetColor(int x, int y) => Screen[x + y * Width];
 
+    /// <summary>
+    /// One pixel of the render target as packed sRGB, wherever it currently lives. In HDR
+    /// mode that means encoding it, because <see cref="Screen"/> holds nothing until the
+    /// frame resolves — the pixel history records sRGB, so it has to ask this rather than
+    /// read Screen directly.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int PackedAt(int index)
+    {
+        if (!_hdrEnabled)
+        {
+            return Screen[index];
+        }
+
+        var i = index * 3;
+        return unchecked((int)0xFF000000)
+            | (ColorSpace.ToSrgb(_hdr[i]) << 16)
+            | (ColorSpace.ToSrgb(_hdr[i + 1]) << 8)
+            | ColorSpace.ToSrgb(_hdr[i + 2]);
+    }
+
+    /// <summary>The colour currently stored at a pixel, in the space the shader works in.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private LinearColor LoadAt(int index)
+    {
+        if (!_hdrEnabled)
+        {
+            return ColorRGB.FromPacked(Screen[index]);
+        }
+
+        var i = index * 3;
+        return new LinearColor(_hdr[i], _hdr[i + 1], _hdr[i + 2]);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void StoreAt(int index, LinearColor color)
+    {
+        if (!_hdrEnabled)
+        {
+            Screen[index] = color.ToColorRGB().Color;
+            return;
+        }
+
+        var i = index * 3;
+        _hdr[i] = color.R;
+        _hdr[i + 1] = color.G;
+        _hdr[i + 2] = color.B;
+    }
+
     /// <summary>Reads back one pixel of the z-buffer, in raw depth units.</summary>
     public int GetDepth(int x, int y) => _zBuffer[x + y * Width];
+
+    /// <summary>
+    /// Whether nothing has been drawn at (x, y) yet — the depth is still the value
+    /// <see cref="Clear"/> left. What the sky pass uses to find the pixels it owns.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool IsBackground(int x, int y) => _zBuffer[x + y * Width] >= DepthResolution;
+
+    /// <summary>
+    /// Writes a pixel with no depth test and without touching the depth buffer, for a pass
+    /// that has already established it owns the pixel — the sky, which draws only where
+    /// <see cref="IsBackground"/> holds and must leave the depth cleared so transparent
+    /// geometry can still blend over it.
+    /// </summary>
+    public void PutBackground(int x, int y, LinearColor color)
+    {
+        var index = x + y * Width;
+
+        if (index == _probeIndex)
+        {
+            RecordProbe(index, DepthResolution, color, DepthResolution, true);
+        }
+
+        StoreAt(index, color);
+    }
 
     /// <summary>
     /// Whether the incoming depth would pass the depth test at (x, y). Lets the
@@ -157,7 +374,7 @@ public sealed class FrameBuffer(int width, int height)
     /// parallel rasterization doesn't contend on shared counters per pixel.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool PutPixel(int x, int y, int z, ColorRGB color)
+    public bool PutPixel(int x, int y, int z, LinearColor color)
     {
 #if DEBUG
         if (x > Width - 1 || x < 0 || y > Height - 1 || y < 0)
@@ -183,7 +400,7 @@ public sealed class FrameBuffer(int width, int height)
         }
 
         _zBuffer[index] = z;
-        Screen[index] = color.Color;
+        StoreAt(index, color);
         return true;
     }
 
@@ -194,7 +411,7 @@ public sealed class FrameBuffer(int width, int height)
     /// for drawing transparent geometry back-to-front.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool PutPixelBlend(int x, int y, int z, ColorRGB color, float alpha)
+    public bool PutPixelBlend(int x, int y, int z, LinearColor color, float alpha)
     {
 #if DEBUG
         if (x > Width - 1 || x < 0 || y > Height - 1 || y < 0)
@@ -209,7 +426,7 @@ public sealed class FrameBuffer(int width, int height)
 
         if (passed || index == _probeIndex)
         {
-            var blended = ColorRGB.Lerp(ColorRGB.FromPacked(Screen[index]), color, alpha);
+            var blended = LinearColor.Lerp(LoadAt(index), color, alpha);
 
             if (index == _probeIndex)
             {
@@ -218,7 +435,7 @@ public sealed class FrameBuffer(int width, int height)
 
             if (passed)
             {
-                Screen[index] = blended.Color;
+                StoreAt(index, blended);
                 return true;
             }
         }
@@ -280,7 +497,7 @@ public sealed class FrameBuffer(int width, int height)
             ObjectId = SceneObjectIds.RenderTarget,
             TriangleIndex = -1,
             Color = 0,
-            PreviousColor = Screen[_probeIndex],
+            PreviousColor = PackedAt(_probeIndex),
             Depth = DepthResolution,
             PreviousDepth = _zBuffer[_probeIndex],
             Passed = true,
@@ -288,7 +505,7 @@ public sealed class FrameBuffer(int width, int height)
     }
 
     /// <summary>The current colour of the probed pixel; 0 when nothing is being probed.</summary>
-    internal int GetProbedColor() => _probeIndex >= 0 ? Screen[_probeIndex] : 0;
+    internal int GetProbedColor() => _probeIndex >= 0 ? PackedAt(_probeIndex) : 0;
 
     /// <summary>
     /// Appends a write for a stage that rewrote the probed pixel outside the rasterizer — a
@@ -309,6 +526,8 @@ public sealed class FrameBuffer(int width, int height)
             Source = source,
             ObjectId = objectId,
             TriangleIndex = -1,
+            // Screen, not PackedAt: by the time a full-screen pass records itself the frame
+            // has been resolved, and Screen is the only place its result lives.
             Color = Screen[_probeIndex],
             PreviousColor = previousColor,
             Depth = _zBuffer[_probeIndex],
@@ -318,7 +537,7 @@ public sealed class FrameBuffer(int width, int height)
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private void RecordProbe(int index, int z, ColorRGB color, int previousDepth, bool passed)
+    private void RecordProbe(int index, int z, LinearColor color, int previousDepth, bool passed)
     {
         var history = _probeHistory;
         if (history is null)
@@ -334,8 +553,8 @@ public sealed class FrameBuffer(int width, int height)
             Source = context.Source,
             ObjectId = context.ObjectId,
             TriangleIndex = context.TriangleIndex,
-            Color = color.Color,
-            PreviousColor = Screen[index],
+            Color = color.ToColorRGB().Color,
+            PreviousColor = PackedAt(index),
             Depth = z,
             PreviousDepth = previousDepth,
             Passed = passed,

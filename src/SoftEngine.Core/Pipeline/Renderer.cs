@@ -97,6 +97,9 @@ public sealed class Renderer : IRenderer
         }
         diagnostics.PixelHistory = history;
 
+        // Has to be set before the clear, which allocates and clears the float buffer.
+        surface.SetHighDynamicRange(scene.HighDynamicRange);
+
         // Match the depth buffer to the projection's clip planes for this frame. A parallel
         // projection carries its depth in z rather than w, so it needs the other mapping.
         if (projection.IsOrthographic)
@@ -317,6 +320,17 @@ public sealed class Renderer : IRenderer
             }
         }
 
+        // Phase 2a: the sky fills whatever the opaque pass left untouched. It has to run
+        // between the two fills — after the opaque one so it only shades pixels no surface
+        // covered, before the transparent one because that blends without writing depth,
+        // and a sky drawn afterwards would paint over the glass rather than behind it.
+        if (scene.ShowSky && scene.Environment is { } environment)
+        {
+            var skyEvent = events.Add(GraphicsEventKind.SkyRender, SceneObjectIds.RenderTarget, surface.Width, surface.Height);
+
+            SkyRenderer.Render(scene, environment, skyEvent);
+        }
+
         // Phase 2b: transparent triangles blend over the finished opaque image, farthest
         // first. Tiles still parallelize safely — every tile walks the sorted order, so the
         // blend order at any single pixel is preserved.
@@ -375,7 +389,7 @@ public sealed class Renderer : IRenderer
             GizmoRenderer.DrawAxes(surface, viewMatrix * projectionMatrix);
         }
 
-        ApplyPostProcess(surface, events);
+        ResolveFrame(surface, projection, events);
 
         Stats.StopTime();
 
@@ -418,23 +432,41 @@ public sealed class Renderer : IRenderer
     }
 
     /// <summary>
-    /// Runs the post-process stack over the finished render target. A probed pixel gets one
-    /// more history entry for the whole stack: the effects work on the image as a whole
-    /// rather than pixel by pixel, so there is no per-triangle write to attribute.
+    /// Turns whatever the rasterizer produced into the packed sRGB image that gets
+    /// presented. Normally that is the post-process stack, which reads the target, runs its
+    /// effects in linear light and encodes the result. With no stack there is still work to
+    /// do on an HDR target, whose pixels are floats nothing has encoded yet.
+    ///
+    /// A probed pixel gets one more history entry for the whole pass: it works on the image
+    /// as a whole rather than pixel by pixel, so there is no per-triangle write to attribute.
     /// </summary>
-    private void ApplyPostProcess(FrameBuffer surface, GraphicsEventLog events)
+    private void ResolveFrame(FrameBuffer surface, IProjection projection, GraphicsEventLog events)
     {
-        if (PostProcess is not { } stack || !stack.HasEffects)
+        var stack = PostProcess is { HasEffects: true } candidate ? candidate : null;
+
+        if (stack is null && !surface.IsHighDynamicRange)
         {
             return;
         }
 
-        var eventIndex = events.Add(GraphicsEventKind.PostProcessApply, SceneObjectIds.PostProcess,
-            stack.EnabledCount, surface.Width, surface.Height);
+        var eventIndex = stack is not null
+            ? events.Add(GraphicsEventKind.PostProcessApply, SceneObjectIds.PostProcess,
+                stack.EnabledCount, surface.Width, surface.Height)
+            : events.Add(GraphicsEventKind.PostProcessApply, SceneObjectIds.PostProcess,
+                0, surface.Width, surface.Height);
 
         var before = surface.IsProbing ? surface.GetProbedColor() : 0;
 
-        stack.Apply(surface);
+        if (stack is not null)
+        {
+            // The projection goes with it so depth-reading effects can turn the depth
+            // buffer back into positions in view space.
+            stack.Apply(surface, projection);
+        }
+        else
+        {
+            surface.ResolveToScreen();
+        }
 
         if (surface.IsProbing)
         {
