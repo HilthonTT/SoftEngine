@@ -1,5 +1,6 @@
 ﻿using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Math;
+using SoftEngine.Core.Scenes.Graph;
 using System.Numerics;
 
 namespace SoftEngine.Core.Geometry;
@@ -69,8 +70,19 @@ public interface IMesh
     /// </summary>
     float BoundingRadius => float.PositiveInfinity;
 
-    public Matrix4x4 WorldMatrix =>
+    /// <summary>
+    /// The node this mesh hangs off, or null when it is placed in the world absolutely.
+    /// A parented mesh's <see cref="Position"/>, <see cref="Rotation"/> and
+    /// <see cref="Scale"/> become an offset from the node rather than from the origin.
+    /// </summary>
+    SceneNode? Parent => null;
+
+    /// <summary>This mesh's own transform, before any parent is applied.</summary>
+    public Matrix4x4 LocalMatrix =>
           Matrix4x4.CreateScale(Scale) *
           Matrix4x4.CreateFromYawPitchRoll(Rotation.YYaw, Rotation.XPitch, Rotation.ZRoll) *
           Matrix4x4.CreateTranslation(Position);
+
+    public Matrix4x4 WorldMatrix =>
+        Parent is { } parent ? LocalMatrix * parent.WorldMatrix : LocalMatrix;
 }

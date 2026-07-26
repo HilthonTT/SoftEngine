@@ -55,9 +55,20 @@ public sealed class PostProcessTarget
     /// The inverse of the projection, for the one pixel: undo the screen mapping to get a
     /// normalized device coordinate, undo the projection's scale to get a direction, and
     /// scale that by the distance the depth buffer recorded.
+    ///
+    /// A coordinate outside the frame counts as background: there is no recorded geometry
+    /// there, which is exactly what background means. Saying so is what keeps an effect that
+    /// walks a pixel's neighbours from indexing past the end of the buffer at the border —
+    /// and the depth buffer is only ever grown, never shrunk, so an overrun would otherwise
+    /// read a stale pixel from a larger frame on most frames and throw on the rest.
     /// </summary>
     public Vector3 ViewPositionAt(int x, int y)
     {
+        if ((uint)x >= (uint)Width || (uint)y >= (uint)Height)
+        {
+            return new Vector3(0f, 0f, float.NegativeInfinity);
+        }
+
         var w = _viewDepth[x + y * Width];
 
         if (float.IsPositiveInfinity(w))

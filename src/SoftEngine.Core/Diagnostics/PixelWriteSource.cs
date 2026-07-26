@@ -9,5 +9,6 @@ public enum PixelWriteSource
     WireFrame,
     Grid,
     Axes,
+    Skeleton,
     PostProcess,
 }

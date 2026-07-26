@@ -202,21 +202,31 @@ public sealed class SsaoEffect : IPostEffect
     {
         var depth = target.ViewDepth;
         var width = target.Width;
+        var height = target.Height;
 
         var here = depth[x + y * width];
 
         var left = x > 0 ? depth[x - 1 + y * width] : float.PositiveInfinity;
-        var right = x < target.Width - 1 ? depth[x + 1 + y * width] : float.PositiveInfinity;
+        var right = x < width - 1 ? depth[x + 1 + y * width] : float.PositiveInfinity;
         var up = y > 0 ? depth[x + (y - 1) * width] : float.PositiveInfinity;
-        var down = y < target.Height - 1 ? depth[x + (y + 1) * width] : float.PositiveInfinity;
+        var down = y < height - 1 ? depth[x + (y + 1) * width] : float.PositiveInfinity;
 
         var origin = target.ViewPositionAt(x, y);
 
-        var horizontal = Closer(here, left, right)
+        // Whichever side spans the smaller depth step — but never a pixel off the edge of the
+        // frame. At a border one of the two neighbours does not exist, and the other one has
+        // to be used however the depths compare: when both are background the comparison is a
+        // tie between two infinities, which resolves to "take the far side" and walks straight
+        // off the end of the row. Reading the pixel that follows is wrong everywhere and
+        // out of bounds on the last one.
+        var useLeft = x > 0 && (x == width - 1 || Closer(here, left, right));
+        var useUp = y > 0 && (y == height - 1 || Closer(here, up, down));
+
+        var horizontal = useLeft
             ? target.ViewPositionAt(x - 1, y) - origin
             : origin - target.ViewPositionAt(x + 1, y);
 
-        var vertical = Closer(here, up, down)
+        var vertical = useUp
             ? target.ViewPositionAt(x, y - 1) - origin
             : origin - target.ViewPositionAt(x, y + 1);
 

@@ -135,6 +135,7 @@ internal sealed class PixelHistoryPanel : UserControl
             PixelWriteSource.WireFrame => $"WireFrame {_catalog.Describe(write.ObjectId)} tri:{write.TriangleIndex}",
             PixelWriteSource.Grid => "GizmoDrawGrid",
             PixelWriteSource.Axes => "GizmoDrawAxes",
+            PixelWriteSource.Skeleton => "GizmoDrawSkeleton",
             PixelWriteSource.PostProcess => "PostProcess",
             _ => "Write",
         };

@@ -21,6 +21,7 @@ public enum GraphicsEventKind
     WireFrameOverlayDraw,
     GizmoDrawGrid,
     GizmoDrawAxes,
+    GizmoDrawSkeleton,
     PostProcessApply,
     FramePresent,
 }

@@ -18,6 +18,7 @@ A **software 3D rasterizer** written in C#. The entire pipeline — model transf
 - Surrounds the scene with an **environment cube map**, drawn as a skybox and reduced to the ambient light the painters use.
 - Casts **shadows** with a shadow-map pass rendered from the light's point of view, and **screen-space ambient occlusion** for the contact detail a shadow map cannot resolve.
 - Shades **materials**: albedo, tangent-space normal and specular maps, loaded from a model's `.mtl`.
+- Deforms **skinned meshes** over a **scene graph** of transforms, played from keyframed animation clips — all imported from Collada.
 - Runs a **post-process stack** over the finished frame — bloom, tone mapping, FXAA, vignette.
 - Anti-aliases by **supersampling**: render at a multiple of the display resolution and average down.
 - Provides an interactive arc-ball camera, WASD fly controls, gizmos (world axes, ground grid), and a live stats overlay.
@@ -140,6 +141,128 @@ under all of its spellings (`map_Bump`, `bump`, `norm`).
 [`NormalMapBuilder`](src/SoftEngine.Core/Geometry/NormalMapBuilder.cs) converts a height map
 into a normal map, since `map_Bump` was specified as one and is used as the other.
 
+## Scene graph
+
+A mesh with nothing but its own position can only ever be placed absolutely. There is no way
+to say *the hand goes wherever the arm puts it* — and that sentence is most of what a model
+that moves consists of.
+
+[`SceneNode`](src/SoftEngine.Core/Scenes/Graph/SceneNode.cs) is one transform in a hierarchy:
+a local translation, rotation and scale, a parent, and the world matrix that composing the
+chain produces. `IMesh.Parent` hangs a mesh off one, and the mesh's own transform becomes an
+offset from the node rather than from the origin. Nothing that predates the graph changed —
+a mesh with no parent composes exactly the matrix it always did.
+
+Two decisions worth naming:
+
+- **World matrices are cached, not walked on every read.** A skinned mesh reads its joints'
+  world matrices once per vertex influence; re-composing the chain at each read would make a
+  deep skeleton quadratic in its own depth.
+- **A node's rotation is a quaternion**, where `Mesh` still carries Euler angles. Animation
+  has to interpolate between two rotations, and Euler angles interpolate through gimbal lock.
+
+Nodes also carry a [`SceneNodeKind`](src/SoftEngine.Core/Scenes/Graph/SceneNodeKind.cs). A
+scene file's node tree is not all rig: exported alongside the bones are the nodes holding the
+artist's lights and cameras, which sit metres away and dwarf the model. Only the skeleton view
+reads the kind, and it is what makes that view legible on a real file.
+
+## Skeletal animation
+
+![A generated tube bent by a chain of seven joints, wireframe on](docs/screenshots/skinning.png)
+
+*A tube rigged to seven joints, mid-bend. The wireframe is the point: the rings crowd on the
+inside of each curve and spread on the outside, which is a mesh being deformed rather than a
+rigid one being rotated.*
+
+### Skinning
+
+[`SkinnedMesh`](src/SoftEngine.Core/Geometry/Skinning/SkinnedMesh.cs) implements linear blend
+skinning. Each vertex is transformed by every joint that claims it and the results mixed by
+weight — equivalently, and this is how it is computed, the joint matrices are mixed first and
+the vertex transformed once.
+
+The deformed positions are written back into the arrays [`Mesh`](src/SoftEngine.Core/Geometry/Mesh.cs)
+already exposes, so **the renderer needs no knowledge of skinning at all**: it transforms
+`Mesh.Vertices` exactly as it always has, and they simply happen to have moved since the last
+frame. The bind pose is kept privately, because deforming the deformed output would compound
+the pose frame after frame.
+
+- A [`Skeleton`](src/SoftEngine.Core/Geometry/Skinning/Skeleton.cs) holds the joint nodes and
+  their **inverse bind matrices**. A joint's inverse bind undoes the transform it had when the
+  mesh was modelled; its current world matrix puts the vertex back down wherever the joint has
+  moved to. The product is the only thing skinning needs per joint, so it is built once per
+  pose rather than once per vertex.
+- [`SkinWeights`](src/SoftEngine.Core/Geometry/Skinning/SkinWeights.cs) stores a fixed four
+  influences per vertex, flat rather than as an array of small arrays. Four is a budget, not a
+  format limit — riggers paint six or eight, and the fifth is worth a fraction of a percent —
+  so the builder keeps the four heaviest and renormalizes.
+- **Normals are deformed too**, by the same blended matrix and then renormalized. Strictly a
+  normal wants the inverse transpose, which differs once a joint scales non-uniformly; joints
+  rotate and translate, and renormalizing covers the rest. Tangents follow the same path when
+  a skinned mesh has them, so normal mapping survives a pose.
+- **The bounding sphere is remeasured with every pose.** The renderer culls whole meshes
+  against it, and a raised arm reaches outside the sphere the bind pose fitted in.
+
+One deliberate leniency: a skin covering fewer vertices than its mesh leaves the rest at bind
+pose instead of throwing. Malformed weight tables are common in exported files, and a model
+that renders with a stiff patch beats one that will not load.
+
+### Clips and playback
+
+An [`AnimationClip`](src/SoftEngine.Core/Animation/AnimationClip.cs) is a set of per-node
+curves — translation and scale as `Vector3Track`s, rotation as a `QuaternionTrack` that slerps
+along the shorter of the two arcs between neighbours. Clips are pure data and hold no playhead,
+so two things can play one clip at different times; [`AnimationPlayer`](src/SoftEngine.Core/Animation/AnimationPlayer.cs)
+owns the time, the speed and the looping.
+
+Channels address nodes **by name**, which keeps a clip independent of any one skeleton. Names
+are resolved once, at construction, into an array parallel to the channel list — the parrot
+would otherwise spend thousands of string comparisons per frame to move a wing.
+
+Outside a clip's own span, values are *held* rather than extrapolated. A clip says nothing
+about what happens before its first key, and guessing produces motion no animator authored.
+
+Files bake a joint's whole transform into one `float4x4` curve far more often than they key
+the components separately, so a matrix track is decomposed into translation, rotation and
+scale **once, at load**. Blending the matrices themselves component by component shears a
+rotating joint, because the halfway point between two rotation matrices is not a rotation
+matrix.
+
+`IWorld.Update(deltaSeconds)` runs the whole chain: play the clips, refresh the hierarchy,
+re-deform anything skinned. The renderer never calls it — rendering a frame twice, which the
+graphics debugger does every time a probed pixel is re-recorded, must not advance time.
+
+### What the importer reads
+
+`MeshFactory.ImportColladaScene` returns a [`ColladaScene`](src/SoftEngine.Core/Geometry/ColladaScene.cs):
+the meshes, the visual scene's node tree, the skin controllers bound to it, and the animation
+channels that pose it. `HackyImportCollada` is untouched and still returns bare meshes, which
+is all a static model needs.
+
+Collada writes matrices for the **column-vector** convention — a point is transformed as
+`M·v`, and a node's translation sits in the fourth column. This engine composes row-vector
+matrices, `v·M`, with translation in the fourth row. The two are transposes of each other, so
+every matrix is transposed on the way in and nothing downstream knows the file's convention.
+The bind shape matrix is folded into the bind pose at load, so it costs nothing per frame.
+
+### Seeing the rig
+
+![The parrot's sixty-node rig, a cube on every joint](docs/screenshots/rig.png)
+
+A skeleton is invisible in a rendered image by construction: it is the thing that moves the
+vertices, never a thing that gets drawn. Which makes a rig that is subtly wrong indistinguishable
+from a mesh that is subtly wrong. `Settings.ShowSkeleton` draws the hierarchy as bones — a line
+to each node's parent, and a three-axis tick at each joint so a node with no children is still
+visible.
+
+Three bundled demos cover the two halves of the problem and the case where both are present:
+
+| Demo | What it shows |
+| --- | --- |
+| **Bone chain (skinned)** | Geometry, rig and clip all generated — the smallest thing that exercises the whole skinning path, with a correct answer that is obvious by eye. |
+| **Juliet (skinned)** | A real 55,000-vertex skin from a real file: 205 joints and weights painted by whoever rigged her. The file carries no animation, so the sway is authored against the joint names her rig actually uses — with every key composed *on top of* the joint's rest orientation, since a clip written against someone else's rig must not discard the pose it was modelled in. |
+| **Parrot rig (animated)** | A twelve-second clip over a sixty-node hierarchy, and no skin binding the mesh to any of it — so a cube on each joint makes the hierarchy the model. Move a wing joint and the four cubes below it go with it. |
+
 ## Post-processing
 
 ![Post-processing](docs/screenshots/post-processing.png)
@@ -196,7 +319,7 @@ Per frame, the `Renderer` ([`Pipeline/Renderer.cs`](src/SoftEngine.Core/Pipeline
 6. Fills the tiles in parallel through the active painter.
 7. Draws the sky into whatever pixels the opaque pass left untouched.
 8. Blends the transparent triangles over the result, farthest first.
-9. Draws optional gizmos (XZ grid, world axes).
+9. Draws optional gizmos (XZ grid, world axes, skeleton).
 10. Runs the post-process stack over the finished image, and encodes it for presentation.
 
 The rasterizer ([`Rasterization/ScanlineRasterizer.cs`](src/SoftEngine.Core/Rasterization/ScanlineRasterizer.cs)) sorts a triangle's vertices by Y, splits it at the middle vertex, and walks two half-triangles, interpolating depth plus an arbitrary *varying* payload. Painters only supply a **varying** type and a **shader** — both are `struct` generics, so the JIT devirtualizes and inlines the per-pixel shade call with no allocation on the hot path.
@@ -248,9 +371,9 @@ The WinForms app ([`SoftEngine.WinForms`](src/SoftEngine.WinForms)) renders the 
 | **Mouse wheel** | Move the camera in/out — the status bar's zoom percentage follows it (100% is the framing a world loads with) |
 | **W / A / S / D** | Fly the camera forward / left / back / right (**Q**/**E** for down/up). Hold **Shift** to move faster, **Ctrl** for fine steps; the step scales with the camera's distance, so it works on a 2-unit skull and a 1500-unit elephant alike |
 | **Left-click the viewport** | Probe that pixel — its full write history appears in the Pixel History panel (**Esc** clears it) |
-| **Load model…** | Pick a bundled world (skull, parrot, elephant, teapot, cubes, spheres, towns, shadows, normal mapping…) or open an OBJ/Collada file from disk |
+| **Load model…** | Pick a bundled world (skull, parrot, elephant, teapot, cubes, spheres, towns, shadows, normal mapping, the three animated ones…) or open an OBJ/Collada file from disk |
 | **Shading radios** | Switch between None / Classic / Flat / Gouraud / Phong / Textured / Material |
-| **Display checkboxes** | Toggle wireframe triangles, back-face culling, XZ grid, world axes, fog, shadows, sky, gamma-correct light, HDR target, texture filtering, 2× supersampling |
+| **Display checkboxes** | Toggle wireframe triangles, back-face culling, XZ grid, world axes, skeleton, animation, fog, shadows, sky, gamma-correct light, HDR target, texture filtering, 2× supersampling |
 | **Post-processing checkboxes** | Toggle ambient occlusion, bloom, tone mapping, FXAA and vignette independently |
 
 A stats overlay reports triangle counts (total / back-facing / out-of-view / behind), pixel counts (drawn / z-rejected), and calculation vs. paint timing per frame.
@@ -280,14 +403,17 @@ Both can be switched off from the **View** menu, along with each panel.
 ```
 src/
 ├── SoftEngine.Core/        # engine, no UI dependency (net10.0 class library)
+│   ├── Animation/          # keyframe tracks, node channels, clips, playback
 │   ├── Buffers/            # FrameBuffer (color + z-buffer + pixel probe), pooled Vertex/World buffers
 │   ├── Diagnostics/        # render stats, graphics event log, pixel history
 │   ├── Geometry/           # IMesh/Mesh, Material, Triangle, tangents, primitives, OBJ/Collada importers
+│   │   └── Skinning/       # skeleton, skin weights, linear blend skinning, generated bone chain
 │   ├── Pipeline/           # Renderer, settings, homogeneous clipping, sky pass
 │   │   ├── PostProcess/    # effect stack: SSAO, bloom, tone map, FXAA, vignette
 │   │   └── Shadows/        # depth-only shadow-map pass
 │   ├── Rasterization/      # scanline filler, painters, shaders, varyings, texture sampling
 │   ├── Scenes/             # world, camera, projections, lights, fog and shadow settings
+│   │   └── Graph/          # SceneNode transform hierarchy
 │   └── Shading/            # linear colour, light sets, ambient cube, sRGB conversion, shadow map
 └── SoftEngine.WinForms/    # interactive front-end (net10.0-windows)
     ├── Debugging/          # event list, object table and pixel history panels
@@ -333,7 +459,8 @@ median frame time.
 - Cascaded shadow maps, so a large scene doesn't spend one uniform resolution on all of it.
 - Physically-based shading (metallic–roughness), which the environment map is already most of the way to supporting.
 - A glTF 2.0 importer, which would bring PBR materials and skinning in one well-specified format.
-- Replace `Rotation3D` (Euler angles) with quaternion-based rotation.
+- Replace `Mesh`'s `Rotation3D` (Euler angles) with the quaternion rotation `SceneNode` already uses.
+- Animation blending — crossfading two clips, and layering one over another — which the player is one weight away from.
 - Frame capture history, so the debugger can step back through earlier frames.
 - Buffer visualizers in the debugger: depth, normals, overdraw, mip level, the shadow map itself.
 

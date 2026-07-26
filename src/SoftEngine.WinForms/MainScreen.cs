@@ -1,11 +1,14 @@
-﻿using SoftEngine.Core.Diagnostics;
+﻿using SoftEngine.Core.Animation;
+using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Primitives;
+using SoftEngine.Core.Geometry.Skinning;
 using SoftEngine.Core.Math;
 using SoftEngine.Core.Pipeline.PostProcess;
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
+using SoftEngine.Core.Scenes.Graph;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.WinForms.Cameras;
@@ -30,6 +33,9 @@ public sealed partial class MainScreen : Form
     [
         new("Skull", "skull"),
         new("Parrot", "parrot"),
+        new("Parrot rig (animated)", "parrotanim"),
+        new("Bone chain (skinned)", "bonechain"),
+        new("Juliet (skinned)", "julietskin"),
         new("Elefant", "elefant"),
         new("Teapot", "teapot"),
         new("Juliet", "Juliet"),
@@ -47,7 +53,15 @@ public sealed partial class MainScreen : Form
         new("Empty", "empty"),
     ];
 
-    private sealed record WorldSetup(SimpleWorld World, Vector3 CameraPosition, PerspectiveProjection? Projection);
+    private sealed record WorldSetup(SimpleWorld World, Vector3 CameraPosition, PerspectiveProjection? Projection)
+    {
+        /// <summary>
+        /// Length of a joint's axis tick in the skeleton gizmo. Worlds are authored anywhere
+        /// from 2 to 1500 units across, and one fixed size is either invisible on the large
+        /// ones or swamps the small ones.
+        /// </summary>
+        public float SkeletonTickSize { get; init; } = 1f;
+    }
 
     private readonly Label lblLoading;
     private readonly FlatProgressBar prgLoading;
@@ -175,6 +189,8 @@ public sealed partial class MainScreen : Form
         chkShowBackFacesCulling.CheckedChanged += (s, e) => { panel3D1.RendererSettings.BackFaceCulling = chkShowBackFacesCulling.Checked; panel3D1.Invalidate(); };
         chkShowXZGrid.CheckedChanged += (s, e) => { panel3D1.RendererSettings.ShowXZGrid = chkShowXZGrid.Checked; panel3D1.Invalidate(); };
         chkShowAxes.CheckedChanged += (s, e) => { panel3D1.RendererSettings.ShowAxes = chkShowAxes.Checked; panel3D1.Invalidate(); };
+        chkShowSkeleton.CheckedChanged += (s, e) => { panel3D1.RendererSettings.ShowSkeleton = chkShowSkeleton.Checked; panel3D1.Invalidate(); };
+        chkAnimate.CheckedChanged += (s, e) => { panel3D1.Animate = chkAnimate.Checked; panel3D1.Invalidate(); };
 
         panel3D1.Scene = new Scene()
         {
@@ -711,6 +727,12 @@ public sealed partial class MainScreen : Form
             panel3D1.Scene?.Projection = setup.Projection ?? ProjectionFor(setup);
             panel3D1.Scene?.World = setup.World;
 
+            panel3D1.RendererSettings.SkeletonTickSize = setup.SkeletonTickSize;
+
+            // The clock only runs for a world that has something to play, so a static model
+            // costs nothing — and an animated one starts moving the moment it is loaded.
+            panel3D1.SyncAnimationTimer();
+
             lblCurrentModel.Text = label;
         }
         catch (Exception ex)
@@ -762,6 +784,89 @@ public sealed partial class MainScreen : Form
     /// </summary>
     private static string ModelPath(string fileName) =>
         Path.Combine(AppContext.BaseDirectory, "Models", fileName);
+
+    /// <summary>
+    /// A sway for Juliet, built against the joint names her rig actually uses. Her file has a
+    /// skin but no animation — which is the common case for a downloaded character — so this
+    /// is what a clip authored for an imported rig looks like.
+    ///
+    /// Every key is the joint's <em>rest</em> orientation with the sway composed on top. A
+    /// clip read from a file holds absolute orientations because the file authored all of
+    /// them; one written by hand against someone else's rig must not, or it would discard the
+    /// pose she was modelled in and fold her into a heap.
+    /// </summary>
+    private static AnimationClip JulietPose(SceneNode root)
+    {
+        const float period = 4.5f;
+        const int keyCount = 32;
+
+        (string Joint, Vector3 Axis, float Degrees, float Phase)[] motions =
+        [
+            ("spineAJT", Vector3.UnitZ, 4f, 0f),
+            ("spineBJT", Vector3.UnitZ, 5f, 0.35f),
+            ("spineCJT", Vector3.UnitZ, 5f, 0.7f),
+            ("neckJT", Vector3.UnitZ, 4f, 1.05f),
+            ("armJTL", Vector3.UnitZ, 12f, 0.5f),
+            ("elbowJTL", Vector3.UnitZ, 14f, 1.1f),
+            ("armJTR", Vector3.UnitZ, -12f, 0.5f),
+            ("elbowJTR", Vector3.UnitZ, -14f, 1.1f),
+        ];
+
+        var channels = new List<NodeChannel>(motions.Length);
+
+        foreach (var (jointName, axis, degrees, phase) in motions)
+        {
+            if (root.Find(jointName) is not { } joint)
+            {
+                continue;
+            }
+
+            var rest = joint.Rotation;
+            var amplitude = degrees * MathF.PI / 180f;
+
+            var times = new float[keyCount + 1];
+            var rotations = new Quaternion[keyCount + 1];
+
+            for (var key = 0; key <= keyCount; key++)
+            {
+                times[key] = period * key / keyCount;
+
+                var angle = amplitude * MathF.Sin(MathF.Tau * key / keyCount + phase);
+
+                rotations[key] = Quaternion.Concatenate(rest, Quaternion.CreateFromAxisAngle(axis, angle));
+            }
+
+            channels.Add(new NodeChannel(joint.Name)
+            {
+                Rotation = new QuaternionTrack(times, rotations),
+            });
+        }
+
+        return new AnimationClip("Sway", channels);
+    }
+
+    /// <summary>
+    /// The scale a marker mesh needs to come out <paramref name="size"/> units across when it
+    /// is parented to <paramref name="node"/>.
+    ///
+    /// A child inherits everything its parent's transform does, scale included — and exported
+    /// rigs routinely carry a unit conversion on their top node, a factor of 100 in the
+    /// parrot's case. A marker that ignores that is a hundred times too big on exactly the
+    /// nodes it is meant to label. Dividing the node's own scale back out is what makes a
+    /// marker mean "here", rather than "here, at whatever size this branch happens to use".
+    /// </summary>
+    private static Vector3 MarkerScale(SceneNode node, float size)
+    {
+        if (!Matrix4x4.Decompose(node.WorldMatrix, out var scale, out _, out _))
+        {
+            return new Vector3(size);
+        }
+
+        return new Vector3(
+            size / MathF.Max(MathF.Abs(scale.X), 1e-4f),
+            size / MathF.Max(MathF.Abs(scale.Y), 1e-4f),
+            size / MathF.Max(MathF.Abs(scale.Z), 1e-4f));
+    }
 
     private static WorldSetup BuildWorld(string id, IProgress<float>? progress)
     {
@@ -821,6 +926,106 @@ public sealed partial class MainScreen : Form
                 cameraPosition = new Vector3(0, 0, -500);
                 world.Lights.Add(new PointLight { Position = new Vector3(150, 200, 400) });
                 break;
+
+            case "bonechain":
+            {
+                // Nothing is loaded: the geometry, the rig and the clip are all generated, so
+                // this demo shows the skinning path with no importer between it and the eye.
+                const int bones = 7;
+
+                var rig = BoneChain.Create(bones, boneLength: 2.2f, radius: 0.75f, sides: 20);
+
+                world.Root = rig.Root;
+                world.Meshes.Add(rig.Mesh);
+                world.Players.Add(new AnimationPlayer(rig.Root, BoneChain.Wave(bones)));
+
+                world.Lights.Add(new PointLight
+                {
+                    Position = new Vector3(12, 20, -18),
+                    Color = new ColorRGB(255, 238, 210),
+                });
+                world.Lights.Add(new PointLight
+                {
+                    Position = new Vector3(-16, 6, 14),
+                    Color = new ColorRGB(130, 175, 255),
+                    Intensity = 0.5f,
+                });
+
+                cameraPosition = new Vector3(0, 8, -34);
+                return new WorldSetup(world, cameraPosition, null) { SkeletonTickSize = 0.9f };
+            }
+
+            case "julietskin":
+            {
+                // A real 55,000-vertex skin off a real file — 205 joints, weights painted by
+                // whoever rigged her. The file carries no animation, so the clip that bends
+                // her is generated against the joint names the rig actually uses.
+                var scene = MeshFactory.ImportColladaScene(ModelPath("Juliet.dae"), progress);
+
+                world.Root = scene.Root;
+                world.Meshes.AddRange(scene.Meshes);
+                world.Players.Add(new AnimationPlayer(scene.Root, JulietPose(scene.Root)));
+
+                world.Lights.Add(new PointLight
+                {
+                    Position = new Vector3(150, 200, 400),
+                    Color = new ColorRGB(255, 240, 220),
+                });
+                world.Lights.Add(new PointLight
+                {
+                    Position = new Vector3(-250, 120, -200),
+                    Color = new ColorRGB(140, 180, 255),
+                    Intensity = 0.5f,
+                });
+
+                cameraPosition = new Vector3(0, 0, -320);
+                return new WorldSetup(world, cameraPosition, null) { SkeletonTickSize = 3f };
+            }
+
+            case "parrotanim":
+            {
+                // The parrot's file has the opposite half of the problem from Juliet's: a
+                // twelve-second clip over a sixty-node rig, and no skin binding the mesh to
+                // any of it — so there is nothing for the pose to deform, and the bird itself
+                // would stand still while its skeleton danced inside it.
+                //
+                // A cube on each joint makes the hierarchy the model. Every cube is placed by
+                // its node and nothing else, which is the scene graph doing its whole job:
+                // move a wing joint and the four cubes below it go with it.
+                var scene = MeshFactory.ImportColladaScene(ModelPath("parrot.dae"), progress);
+
+                world.Root = scene.Root;
+
+                foreach (var node in scene.Root.SelfAndDescendants())
+                {
+                    if (node.Kind is SceneNodeKind.Light or SceneNodeKind.Camera || ReferenceEquals(node, scene.Root))
+                    {
+                        continue;
+                    }
+
+                    world.Meshes.Add(new Cube { Parent = node, Scale = MarkerScale(node, 2.2f) });
+                }
+
+                foreach (var clip in scene.Clips)
+                {
+                    world.Players.Add(new AnimationPlayer(scene.Root, clip));
+                }
+
+                world.Lights.Add(new PointLight
+                {
+                    Position = new Vector3(150, 200, 400),
+                    Color = new ColorRGB(255, 236, 205),
+                });
+                world.Lights.Add(new PointLight
+                {
+                    Position = new Vector3(-300, 100, -200),
+                    Color = new ColorRGB(120, 170, 255),
+                    Intensity = 0.55f,
+                });
+
+                cameraPosition = new Vector3(0, 0, -230);
+                return new WorldSetup(world, cameraPosition, null) { SkeletonTickSize = 5f };
+            }
 
             case "empty":
                 break;

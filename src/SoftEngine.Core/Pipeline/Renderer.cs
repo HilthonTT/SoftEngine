@@ -389,6 +389,23 @@ public sealed class Renderer : IRenderer
             GizmoRenderer.DrawAxes(surface, viewMatrix * projectionMatrix);
         }
 
+        if (rendererSettings.ShowSkeleton && world.Root is { } skeletonRoot)
+        {
+            var jointCount = 0;
+            foreach (var _ in skeletonRoot.SelfAndDescendants())
+            {
+                jointCount++;
+            }
+
+            var skeletonEvent = events.Add(GraphicsEventKind.GizmoDrawSkeleton, -1, jointCount);
+            if (drawEvents is not null)
+            {
+                FrameBuffer.SetProbeContext(skeletonEvent, PixelWriteSource.Skeleton, -1, -1, null);
+            }
+
+            GizmoRenderer.DrawSkeleton(surface, viewMatrix * projectionMatrix, skeletonRoot, rendererSettings.SkeletonTickSize);
+        }
+
         ResolveFrame(surface, projection, events);
 
         Stats.StopTime();

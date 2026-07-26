@@ -43,6 +43,8 @@ public sealed partial class MainScreen
         chkShowBackFacesCulling = new CheckBox();
         chkShowXZGrid = new CheckBox();
         chkShowAxes = new CheckBox();
+        chkShowSkeleton = new CheckBox();
+        chkAnimate = new CheckBox();
         chkFog = new CheckBox();
         chkShadows = new CheckBox();
         chkGammaCorrect = new CheckBox();
@@ -236,6 +238,8 @@ public sealed partial class MainScreen
         flpDisplay.Controls.Add(chkShowBackFacesCulling);
         flpDisplay.Controls.Add(chkShowXZGrid);
         flpDisplay.Controls.Add(chkShowAxes);
+        flpDisplay.Controls.Add(chkShowSkeleton);
+        flpDisplay.Controls.Add(chkAnimate);
         flpDisplay.Controls.Add(chkFog);
         flpDisplay.Controls.Add(chkShadows);
         flpDisplay.Controls.Add(chkSky);
@@ -279,6 +283,26 @@ public sealed partial class MainScreen
         chkShowAxes.Name = "chkShowAxes";
         chkShowAxes.Text = "Axes";
         chkShowAxes.UseVisualStyleBackColor = true;
+        //
+        // chkShowSkeleton
+        //
+        chkShowSkeleton.AutoSize = true;
+        chkShowSkeleton.Margin = new Padding(2, 2, 0, 2);
+        chkShowSkeleton.Name = "chkShowSkeleton";
+        chkShowSkeleton.Text = "Skeleton";
+        chkShowSkeleton.UseVisualStyleBackColor = true;
+        toolTip1.SetToolTip(chkShowSkeleton, "Draw the scene's node hierarchy as bones over the frame");
+        //
+        // chkAnimate
+        //
+        chkAnimate.AutoSize = true;
+        chkAnimate.Checked = true;
+        chkAnimate.CheckState = CheckState.Checked;
+        chkAnimate.Margin = new Padding(2, 2, 0, 2);
+        chkAnimate.Name = "chkAnimate";
+        chkAnimate.Text = "Animate";
+        chkAnimate.UseVisualStyleBackColor = true;
+        toolTip1.SetToolTip(chkAnimate, "Play the loaded world's animation; unchecking holds the current pose");
         //
         // chkFog
         //
@@ -880,6 +904,8 @@ public sealed partial class MainScreen
     private CheckBox chkShowBackFacesCulling;
     private CheckBox chkShowXZGrid;
     private CheckBox chkShowAxes;
+    private CheckBox chkShowSkeleton;
+    private CheckBox chkAnimate;
     private CheckBox chkFog;
     private CheckBox chkShadows;
     private CheckBox chkGammaCorrect;

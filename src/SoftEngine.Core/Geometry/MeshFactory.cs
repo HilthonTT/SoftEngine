@@ -10,7 +10,7 @@ namespace SoftEngine.Core.Geometry;
 /// <c>triangles</c> blocks — it is not a general-purpose importer and assumes a
 /// well-formed, single-source layout.
 /// </summary>
-public static class MeshFactory
+public static partial class MeshFactory
 {
     private static readonly XNamespace _collada = "http://www.collada.org/2005/11/COLLADASchema";
 

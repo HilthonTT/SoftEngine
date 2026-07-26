@@ -9,6 +9,7 @@ using SoftEngine.WinForms.Cameras;
 using SoftEngine.WinForms.Interop;
 using SoftEngine.WinForms.Utilities;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Numerics;
@@ -22,6 +23,13 @@ public partial class Panel3D : UserControl
 
     private const float MoveInterval = 16f;
 
+    /// <summary>
+    /// How often the animation clock ticks. The renderer will not keep up with 60 Hz on a
+    /// dense scene, and that is fine: the clip is advanced by elapsed wall-clock time rather
+    /// than per tick, so a slow frame skips ahead instead of playing in slow motion.
+    /// </summary>
+    private const float AnimationInterval = 16f;
+
     /// <summary>One notch of a standard mouse wheel.</summary>
     private const int WheelNotch = 120;
 
@@ -33,7 +41,15 @@ public partial class Panel3D : UserControl
 
     private readonly StringBuilder StatDisplay;
     private readonly System.Windows.Forms.Timer _moveTimer;
+    private readonly System.Windows.Forms.Timer _animationTimer;
     private readonly HashSet<Keys> _heldKeys = [];
+
+    // Wall-clock, so playback runs at the clip's authored speed however long a frame takes.
+    // A software renderer's frame time swings by an order of magnitude between a 200-triangle
+    // scene and a 30k one, and stepping the clip by a fixed amount per tick would make the
+    // same animation play at a different speed in each.
+    private readonly Stopwatch _animationClock = new();
+    private TimeSpan _lastAnimationTick;
 
     private Size _bufferSize;
     private int _superSampling = 1;
@@ -110,6 +126,73 @@ public partial class Panel3D : UserControl
         }
     }
 
+    /// <summary>
+    /// Whether the world's animations advance. Turning it off holds the current pose rather
+    /// than resetting it, so a frame can be inspected in the debugger while it is stopped.
+    /// Has no effect on a world with nothing to animate.
+    /// </summary>
+    [DefaultValue(true)]
+    public bool Animate
+    {
+        get => _animate;
+        set
+        {
+            if (_animate == value)
+            {
+                return;
+            }
+
+            _animate = value;
+            SyncAnimationTimer();
+        }
+    }
+
+    private bool _animate = true;
+
+    /// <summary>
+    /// Starts or stops the animation clock to match the current world and
+    /// <see cref="Animate"/>. Call after loading a world.
+    /// </summary>
+    public void SyncAnimationTimer()
+    {
+        var run = _animate && Scene?.World is { IsAnimated: true };
+
+        if (run == _animationTimer.Enabled)
+        {
+            return;
+        }
+
+        if (run)
+        {
+            _animationClock.Restart();
+            _lastAnimationTick = TimeSpan.Zero;
+        }
+        else
+        {
+            _animationClock.Stop();
+        }
+
+        _animationTimer.Enabled = run;
+    }
+
+    private void AdvanceAnimation(object? sender, EventArgs e)
+    {
+        if (Scene?.World is not { } world)
+        {
+            return;
+        }
+
+        var now = _animationClock.Elapsed;
+        var delta = (float)(now - _lastAnimationTick).TotalSeconds;
+        _lastAnimationTick = now;
+
+        // A long stall — the window dragged, a model loaded — should not fling the clip
+        // forward by seconds; capping the step keeps a resumed animation continuous.
+        world.Update(MathF.Min(delta, 0.25f));
+
+        Invalidate();
+    }
+
     /// <summary>Raised after every rendered frame, on the UI thread.</summary>
     public event EventHandler? FrameRendered;
 
@@ -141,6 +224,9 @@ public partial class Panel3D : UserControl
         // the auto-repeat rate is a user setting we shouldn't inherit.
         _moveTimer = new System.Windows.Forms.Timer { Interval = (int)MoveInterval };
         _moveTimer.Tick += MoveCamera;
+
+        _animationTimer = new System.Windows.Forms.Timer { Interval = (int)AnimationInterval };
+        _animationTimer.Tick += AdvanceAnimation;
 
         Paint += Panel3D_Paint;
     }
@@ -695,10 +781,11 @@ public partial class Panel3D : UserControl
         return _resolved;
     }
 
-    /// <summary>Releases the render bitmap and the movement timer; called from the designer's Dispose.</summary>
+    /// <summary>Releases the render bitmap and the timers; called from the designer's Dispose.</summary>
     private void DisposeRenderResources()
     {
         _moveTimer.Dispose();
+        _animationTimer.Dispose();
         bmp?.Dispose();
         bmp = null;
     }

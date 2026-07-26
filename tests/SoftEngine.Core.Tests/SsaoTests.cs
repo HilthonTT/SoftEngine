@@ -9,6 +9,7 @@ using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Cameras;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
+using SoftEngine.Core.Shading;
 using System.Numerics;
 
 namespace SoftEngine.Core.Tests;
@@ -200,6 +201,91 @@ public class SsaoTests
         for (var i = 0; i < before.Length; i++)
         {
             Assert.Equal(before[i] & 0x00FFFFFF, scene.Surface.Screen[i] & 0x00FFFFFF);
+        }
+    }
+
+    /// <summary>
+    /// A frame drawn by hand rather than rendered, so the depth pattern is exactly the one
+    /// under test: a single lit pixel somewhere on the border, background everywhere else.
+    /// </summary>
+    private static FrameBuffer BorderPixel(int width, int height, int x, int y)
+    {
+        var surface = new FrameBuffer(width, height) { Stats = new RenderStats() };
+
+        surface.SetDepthRange(1f, 100f);
+        surface.Clear();
+        surface.PutPixel(x, y, FrameBuffer.DepthResolution / 2, new LinearColor(0.5f, 0.5f, 0.5f));
+
+        return surface;
+    }
+
+    private static void RunSsao(FrameBuffer surface)
+    {
+        var stack = new PostProcessStack();
+        stack.Effects.Add(new SsaoEffect { Enabled = true, Radius = 0.5f });
+
+        stack.Apply(surface, new PerspectiveProjection(MathF.PI / 4f, 1f, 100f));
+    }
+
+    [Theory]
+    [InlineData(16, 16, 8, 15)]   // bottom edge, the one that used to throw
+    [InlineData(16, 16, 15, 8)]   // right edge
+    [InlineData(16, 16, 15, 15)]  // bottom-right corner, both at once
+    [InlineData(16, 16, 0, 0)]    // top-left corner, the opposite border
+    [InlineData(16, 16, 8, 0)]    // top edge
+    public void Ssao_GeometryOnTheFrameBorder_DoesNotReadPastTheBuffer(int width, int height, int x, int y)
+    {
+        // Reconstructing a normal reads the pixels either side. A lit pixel on the last row
+        // has background above it and no row below at all, so both neighbours are at infinity
+        // — and the tie-break used to resolve to the pixel that does not exist, one past the
+        // end of the depth buffer. The buffer is only ever grown, so this read landed in a
+        // stale larger frame's data most of the time and threw the rest of the time, which is
+        // why it only surfaced after zooming with ambient occlusion on.
+        var surface = BorderPixel(width, height, x, y);
+
+        RunSsao(surface);
+
+        // A pixel with no usable neighbour gets no normal and therefore no occlusion, so it
+        // has to come through the effect unchanged rather than merely not crashing.
+        Assert.NotEqual(0, surface.Screen[x + y * width] & 0x00FFFFFF);
+    }
+
+    [Fact]
+    public void Ssao_AfterALargerFrame_StillDoesNotReadPastTheBuffer()
+    {
+        // The depth buffer is grown and never shrunk, so a smaller frame that follows a
+        // larger one leaves readable slack past its end. That slack is what hid this.
+        var stack = new PostProcessStack();
+        stack.Effects.Add(new SsaoEffect { Enabled = true, Radius = 0.5f });
+
+        var projection = new PerspectiveProjection(MathF.PI / 4f, 1f, 100f);
+
+        stack.Apply(BorderPixel(64, 64, 32, 63), projection);
+
+        var small = BorderPixel(16, 16, 8, 15);
+        stack.Apply(small, projection);
+
+        Assert.NotEqual(0, small.Screen[8 + 15 * 16] & 0x00FFFFFF);
+    }
+
+    [Fact]
+    public void ViewPositionAt_OutsideTheFrame_ReadsAsBackground()
+    {
+        var scene = Corner(32);
+        new Renderer().Render(scene, new GouraudPainter());
+
+        PostProcessTarget? captured = null;
+
+        var stack = new PostProcessStack();
+        stack.Effects.Add(new DepthProbeEffect(target => captured = target));
+        stack.Apply(scene.Surface, scene.Projection);
+
+        Assert.NotNull(captured);
+
+        // There is no recorded geometry outside the frame, which is what background means.
+        foreach (var (x, y) in new[] { (-1, 0), (0, -1), (captured!.Width, 0), (0, captured.Height) })
+        {
+            Assert.True(float.IsNegativeInfinity(captured.ViewPositionAt(x, y).Z));
         }
     }
 

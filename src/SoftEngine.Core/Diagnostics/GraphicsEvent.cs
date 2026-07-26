@@ -59,6 +59,8 @@ public readonly record struct GraphicsEvent(GraphicsEventKind Kind, int ObjectId
                 string.Create(c, $"{(int)A} lines, {B:0.#} … {C:0.#}"),
             GraphicsEventKind.GizmoDrawAxes =>
                 "X, Y, Z",
+            GraphicsEventKind.GizmoDrawSkeleton =>
+                string.Create(c, $"{(int)A} joints"),
             GraphicsEventKind.PostProcessApply =>
                 string.Create(c, $"obj:{ObjectId} — {(int)A} effects over {(int)B} × {(int)C}"),
             GraphicsEventKind.FramePresent =>

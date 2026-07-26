@@ -1,5 +1,6 @@
 ﻿using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Math;
+using SoftEngine.Core.Scenes.Graph;
 using System.Numerics;
 
 namespace SoftEngine.Core.Geometry;
@@ -34,6 +35,12 @@ public class Mesh : IMesh
 
     public Vector3 Position { get; set; }
 
+    /// <summary>
+    /// The scene-graph node this mesh follows, or null when it stands on its own.
+    /// <see cref="IMesh.WorldMatrix"/> composes this mesh's own transform with the node's.
+    /// </summary>
+    public SceneNode? Parent { get; set; }
+
     public Vector3 Scale { get; set; }
 
     public ColorRGB[] TriangleColors { get; }
@@ -66,9 +73,13 @@ public class Mesh : IMesh
 
     public Vector4[]? Tangents { get; set; }
 
-    public float BoundingRadius { get; }
+    /// <summary>
+    /// Virtual because a deforming mesh's extent is a property of its current pose, not of
+    /// the vertices it was built from — see <see cref="Skinning.SkinnedMesh"/>.
+    /// </summary>
+    public virtual float BoundingRadius { get; }
 
-    public void EnsureTangents()
+    public virtual void EnsureTangents()
     {
         if (Tangents is not null || TexCoords is null)
         {

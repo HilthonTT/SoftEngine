@@ -17,4 +17,17 @@ public sealed class RendererSettings
     public bool ShowXZGrid { get; set; }
 
     public bool ShowAxes { get; set; }
+
+    /// <summary>
+    /// Draws the world's node hierarchy as bones over the finished image. A rig is invisible
+    /// in a rendered frame by construction, so this is the only way to see what a pose is
+    /// actually doing to it.
+    /// </summary>
+    public bool ShowSkeleton { get; set; }
+
+    /// <summary>
+    /// Length of each joint's axis tick, in world units. Models are authored at scales two
+    /// orders of magnitude apart, so the front-end sizes this to whatever it has loaded.
+    /// </summary>
+    public float SkeletonTickSize { get; set; } = 1f;
 }
