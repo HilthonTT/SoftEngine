@@ -63,8 +63,8 @@ public sealed class NodeChannel(string targetName)
     /// </summary>
     public static NodeChannel FromMatrices(string targetName, float[] times, Matrix4x4[] matrices)
     {
-        ArgumentNullException.ThrowIfNull(times);
-        ArgumentNullException.ThrowIfNull(matrices);
+        ArgumentNullException.ThrowIfNull(times, nameof(times));
+        ArgumentNullException.ThrowIfNull(matrices, nameof(matrices));
 
         var count = System.Math.Min(times.Length, matrices.Length);
 

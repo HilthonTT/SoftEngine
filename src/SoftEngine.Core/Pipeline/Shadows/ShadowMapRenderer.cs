@@ -3,6 +3,7 @@ using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Shading;
 using System.Numerics;
+using System.Reflection.Emit;
 
 namespace SoftEngine.Core.Pipeline.Shadows;
 
@@ -36,9 +37,9 @@ public sealed class ShadowMapRenderer
     /// </summary>
     public ShadowMap? Render(IWorld world, ILight light, ShadowSettings settings)
     {
-        ArgumentNullException.ThrowIfNull(world);
-        ArgumentNullException.ThrowIfNull(light);
-        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(world, nameof(world));
+        ArgumentNullException.ThrowIfNull(light, nameof(light));
+        ArgumentNullException.ThrowIfNull(settings, nameof(settings));
 
         TriangleCount = 0;
 

@@ -70,7 +70,7 @@ public readonly struct ShaderLight
     /// </summary>
     public static ShaderLight From(ILight light, bool castsShadow = false)
     {
-        ArgumentNullException.ThrowIfNull(light);
+        ArgumentNullException.ThrowIfNull(light, nameof(light));
 
         LinearColor color = light.Color;
         var scaled = light.Intensity * color;

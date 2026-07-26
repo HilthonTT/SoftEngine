@@ -63,7 +63,7 @@ public readonly struct AmbientCube
     /// </summary>
     public static AmbientCube FromEnvironment(CubeMap environment, float intensity = 1f)
     {
-        ArgumentNullException.ThrowIfNull(environment);
+        ArgumentNullException.ThrowIfNull(environment, nameof(environment));
 
         return new AmbientCube(
             Average(environment[CubeFace.PositiveX], intensity),

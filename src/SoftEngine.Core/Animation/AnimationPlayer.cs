@@ -17,8 +17,8 @@ public sealed class AnimationPlayer
 
     public AnimationPlayer(SceneNode root, AnimationClip clip)
     {
-        ArgumentNullException.ThrowIfNull(root);
-        ArgumentNullException.ThrowIfNull(clip);
+        ArgumentNullException.ThrowIfNull(root, nameof(root));
+        ArgumentNullException.ThrowIfNull(clip, nameof(clip));
 
         Root = root;
         Clip = clip;

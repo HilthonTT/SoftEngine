@@ -101,7 +101,7 @@ public sealed class FrameBuffer(int width, int height)
     /// </summary>
     public void ReadViewDepth(float[] destination)
     {
-        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentNullException.ThrowIfNull(destination, nameof(destination));
 
         var count = Width * Height;
         if (destination.Length < count)
@@ -461,7 +461,7 @@ public sealed class FrameBuffer(int width, int height)
     /// <summary>Starts recording every write attempt at <see cref="PixelHistory.X"/>, <see cref="PixelHistory.Y"/>.</summary>
     public void BeginProbe(PixelHistory history)
     {
-        ArgumentNullException.ThrowIfNull(history);
+        ArgumentNullException.ThrowIfNull(history, nameof(history));
 
         _probeHistory = history;
         _probeIndex = history.X + history.Y * Width;

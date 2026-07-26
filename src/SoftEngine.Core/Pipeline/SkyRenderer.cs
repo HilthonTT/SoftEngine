@@ -33,8 +33,8 @@ public static class SkyRenderer
     /// <param name="probeEvent">Index of the event a probed pixel's write is attributed to.</param>
     public static void Render(Scene scene, CubeMap environment, int probeEvent = -1)
     {
-        ArgumentNullException.ThrowIfNull(scene);
-        ArgumentNullException.ThrowIfNull(environment);
+        ArgumentNullException.ThrowIfNull(scene, nameof(scene));
+        ArgumentNullException.ThrowIfNull(environment, nameof(environment));
 
         var surface = scene.Surface;
         var projection = scene.Projection;

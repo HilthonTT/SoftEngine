@@ -84,7 +84,7 @@ public sealed class SceneNode
 
     public SceneNode Add(SceneNode child)
     {
-        ArgumentNullException.ThrowIfNull(child);
+        ArgumentNullException.ThrowIfNull(child, nameof(child));
 
         if (ReferenceEquals(child, this))
         {

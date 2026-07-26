@@ -37,7 +37,7 @@ public readonly struct LightSet
     /// </summary>
     public static LightSet Of(params ILight[] lights)
     {
-        ArgumentNullException.ThrowIfNull(lights);
+        ArgumentNullException.ThrowIfNull(lights, nameof(lights));
 
         var flattened = new ShaderLight[lights.Length];
 
@@ -59,7 +59,7 @@ public readonly struct LightSet
     /// </summary>
     public static LightSet Build(IWorld world, ILight? fallback, ref ShaderLight[] storage)
     {
-        ArgumentNullException.ThrowIfNull(world);
+        ArgumentNullException.ThrowIfNull(world, nameof(world));
 
         var lights = world.Lights;
         var count = lights.Count;

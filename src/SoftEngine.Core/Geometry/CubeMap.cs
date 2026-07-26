@@ -34,7 +34,7 @@ public sealed class CubeMap
 
     public CubeMap(Texture[] faces)
     {
-        ArgumentNullException.ThrowIfNull(faces);
+        ArgumentNullException.ThrowIfNull(faces, nameof(faces));
 
         if (faces.Length != 6)
         {
@@ -43,7 +43,7 @@ public sealed class CubeMap
 
         foreach (var face in faces)
         {
-            ArgumentNullException.ThrowIfNull(face);
+            ArgumentNullException.ThrowIfNull(face, nameof(face));
         }
 
         _faces = faces;
@@ -215,7 +215,7 @@ public sealed class CubeMap
     public static CubeMap Generate(int resolution, Func<Vector3, ColorRGB> shade)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(resolution);
-        ArgumentNullException.ThrowIfNull(shade);
+        ArgumentNullException.ThrowIfNull(shade, nameof(shade));
 
         var faces = new Texture[6];
 

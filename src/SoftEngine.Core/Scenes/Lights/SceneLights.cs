@@ -17,7 +17,7 @@ public static class SceneLights
     /// <summary>The world's first light, or <see cref="Default"/> when it has none.</summary>
     public static ILight Resolve(IWorld world, ILight? preferred = null)
     {
-        ArgumentNullException.ThrowIfNull(world);
+        ArgumentNullException.ThrowIfNull(world, nameof(world));
 
         return world.Lights.Count > 0 ? world.Lights[0] : preferred ?? Default;
     }

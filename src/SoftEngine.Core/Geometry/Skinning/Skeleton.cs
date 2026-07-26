@@ -23,9 +23,9 @@ public sealed class Skeleton
     /// <param name="inverseBindMatrices">One per joint: the inverse of its world matrix in the bind pose.</param>
     public Skeleton(SceneNode root, SceneNode[] joints, Matrix4x4[] inverseBindMatrices)
     {
-        ArgumentNullException.ThrowIfNull(root);
-        ArgumentNullException.ThrowIfNull(joints);
-        ArgumentNullException.ThrowIfNull(inverseBindMatrices);
+        ArgumentNullException.ThrowIfNull(root, nameof(root));
+        ArgumentNullException.ThrowIfNull(joints, nameof(joints));
+        ArgumentNullException.ThrowIfNull(inverseBindMatrices, nameof(inverseBindMatrices));
 
         if (joints.Length != inverseBindMatrices.Length)
         {
@@ -96,8 +96,8 @@ public sealed class Skeleton
     /// </summary>
     public static Skeleton FromBindPose(SceneNode root, SceneNode[] joints)
     {
-        ArgumentNullException.ThrowIfNull(root);
-        ArgumentNullException.ThrowIfNull(joints);
+        ArgumentNullException.ThrowIfNull(root, nameof(root));
+        ArgumentNullException.ThrowIfNull(joints, nameof(joints));
 
         root.UpdateWorldMatrices();
 

@@ -106,7 +106,7 @@ public sealed class PostProcessStack
     /// </summary>
     public void Apply(FrameBuffer surface, IProjection? projection)
     {
-        ArgumentNullException.ThrowIfNull(surface);
+        ArgumentNullException.ThrowIfNull(surface, nameof(surface));
 
         if (!HasEffects || surface.Width <= 0 || surface.Height <= 0)
         {

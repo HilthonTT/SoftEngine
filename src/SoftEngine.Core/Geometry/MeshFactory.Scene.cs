@@ -31,7 +31,7 @@ public static partial class MeshFactory
     /// <summary>Reads an already-parsed Collada document. Exists so tests can supply one inline.</summary>
     public static ColladaScene ImportColladaScene(XDocument document, IProgress<float>? progress = null)
     {
-        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(document, nameof(document));
 
         progress?.Report(0f);
 

@@ -40,7 +40,7 @@ public static class GizmoRenderer
     /// </param>
     public static void DrawSkeleton(FrameBuffer surface, Matrix4x4 world2Projection, SceneNode root, float tickSize = 1f)
     {
-        ArgumentNullException.ThrowIfNull(root);
+        ArgumentNullException.ThrowIfNull(root, nameof(root));
 
         foreach (var node in root.SelfAndDescendants())
         {
