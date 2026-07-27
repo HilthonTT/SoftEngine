@@ -425,6 +425,31 @@ public sealed class Renderer : IRenderer
             DrawHighlight(surface, worldBuffer, events, rendererSettings.HighlightedMesh, drawEvents, meshIdBase);
         }
 
+        // The transform handles, last of the overlays so nothing draws over what you have to
+        // click on. Sized here rather than by the front-end: the conversion from a fraction of
+        // the viewport to world units needs the projection this frame actually used.
+        if (rendererSettings.Gizmo is { IsActive: true } gizmo)
+        {
+            var gizmoOrigin = gizmo.Origin;
+            var gizmoScale = TransformGizmo.HandleScale(scene, gizmoOrigin);
+
+            var gizmoEvent = events.Add(
+                GraphicsEventKind.GizmoDrawTransform, -1, (int)gizmo.Mode, gizmoScale);
+
+            if (drawEvents is not null)
+            {
+                FrameBuffer.SetProbeContext(gizmoEvent, PixelWriteSource.TransformGizmo, -1, -1, null);
+            }
+
+            GizmoRenderer.DrawTransformGizmo(
+                surface,
+                viewMatrix * projectionMatrix,
+                gizmo.Mode,
+                gizmoOrigin,
+                gizmoScale,
+                gizmo.IsDragging ? gizmo.ActiveAxis : gizmo.HoveredAxis);
+        }
+
         ResolveFrame(surface, projection, events);
 
         // Last of all: swap the finished image for one of the buffers that produced it.
@@ -547,17 +572,36 @@ public sealed class Renderer : IRenderer
 
         _shadowRenderer ??= new ShadowMapRenderer();
 
+        // Cascades are slices of the camera's own frustum, so the pass is told what the frame
+        // is about to look at. A parallel projection has no frustum to slice — its shadow map
+        // already covers the view uniformly, which is the thing cascades exist to fix — so it
+        // is left to the single-map path.
+        ShadowView? view = null;
+
+        if (settings.CascadeCount > 1 && !scene.Projection.IsOrthographic)
+        {
+            view = new ShadowView(
+                scene.Camera.ViewMatrix,
+                scene.Projection.ProjectionMatrix(scene.Surface.Width, scene.Surface.Height),
+                scene.Projection.ZNear,
+                scene.Projection.ZFar);
+        }
+
         // The same resolution the lit painters use, so the scene is shadowed from wherever
         // it is lit from — including the fallback light of a world that declares none, which
         // is why the painter's own fallback is passed rather than left to default. A painter
         // built around a particular light and pointed at a world with none of its own would
         // otherwise shade from that light and cast shadows from a different one.
-        var map = _shadowRenderer.Render(scene.World, SceneLights.Resolve(scene.World, painter?.FallbackLight), settings);
+        var map = _shadowRenderer.Render(
+            scene.World,
+            SceneLights.Resolve(scene.World, painter?.FallbackLight),
+            settings,
+            view);
 
         if (map is not null)
         {
             events.Add(GraphicsEventKind.ShadowMapRender, SceneObjectIds.ShadowMap,
-                map.Resolution, _shadowRenderer.TriangleCount);
+                map.Resolution, _shadowRenderer.TriangleCount, map.CascadeCount);
         }
 
         return map;

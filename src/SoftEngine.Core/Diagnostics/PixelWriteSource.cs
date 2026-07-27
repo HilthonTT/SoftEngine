@@ -1,4 +1,4 @@
-namespace SoftEngine.Core.Diagnostics;
+﻿namespace SoftEngine.Core.Diagnostics;
 
 /// <summary>What tried to write a probed pixel.</summary>
 public enum PixelWriteSource
@@ -10,6 +10,7 @@ public enum PixelWriteSource
     Grid,
     Axes,
     Skeleton,
+    TransformGizmo,
     PostProcess,
     DebugView,
 }

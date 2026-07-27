@@ -10,19 +10,19 @@ A **software 3D rasterizer** written in C#. The entire pipeline — model transf
 
 ## What it does
 
-- Loads and renders 3D models (Wavefront `.obj`, Collada `.dae`) and procedural primitives in real time.
+- Loads and renders 3D models (Wavefront `.obj`, Collada `.dae`, **glTF 2.0** `.gltf`/`.glb`) and procedural primitives in real time.
 - Rasterizes triangles with a generic scanline filler and a depth (z) buffer.
 - Supports several shading modes — wireframe, solid, flat, Gouraud, Phong, textured, full material and **physically-based** — selectable at runtime.
 - Lights a scene with **any number of coloured lights** — directional, point with distance falloff, and spot.
 - Rasterizes into an **HDR linear float target**, so highlights brighter than white survive to the post-process stack.
 - Surrounds the scene with an **environment cube map**, drawn as a skybox and reduced to the ambient light the painters use.
-- Casts **shadows** with a shadow-map pass rendered from the light's point of view, and **screen-space ambient occlusion** for the contact detail a shadow map cannot resolve.
+- Casts **shadows** with a shadow-map pass rendered from the light's point of view, split into **cascades** fitted to slices of the camera's own view distance, and **screen-space ambient occlusion** for the contact detail a shadow map cannot resolve.
 - Shades **materials**: albedo, tangent-space normal and specular maps, loaded from a model's `.mtl`.
 - Deforms **skinned meshes** over a **scene graph** of transforms, played from keyframed animation clips — all imported from Collada.
 - Runs a **post-process stack** over the finished frame — bloom, tone mapping, FXAA, vignette.
 - Anti-aliases by **supersampling**: render at a multiple of the display resolution and average down.
 - Shades **metallic-roughness materials** with a Cook-Torrance microfacet model, lit by the scene's lights and by a split-sum approximation of its environment.
-- Answers clicks by **ray-casting the world** rather than reading the frame, and outlines what it hits.
+- Answers clicks by **ray-casting the world** rather than reading the frame, outlines what it hits, and lets it be **moved, turned and stretched by dragging** the transform handles.
 - Presents the frame's own **intermediate buffers** — depth, normals, overdraw, the shadow map — in place of the shaded image.
 - Provides an interactive arc-ball camera, WASD fly controls, gizmos (world axes, ground grid), and a live stats overlay.
 - Ships a **graphics debugger** — event list, object table and per-pixel history — built on the renderer's own instrumentation.
@@ -119,13 +119,55 @@ Shadows come from a second, depth-only render of the world from where the light 
 Shading a point then means projecting it with the same matrix and comparing: if something
 nearer to the light already occupies that direction, the point is in shadow.
 
-- The light gets an **orthographic** projection ([`OrthographicProjection`](src/SoftEngine.Core/Scenes/Projections/OrthographicProjection.cs)) sized to a sphere around the whole world, so the map covers the scene from any angle. Point lights are approximated as directional — accurate while the light sits outside the scene.
+- The light gets an **orthographic** projection ([`OrthographicProjection`](src/SoftEngine.Core/Scenes/Projections/OrthographicProjection.cs)) sized to a sphere around what it covers, so the map works from any angle. Point lights are approximated as directional — accurate while the light sits outside the scene.
 - The pass is the main pipeline with everything that doesn't affect occlusion removed: no colour, no lighting, no varyings. It uses a **bounding-box edge-function rasterizer**, split into contiguous bands of rows so it parallelizes without locking the depth buffer.
 - **Phong and Material** sample the map per pixel; **Flat, Gouraud and Textured** fold the visibility into their per-vertex intensity. Ambient light is never shadowed, so a shadowed surface darkens rather than going black.
 - **Bias is measured in shadow-map texels of depth**, not raw normalized depth — one texel of error means the same thing in a 2-unit skull and a 1500-unit elephant, so it does not need retuning per scene or per resolution. A slope term scales it with the light's incidence angle.
 - Transparent and hidden meshes are excluded: something you can see through should not block the light, and a mesh dropped from the frame should not leave its shadow behind.
 
-`Scene.Shadows` ([`ShadowSettings`](src/SoftEngine.Core/Scenes/ShadowSettings.cs)) controls resolution, bias, 3×3 PCF filtering and shadow strength.
+`Scene.Shadows` ([`ShadowSettings`](src/SoftEngine.Core/Scenes/ShadowSettings.cs)) controls resolution, bias, 3×3 PCF filtering, shadow strength, and the cascades below.
+
+### Cascades
+
+One map over a whole scene spends its resolution uniformly, which puts the texels where they
+do least good. Perspective makes a shadow ten units from the eye cover a hundred times the
+pixels of one five hundred units away, and a single map gives them the same number of texels:
+the near shadow comes out as a staircase while the far one is finer than anything can see.
+
+`ShadowSettings.CascadeCount` splits the pass into up to four depth buffers, each fitted to a
+slice of the camera's own view distance. Four decisions make the difference between cascades
+that help and cascades that flicker:
+
+- **The slices are divided by a blend of two schemes.** Evenly by distance gives the near
+  slice — where nearly all the pixels are — the same span as the far one. Evenly by *ratio*,
+  each slice a fixed multiple of the last, puts the first boundary a few units in front of the
+  eye. `SplitBlend` interpolates between them, weighted toward the ratio.
+- **Each cascade is fitted to a sphere, not a box.** A box fitted to a slice's eight corners
+  changes size as the camera turns, and every shadow edge in the frame breathes with it. A
+  sphere around the same corners depends only on the slice's dimensions, which rotating does
+  not change.
+- **The fit is snapped to whole texels.** Otherwise the light-space grid slides continuously as
+  the camera moves, each frame re-dicing every shadow edge into different texels — which reads
+  as crawling, and is far more visible in motion than the aliasing it comes from.
+- **A cascade only rasterizes the casters that can reach it.** Under a parallel projection
+  that is a question about perpendicular distance to the light axis and nothing else. It is
+  where the extra passes pay for themselves: the near cascade covers a few units and rejects
+  nearly everything, so three cascades over a long scene cost well under three times one map.
+
+Which cascade shades a point is decided by **containment**, not by its view depth: the cascades
+are nested, so the first one that covers the point is also the sharpest one that does. That
+keeps `ShadowMap.Visibility` a function of world position alone, which is what lets the same
+call work from a vertex-lit painter and a per-pixel one without either knowing cascades exist.
+Every cascade but the last hands a point over a filter's width early, so the seam between two
+of them is not a bright line of taps that fell off the edge of a buffer.
+
+Two honest limits. Cascades are slices of a view frustum, so the standalone shadow-map API
+produces a single map when it is called without a camera rather than guessing at one — and a
+**parallel projection** stays on the single-map path, because its shadow map already covers the
+view uniformly, which is the very thing cascades exist to fix.
+
+The **Shadow map** buffer view shows every cascade side by side, nearest on the left, each
+tinted so the sequence is readable at a glance.
 
 ## Materials and normal mapping
 
@@ -194,6 +236,61 @@ channel and roughness from its green (the channels glTF packs them into), fallin
 material's scalars, falling back to a mid-grey dielectric lit from the triangle colour. So the
 mode can be switched on over any scene in the viewer, not only ones authored for it.
 
+## glTF 2.0
+
+[`GltfImporter`](src/SoftEngine.Core/Geometry/Gltf/GltfImporter.cs) reads both forms of the
+format: the JSON one (`.gltf`, with buffers and images beside it or inline as data URIs) and
+the binary container (`.glb`).
+
+glTF is the format this engine already had the shading model for. Collada carries geometry,
+skins and clips, but describes surfaces with the specular-and-shininess vocabulary of a decade
+earlier — so the physically-based painter could only ever be pointed at procedural demos or
+hand-set scalars. A glTF material is metallic-roughness, and its packed texture puts roughness
+in green and metalness in blue, which is exactly what
+[`Material.MetallicMap`](src/SoftEngine.Core/Geometry/Material.cs) and `RoughnessMap` already
+read: those channels were chosen for this format before there was a reader for it. One packed
+map is assigned to both properties rather than decoded twice.
+
+| Read | Not read |
+| --- | --- |
+| The default scene's node hierarchy, with instancing | Morph targets (`weights` animation channels) |
+| Every mesh primitive as its own mesh, one per material | Cameras and `KHR_lights_punctual` |
+| Triangles, strips and fans; indexed or not | `KHR_texture_transform` |
+| Metallic-roughness materials, base-colour / normal / metallic-roughness / emissive maps, `KHR_materials_emissive_strength` | A second UV set (`TEXCOORD_1`) |
+| Skins with their inverse bind matrices | Draco and meshopt compression — **refused by name**, see below |
+| Animation samplers in all three interpolation modes | |
+
+Four details worth naming:
+
+- **The matrix convention is the opposite of Collada's, and needs no work.** glTF stores a
+  matrix column-major for the column-vector convention — element (row *r*, column *c*) at index
+  *c*·4 + *r*. This engine composes row-vector matrices, which are the transpose, and
+  transposing a column-major array *is* reading it row-major. So the sixteen floats go straight
+  into `Matrix4x4`'s constructor untouched, where Collada's have to be transposed. The two
+  files disagree, not the two engines.
+- **Sparse accessors are decoded.** An accessor that stores only the elements differing from a
+  base is rare outside morph targets, and ignoring it renders the base — which for positions is
+  the wrong *shape*, not a missing detail. It fails silently, which is why it is implemented.
+- **All three interpolation modes are honoured**, which is why
+  [`TrackInterpolation`](src/SoftEngine.Core/Animation/TrackInterpolation.cs) exists. `STEP` is
+  how a blinking light or a swapped-out prop is authored, and blending it produces a value the
+  animator never wrote. `CUBICSPLINE` stores three values per key — the tangent in, the value,
+  the tangent out — so reading it as a plain value array both misreads the values *and* triples
+  the apparent key count; it is sampled as the cubic Hermite it is.
+- **A file requiring compressed geometry is refused with the extension's name.** A Draco
+  primitive's accessors describe a compressed stream, and reading them as vertices produces a
+  mesh made of noise — which looks like a bug in the renderer rather than an unread file.
+
+Decoding images stays out of the Core, as it does for OBJ: the importer resolves all three
+places an image can live — a file beside the model, a data URI, a stretch of the GLB's binary
+chunk — down to bytes, and the front-end supplies one decoder for them.
+
+A glTF mesh instanced by several nodes becomes several engine meshes **sharing one vertex
+array**. Nothing in the pipeline writes to a vertex, so a second instance of a dense model
+costs one small object rather than the whole model again. The triangle colours are not shared,
+because recolouring one instance and finding its twin recoloured is a trap the engine's own
+primitives already lay once.
+
 ## Picking
 
 ![The picked sphere outlined in amber over the shaded frame](docs/screenshots/picking.png)
@@ -224,6 +321,45 @@ geometry with no framebuffer in it — can be tested without rendering anything 
 `Settings.HighlightedMesh` outlines the hit in amber, and it walks the frame's own draw lists
 rather than the mesh — so a mesh culled out of the frame highlights nothing, which is the
 honest answer.
+
+### Dragging what you picked
+
+[`TransformGizmo`](src/SoftEngine.Core/Gizmos/TransformGizmo.cs) puts handles on the picked
+mesh: three arrows to move it, three rings to turn it, three arms with a box on the end to
+stretch it.
+
+It is built out of the two things picking already provides. A handle is just more geometry to
+test the click's ray against — an axis is a line segment, a ring is a circle in a plane. And
+once a handle is grabbed, the same ray answers the question the drag is actually asking: how
+far *along* this axis, or how far *around* it, is the cursor now? So the gizmo reads nothing
+from the frame, works on geometry the frame never rasterized, and can be driven — and tested —
+with no rendering at all.
+
+- **The handles are sized in screen terms**, a fixed fraction of the viewport's height
+  converted back to world units at the gizmo's own distance. A gizmo measured in world units is
+  unusable at both ends of the range this renderer covers: a speck on a 1500-unit elephant, and
+  swallowing a 2-unit skull.
+- **The grab frame is frozen when the drag starts.** The gizmo is drawn at the mesh's own
+  origin, so translating the mesh moves it — and measuring each step against the moved frame
+  feeds the mesh's motion back into the number that caused it, running it away from the cursor.
+  The line being dragged along stands still; only the drawing follows.
+- **Every step is measured from where the drag began**, not from the step before it, so a
+  cursor that wanders off the handle and comes back leaves the mesh where the pointer is rather
+  than where the accumulated error put it.
+- **The handles are drawn without a depth test**, alone among the gizmos. A grid or a skeleton
+  is describing where things are, so hiding behind them is right; a manipulator is not — you
+  grab it with a ray that knows nothing about depth, so a handle buried inside the mesh it is
+  attached to would be a control you can use and cannot see.
+- **A parented mesh's drag is carried back through its parent.** `Position` on a mesh hanging
+  off a node is an offset in that node's space, so a world-space drag on a mesh under a node
+  scaled ×8 would otherwise run eight times as far as the cursor.
+
+One deliberate limitation, and it is the format's rather than the gizmo's: **rotation drives
+the mesh's own Euler angles**, because that is what `IMesh` stores — the Y ring is yaw, the X
+ring pitch, the Z ring roll. With two of the three at zero that is exactly a rotation about the
+world axis drawn; with all three set it is not, because composed Euler angles cannot express
+one. Turning `Mesh.Rotation` into the quaternion `SceneNode` already uses is what would fix it,
+and this is one more reason to.
 
 ## Scene graph
 
@@ -318,10 +454,12 @@ graphics debugger does every time a probed pixel is re-recorded, must not advanc
 
 ### What the importer reads
 
-`MeshFactory.ImportColladaScene` returns a [`ColladaScene`](src/SoftEngine.Core/Geometry/ColladaScene.cs):
+`MeshFactory.ImportColladaScene` returns an [`ImportedScene`](src/SoftEngine.Core/Geometry/ImportedScene.cs):
 the meshes, the visual scene's node tree, the skin controllers bound to it, and the animation
-channels that pose it. `HackyImportCollada` is untouched and still returns bare meshes, which
-is all a static model needs.
+channels that pose it. It is the same type the glTF reader returns, because a scene is a scene —
+the two readers disagree about matrix conventions, chunk layout and where a material's roughness
+lives, and about nothing downstream of that. `HackyImportCollada` is untouched and still returns
+bare meshes, which is all a static model needs.
 
 Collada writes matrices for the **column-vector** convention — a point is transformed as
 `M·v`, and a node's translation sits in the fourth column. This engine composes row-vector
@@ -456,10 +594,13 @@ The WinForms app ([`SoftEngine.WinForms`](src/SoftEngine.WinForms)) renders the 
 | **Mouse wheel** | Move the camera in/out — the status bar's zoom percentage follows it (100% is the framing a world loads with) |
 | **W / A / S / D** | Fly the camera forward / left / back / right (**Q**/**E** for down/up). Hold **Shift** to move faster, **Ctrl** for fine steps; the step scales with the camera's distance, so it works on a 2-unit skull and a 1500-unit elephant alike |
 | **Left-click the viewport** | Probe that pixel *and* pick what is under it — the write history appears in the Pixel History panel, the hit mesh is outlined in amber and selected in the object table, and the status bar names it (**Esc** clears both) |
+| **Drag a gizmo handle** | Move, turn or stretch the picked mesh, once a mode is chosen. The handle under the cursor highlights, grabbing one suspends the camera for the drag, and the status bar reports the mesh's new position, rotation or scale |
 | **F12** | Save the current view as a PNG |
-| **Load model…** | Pick a bundled world (skull, parrot, elephant, teapot, cubes, spheres, towns, shadows, normal mapping, PBR spheres, the three animated ones…) or open an OBJ/Collada file from disk |
+| **Load model…** | Pick a bundled world (skull, parrot, elephant, teapot, cubes, spheres, towns, shadows, cascaded shadows, normal mapping, PBR spheres, the three animated ones…) or open an OBJ, Collada or glTF file from disk |
 | **Shading radios** | Switch between None / Classic / Flat / Gouraud / Phong / Textured / Material / Physically based |
 | **Buffer view** | Present the shaded image, or the depth, normals, overdraw or shadow-map buffer that produced it |
+| **Shadow cascades** | One map over the world, or two to four fitted to slices of the view distance |
+| **Transform gizmo** | Off / Move / Rotate / Scale — the handles drawn on the picked mesh |
 | **Display checkboxes** | Toggle wireframe triangles, back-face culling, XZ grid, world axes, skeleton, animation, fog, shadows, sky, gamma-correct light, HDR target, texture filtering, 2× supersampling |
 | **Post-processing checkboxes** | Toggle ambient occlusion, bloom, tone mapping, FXAA and vignette independently |
 
@@ -520,16 +661,18 @@ Both can be switched off from the **View** menu, along with each panel.
 ```
 src/
 ├── SoftEngine.Core/        # engine, no UI dependency (net10.0 class library)
-│   ├── Animation/          # keyframe tracks, node channels, clips, playback
+│   ├── Animation/          # keyframe tracks, interpolation modes, node channels, clips, playback
 │   ├── Buffers/            # FrameBuffer (color + z-buffer + pixel probe), pooled Vertex/World buffers
 │   ├── Diagnostics/        # render stats, graphics event log, pixel history
 │   ├── Geometry/           # IMesh/Mesh, Material, Triangle, tangents, primitives, OBJ/Collada importers
+│   │   ├── Gltf/           # glTF 2.0 / GLB reader: schema, accessor decoding, scene building
 │   │   └── Skinning/       # skeleton, skin weights, linear blend skinning, generated bone chain
+│   ├── Gizmos/             # grid, world axes, skeleton, and the draggable transform handles
 │   ├── Picking/            # ray, ray-triangle intersection, scene picker
 │   ├── Pipeline/           # Renderer, settings, homogeneous clipping, sky pass
-│   │   ├── Debugging/      # buffer views: depth, normals, overdraw, shadow map
+│   │   ├── Debugging/      # buffer views: depth, normals, overdraw, shadow cascades
 │   │   ├── PostProcess/    # effect stack: SSAO, bloom, tone map, FXAA, vignette
-│   │   └── Shadows/        # depth-only shadow-map pass
+│   │   └── Shadows/        # depth-only shadow-map pass, cascade fitting
 │   ├── Rasterization/      # scanline filler, painters, shaders, varyings, texture sampling
 │   ├── Scenes/             # world, camera, projections, lights, fog and shadow settings
 │   │   └── Graph/          # SceneNode transform hierarchy
@@ -538,6 +681,9 @@ src/
 └── SoftEngine.WinForms/    # interactive front-end (net10.0-windows)
     ├── Debugging/          # event list, object table and pixel history panels
     └── Dialogs/            # model picker
+
+bench/SoftEngine.Benchmarks/   # headless frame-time harness (net10.0 console)
+tests/SoftEngine.Core.Tests/   # xUnit suite over the Core
 ```
 
 ## Requirements
@@ -553,6 +699,12 @@ dotnet build SoftEngine.slnx
 
 # run the interactive app
 dotnet run --project src/SoftEngine.WinForms
+
+# run the tests
+dotnet test tests/SoftEngine.Core.Tests
+
+# measure the renderer (Release, or the numbers measure the debugger)
+dotnet run -c Release --project bench/SoftEngine.Benchmarks
 ```
 
 ## Performance notes
@@ -570,19 +722,43 @@ no HDR range to give converts a `ColorRGB` in and the framebuffer converts it ba
 six lookup-table reads per pixel that the old packed-byte path did not pay. Both tables are
 small enough to stay in L1, and the alternative was two parallel shading paths.
 
-Work is measured rather than assumed: the numbers above come from a headless harness that
-renders fixed scenes — dense models, heavy overdraw, a few huge triangles — and reports the
-median frame time.
+### Measuring it
+
+Work is measured rather than assumed. [`bench/SoftEngine.Benchmarks`](bench/SoftEngine.Benchmarks)
+is a headless harness that renders fixed scenes and reports the median frame time:
+
+```bash
+dotnet run -c Release --project bench/SoftEngine.Benchmarks
+dotnet run -c Release --project bench/SoftEngine.Benchmarks -- --scene overdraw --compare
+```
+
+The engine renders into a plain `int[]`, so measuring it needs no window, no GPU and no
+platform beyond the runtime — which is what makes the numbers reproducible on any machine that
+can build the solution. Six scenes cover the shapes the renderer is built around: a dense
+model where the cost is per-triangle setup, heavy overdraw where it is the depth test, a
+handful of screen-filling triangles, thousands of small meshes, the shadow pass, and the
+physically-based shader.
+
+The **median** rather than the mean, because a frame time distribution on a desktop OS has a
+long right tail belonging to the scheduler rather than to the renderer — one preempted frame
+moves a mean and cannot move a median. Warm-up frames are discarded for the same reason in the
+other direction: the first frame through a scene pays for JIT and for every buffer, tile bin,
+mip chain and prefiltered environment being allocated.
+
+`--compare` re-runs each scene with hierarchical-Z off and reports the ratio. On eight hardware
+threads at 1280×720 it is worth **≈4×** on the overdraw scene and about 1× everywhere else,
+which is what it should be: the tile's coarse depth bound cannot reject anything in a scene one
+layer deep, and it costs a periodic scan to find that out.
 
 ## Roadmap
 
-- Cascaded shadow maps, so a large scene doesn't spend one uniform resolution on all of it.
-- A glTF 2.0 importer, which would bring PBR materials and skinning in one well-specified format — and metallic-roughness textures the PBR path can already read.
-- Replace `Mesh`'s `Rotation3D` (Euler angles) with the quaternion rotation `SceneNode` already uses.
+- Replace `Mesh`'s `Rotation3D` (Euler angles) with the quaternion rotation `SceneNode` already uses — which is also what would let the transform gizmo's rings turn a mesh about a world axis rather than about its own.
 - Animation blending — crossfading two clips, and layering one over another — which the player is one weight away from.
 - Frame capture history, so the debugger can step back through earlier frames.
 - A mip-level buffer view, the one view of the frame the visualizer still has nothing to draw from.
 - More than one shadow-casting light, which needs a depth buffer and a pass per light.
+- Morph targets, the one part of glTF's animation the importer reads past.
+- A deferred or visibility-buffer path, which would let SSAO darken the ambient term alone instead of the finished image — the limitation the post-processing section admits to.
 
 ## Credits
 

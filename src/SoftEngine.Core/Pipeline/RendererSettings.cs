@@ -1,4 +1,5 @@
-﻿using SoftEngine.Core.Pipeline.Debugging;
+﻿using SoftEngine.Core.Gizmos;
+using SoftEngine.Core.Pipeline.Debugging;
 
 namespace SoftEngine.Core.Pipeline;
 
@@ -45,4 +46,11 @@ public sealed class RendererSettings
     /// a click has to answer "which of these is it" visibly, not only in a table.
     /// </summary>
     public int HighlightedMesh { get; set; } = -1;
+
+    /// <summary>
+    /// The transform handles drawn over the finished image, or null for none. The renderer
+    /// only draws it — the same object is what the front-end hit-tests a click against and
+    /// drives a drag through, so what you grab is always what you can see.
+    /// </summary>
+    public TransformGizmo? Gizmo { get; set; }
 }

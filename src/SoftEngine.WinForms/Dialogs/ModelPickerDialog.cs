@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 
 namespace SoftEngine.WinForms.Dialogs;
 
@@ -153,9 +153,10 @@ internal sealed class ModelPickerDialog : Form
         using var dialog = new OpenFileDialog
         {
             Title = "Open 3D model",
-            Filter = "3D models (*.obj;*.dae)|*.obj;*.dae"
+            Filter = "3D models (*.obj;*.dae;*.gltf;*.glb)|*.obj;*.dae;*.gltf;*.glb"
                    + "|Wavefront OBJ (*.obj)|*.obj"
                    + "|Collada (*.dae)|*.dae"
+                   + "|glTF 2.0 (*.gltf;*.glb)|*.gltf;*.glb"
                    + "|All files (*.*)|*.*",
         };
 

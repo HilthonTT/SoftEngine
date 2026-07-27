@@ -220,8 +220,13 @@ public sealed class BufferVisualizer
 
     /// <summary>
     /// The shadow map as the light sees it: near to the light is bright, and texels nothing
-    /// was drawn into are black. Fitted into the viewport with its aspect preserved, because
-    /// a square map stretched across a wide frame misrepresents where its resolution is going.
+    /// was drawn into are black. Fitted into the viewport with its aspect preserved, because a
+    /// square map stretched across a wide frame misrepresents where its resolution is going.
+    ///
+    /// Every cascade is shown, side by side and left to right from the nearest, each tinted so
+    /// they can be told apart at a glance. Showing only the first would hide the thing the
+    /// view is for: whether each cascade is covering the range it should, and how much finer
+    /// the near one is than the far one.
     /// </summary>
     private static bool RenderShadowMap(FrameBuffer surface, ShadowMap? shadowMap)
     {
@@ -231,15 +236,17 @@ public sealed class BufferVisualizer
         }
 
         var resolution = shadowMap.Resolution;
+        var cascades = shadowMap.CascadeCount;
         var texels = shadowMap.Depth;
 
         var width = surface.Width;
         var height = surface.Height;
         var screen = surface.Screen;
 
-        // The largest square that fits, centred.
-        var side = System.Math.Min(width, height);
-        var originX = (width - side) / 2;
+        // The largest row of equal squares that fits, centred. One cascade reduces to the
+        // single centred square this view has always drawn.
+        var side = System.Math.Min(width / cascades, height);
+        var originX = (width - side * cascades) / 2;
         var originY = (height - side) / 2;
 
         var toTexel = resolution / (float)side;
@@ -257,21 +264,25 @@ public sealed class BufferVisualizer
 
             for (var x = 0; x < width; x++, i++)
             {
-                // Outside the map: a dark surround rather than black, so the map's own empty
-                // texels stay distinguishable from the letterboxing around it.
-                if (!insideRow || (uint)(x - originX) >= (uint)side)
+                var column = x - originX;
+
+                // Outside the maps: a dark surround rather than black, so their own empty
+                // texels stay distinguishable from the letterboxing around them.
+                if (!insideRow || column < 0 || column >= side * cascades)
                 {
                     screen[i] = Pack(24, 24, 28);
                     continue;
                 }
 
-                // Both are inside the square, so both land in the map — but the rounding is
-                // still worth clamping, since the last pixel of the square maps to exactly
-                // the resolution when the two are equal.
-                var mapX = System.Math.Min((int)((x - originX) * toTexel), resolution - 1);
+                var cascade = System.Math.Min(column / side, cascades - 1);
+
+                // Both are inside a square, so both land in a map — but the rounding is still
+                // worth clamping, since the last pixel of a square maps to exactly the
+                // resolution when the two are equal.
+                var mapX = System.Math.Min((int)((column - cascade * side) * toTexel), resolution - 1);
                 var mapY = System.Math.Min((int)((y - originY) * toTexel), resolution - 1);
 
-                var stored = texels[mapX + mapY * resolution];
+                var stored = texels[shadowMap.OffsetOf(cascade) + mapX + mapY * resolution];
 
                 if (stored >= ShadowMap.Empty)
                 {
@@ -279,13 +290,28 @@ public sealed class BufferVisualizer
                     continue;
                 }
 
-                var level = Byte(1f - stored);
-                screen[i] = Pack(level, level, level);
+                var level = 1f - stored;
+                var tint = CascadeTint(cascade);
+
+                screen[i] = Pack(Byte(level * tint.R), Byte(level * tint.G), Byte(level * tint.B));
             }
         });
 
         return true;
     }
+
+    /// <summary>
+    /// A colour per cascade, so a row of grey squares reads as a sequence rather than as one
+    /// map repeated. The nearest is left white — it is the one whose detail is being judged,
+    /// and tinting it would trade that away for nothing.
+    /// </summary>
+    private static (float R, float G, float B) CascadeTint(int cascade) => cascade switch
+    {
+        0 => (1f, 1f, 1f),
+        1 => (0.70f, 0.90f, 1f),
+        2 => (0.75f, 1f, 0.75f),
+        _ => (1f, 0.85f, 0.65f),
+    };
 
     /// <summary>
     /// Fills <see cref="_depth"/> with a distance per pixel and returns how many are valid.

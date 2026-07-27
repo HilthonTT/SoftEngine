@@ -180,8 +180,24 @@ public sealed class ArcBallCamera : ICamera
         }
     }
 
+    /// <summary>
+    /// Suspends the camera gestures while something else owns the drag — the transform gizmo,
+    /// which lives on the same button. Dragging a handle and orbiting are the same gesture on
+    /// the same control, and only one of them can be what the user meant; whoever grabbed
+    /// first wins, and this is how they say so.
+    /// </summary>
+    public bool GesturesSuspended { get; set; }
+
     private void Control_MouseMove(object? sender, MouseEventArgs e)
     {
+        if (GesturesSuspended)
+        {
+            // Keep the anchor with the cursor, so releasing the gizmo mid-drag does not hand
+            // the camera a gesture measured from wherever the pointer was when it started.
+            Anchor(e.Location);
+            return;
+        }
+
         var gesture = CurrentGesture;
 
         switch (gesture)

@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 
 namespace SoftEngine.Core.Diagnostics;
 
@@ -40,7 +40,7 @@ public readonly record struct GraphicsEvent(GraphicsEventKind Kind, int ObjectId
             GraphicsEventKind.ProjectionSetProjectionMatrix =>
                 string.Create(c, $"obj:{ObjectId} — near {A:0.###}, far {B:0.###}, aspect {C:0.###}"),
             GraphicsEventKind.ShadowMapRender =>
-                string.Create(c, $"obj:{ObjectId} — {(int)A} × {(int)A} depth, {(int)B} triangles"),
+                string.Create(c, $"obj:{ObjectId} — {(int)A} × {(int)A} depth × {System.Math.Max((int)C, 1)} cascade(s), {(int)B} triangles"),
             GraphicsEventKind.PainterPrepare =>
                 string.Create(c, $"obj:{ObjectId}"),
             GraphicsEventKind.MeshSkipInactive =>
@@ -61,6 +61,8 @@ public readonly record struct GraphicsEvent(GraphicsEventKind Kind, int ObjectId
                 "X, Y, Z",
             GraphicsEventKind.GizmoDrawSkeleton =>
                 string.Create(c, $"{(int)A} joints"),
+            GraphicsEventKind.GizmoDrawTransform =>
+                string.Create(c, $"obj:{ObjectId} — {(Gizmos.GizmoMode)(int)A}, {B:0.###} units per handle"),
             GraphicsEventKind.PostProcessApply =>
                 string.Create(c, $"obj:{ObjectId} — {(int)A} effects over {(int)B} × {(int)C}"),
             GraphicsEventKind.DebugViewRender =>

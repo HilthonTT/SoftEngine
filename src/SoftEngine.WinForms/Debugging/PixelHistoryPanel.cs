@@ -1,4 +1,4 @@
-using SoftEngine.Core.Diagnostics;
+﻿using SoftEngine.Core.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 
@@ -136,6 +136,7 @@ internal sealed class PixelHistoryPanel : UserControl
             PixelWriteSource.Grid => "GizmoDrawGrid",
             PixelWriteSource.Axes => "GizmoDrawAxes",
             PixelWriteSource.Skeleton => "GizmoDrawSkeleton",
+            PixelWriteSource.TransformGizmo => "GizmoDrawTransform",
             PixelWriteSource.PostProcess => "PostProcess",
             PixelWriteSource.DebugView => "DebugViewRender",
             _ => "Write",

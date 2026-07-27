@@ -1,8 +1,10 @@
 ﻿using SoftEngine.Core.Animation;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
+using SoftEngine.Core.Geometry.Gltf;
 using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Geometry.Skinning;
+using SoftEngine.Core.Gizmos;
 using SoftEngine.Core.Math;
 using SoftEngine.Core.Pipeline.Debugging;
 using SoftEngine.Core.Pipeline.PostProcess;
@@ -50,6 +52,7 @@ public sealed partial class MainScreen : Form
         new("Textured cube", "texturedcube"),
         new("Transparency", "transparency"),
         new("Shadows", "shadows"),
+        new("Cascaded shadows", "cascades"),
         new("Normal mapping", "normalmapping"),
         new("PBR spheres", "pbrspheres"),
         new("Empty", "empty"),
@@ -250,6 +253,8 @@ public sealed partial class MainScreen : Form
         InitializePostProcessing();
 
         InitializeBufferViews();
+        InitializeCascades();
+        InitializeGizmo();
 
         InitializeDebugger();
 
@@ -410,6 +415,20 @@ public sealed partial class MainScreen : Form
             lblPixelStatus.Text = "Selected pixel: none — click the viewport to probe and pick one";
         }
 
+        // A drag has to say what it did in numbers as well as in pixels: eyeballing a mesh
+        // into place is exactly the case where you then want to know where "place" was.
+        if (_gizmo is { IsActive: true, Target: { } target })
+        {
+            var what = _gizmo.Mode switch
+            {
+                GizmoMode.Rotate => $"rotation ({Degrees(target.Rotation.XPitch)}, {Degrees(target.Rotation.YYaw)}, {Degrees(target.Rotation.ZRoll)})",
+                GizmoMode.Scale => $"scale ({target.Scale.X:0.###}, {target.Scale.Y:0.###}, {target.Scale.Z:0.###})",
+                _ => $"position ({target.Position.X:0.###}, {target.Position.Y:0.###}, {target.Position.Z:0.###})",
+            };
+
+            lblPixelStatus.Text += $"  ·  {what}";
+        }
+
         if (panel3D1.Scene?.Camera is { } camera)
         {
             var position = camera.Position;
@@ -425,6 +444,9 @@ public sealed partial class MainScreen : Form
         var stats = panel3D1.Stats;
         lblFrameStatus.Text = $"Frame #{panel3D1.Diagnostics.FrameNumber} · {stats.CalculationTimeMs + stats.PainterTimeMs} ms";
     }
+
+    /// <summary>A mesh's Euler angles are stored in radians; nobody reads a pose in radians.</summary>
+    private static string Degrees(float radians) => $"{radians * 180f / MathF.PI:0.#}°";
 
     #endregion
 
@@ -453,9 +475,10 @@ public sealed partial class MainScreen : Form
         using var dialog = new OpenFileDialog
         {
             Title = "Open 3D model",
-            Filter = "3D models (*.obj;*.dae)|*.obj;*.dae"
+            Filter = "3D models (*.obj;*.dae;*.gltf;*.glb)|*.obj;*.dae;*.gltf;*.glb"
                    + "|Wavefront OBJ (*.obj)|*.obj"
                    + "|Collada (*.dae)|*.dae"
+                   + "|glTF 2.0 (*.gltf;*.glb)|*.gltf;*.glb"
                    + "|All files (*.*)|*.*",
         };
 
@@ -577,6 +600,78 @@ public sealed partial class MainScreen : Form
         };
     }
 
+    /// <summary>
+    /// Fills the shadow-cascade selector. One cascade is a single map fitted to the whole
+    /// world, which is what the engine did before cascades existed; more splits the camera's
+    /// view distance so the near slice gets a buffer of its own.
+    /// </summary>
+    private void InitializeCascades()
+    {
+        cboCascades.Items.AddRange(
+        [
+            new CascadeChoice("1 — one map over the world", 1),
+            new CascadeChoice("2 cascades", 2),
+            new CascadeChoice("3 cascades", 3),
+            new CascadeChoice("4 cascades", 4),
+        ]);
+
+        cboCascades.SelectedIndex = 0;
+
+        cboCascades.SelectedIndexChanged += (s, e) => ApplyShadows();
+    }
+
+    private sealed record CascadeChoice(string Label, int Count)
+    {
+        public override string ToString() => Label;
+    }
+
+    /// <summary>The gizmo the viewport draws and drags. One object, so what is drawn is what is grabbed.</summary>
+    private readonly TransformGizmo _gizmo = new();
+
+    /// <summary>
+    /// Fills the transform-gizmo selector and attaches the gizmo to whatever is picked.
+    ///
+    /// The gizmo needs a target and picking already produces one, so the two are wired
+    /// together rather than given separate selections — clicking a mesh is how you say which
+    /// mesh the handles belong to, and it is the gesture that already means that.
+    /// </summary>
+    private void InitializeGizmo()
+    {
+        cboGizmo.Items.AddRange(
+        [
+            new GizmoChoice("Off", GizmoMode.Off),
+            new GizmoChoice("Move", GizmoMode.Translate),
+            new GizmoChoice("Rotate", GizmoMode.Rotate),
+            new GizmoChoice("Scale", GizmoMode.Scale),
+        ]);
+
+        cboGizmo.SelectedIndex = 0;
+
+        panel3D1.Gizmo = _gizmo;
+
+        cboGizmo.SelectedIndexChanged += (s, e) =>
+        {
+            if (cboGizmo.SelectedItem is GizmoChoice choice)
+            {
+                _gizmo.Mode = choice.Mode;
+                panel3D1.Invalidate();
+            }
+        };
+
+        panel3D1.PickedChanged += (s, e) =>
+        {
+            _gizmo.Target = panel3D1.Picked?.Mesh;
+            panel3D1.Invalidate();
+        };
+
+        panel3D1.GizmoChanged += (s, e) => UpdateStatus();
+    }
+
+    private sealed record GizmoChoice(string Label, GizmoMode Mode)
+    {
+        public override string ToString() => Label;
+    }
+
     /// <summary>Points each post-processing checkbox at its effect in the viewport's stack.</summary>
     private void InitializePostProcessing()
     {
@@ -616,6 +711,11 @@ public sealed partial class MainScreen : Form
 
         scene.Shadows.Enabled = chkShadows.Checked;
         scene.Shadows.Resolution = panel3D1.BufferSize.Width > 1280 ? 2048 : 1024;
+
+        if (cboCascades.SelectedItem is CascadeChoice cascades)
+        {
+            scene.Shadows.CascadeCount = cascades.Count;
+        }
 
         panel3D1.Invalidate();
     }
@@ -660,6 +760,8 @@ public sealed partial class MainScreen : Form
         lblShadingHeader.ForeColor = Theme.TextSecondary;
         lblPostHeader.ForeColor = Theme.TextSecondary;
         lblBufferHeader.ForeColor = Theme.TextSecondary;
+        lblCascadeHeader.ForeColor = Theme.TextSecondary;
+        lblGizmoHeader.ForeColor = Theme.TextSecondary;
 
         cboBufferView.BackColor = Theme.Selection;
         cboBufferView.ForeColor = Theme.TextPrimary;
@@ -1262,6 +1364,49 @@ public sealed partial class MainScreen : Form
                 break;
             }
 
+            case "cascades":
+            {
+                // A colonnade running away from the eye for three hundred units — the case one
+                // shadow map cannot serve. Fitted to the whole scene, its texels are metres
+                // across and the near pillars' shadows come out as staircases; split into
+                // cascades, the first buffer covers only the few units in front of the camera
+                // and the same resolution lands where the pixels are.
+                //
+                // Switch the cascade count in the sidebar and watch the nearest shadow edge;
+                // the Shadow map buffer view shows each cascade's own square beside the others.
+                world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.35f, -1f, -0.15f) });
+
+                world.Meshes.Add(ColoredBox(
+                    new Vector3(0, -6f, -150f),
+                    new Vector3(60f, 1f, 340f),
+                    new ColorRGB(190, 188, 182)));
+
+                for (var i = 0; i < 24; i++)
+                {
+                    var z = -8f - i * 13f;
+
+                    // The far pillars are drawn in the same colours as the near ones, so any
+                    // difference down the row is the shadowing rather than the shading.
+                    world.Meshes.Add(ColoredBox(
+                        new Vector3(-9f, -1.5f, z),
+                        new Vector3(2.4f, 8f, 2.4f),
+                        new ColorRGB(150, 120, 90)));
+
+                    world.Meshes.Add(ColoredBox(
+                        new Vector3(9f, -1.5f, z),
+                        new Vector3(2.4f, 8f, 2.4f),
+                        new ColorRGB(150, 120, 90)));
+
+                    world.Meshes.Add(ColoredBox(
+                        new Vector3(0f, 3f, z),
+                        new Vector3(22f, 1f, 1.6f),
+                        new ColorRGB(170, 140, 110)));
+                }
+
+                cameraPosition = new Vector3(0, -1f, 16f);
+                break;
+            }
+
             case "normalmapping":
             {
                 world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.4f, -0.35f, -1f) });
@@ -1406,27 +1551,79 @@ public sealed partial class MainScreen : Form
     }
 
     /// <summary>
-    /// Loads a model file (OBJ or Collada) into a fresh world, framing the camera and
+    /// A cube in one colour, as a mesh of its own.
+    ///
+    /// <see cref="Cube"/> instances share a single static colour array between them, so
+    /// <c>Array.Fill</c> on one cube's colours recolours every cube in the world. A scene that
+    /// wants each box a different colour therefore has to bring its own array — the geometry
+    /// is still shared, since nothing in the pipeline writes to a vertex.
+    /// </summary>
+    private static Mesh ColoredBox(Vector3 position, Vector3 scale, ColorRGB color)
+    {
+        var source = new Cube();
+
+        var colors = new ColorRGB[source.Triangles.Length];
+        Array.Fill(colors, color);
+
+        return new Mesh(source.Vertices, source.Triangles, source.NormVertices, colors)
+        {
+            Position = position,
+            Scale = scale,
+        };
+    }
+
+    /// <summary>
+    /// Loads a model file (OBJ, Collada or glTF) into a fresh world, framing the camera and
     /// depth range from the model's own size so any scale of mesh shows up on load.
     /// </summary>
     private static WorldSetup BuildWorldFromFile(string path, IProgress<float>? progress)
     {
-        var extension = Path.GetExtension(path).ToLowerInvariant();
-        IMesh[] meshes = extension switch
-        {
-            ".obj" => ObjImporter.ImportObj(path, progress, ImageTexture.Load),
-            ".dae" => MeshFactory.HackyImportCollada(path, progress),
-            _ => throw new NotSupportedException($"Unsupported model format '{extension}'."),
-        };
-
         var world = new SimpleWorld();
-        world.Meshes.AddRange(meshes);
+
+        // glTF is the one format here that carries a whole scene rather than a pile of
+        // meshes, so it is read as one: the node tree becomes the world's root, the skins
+        // deform against it, and any clip in the file starts playing.
+        if (GltfImporter.Handles(path))
+        {
+            var scene = GltfImporter.Import(path, progress, ImageTexture.Load);
+
+            world.Root = scene.Root;
+            world.Meshes.AddRange(scene.Meshes);
+
+            foreach (var clip in scene.Clips)
+            {
+                world.Players.Add(new AnimationPlayer(scene.Root, clip));
+            }
+        }
+        else
+        {
+            var extension = Path.GetExtension(path).ToLowerInvariant();
+
+            world.Meshes.AddRange(extension switch
+            {
+                ".obj" => ObjImporter.ImportObj(path, progress, ImageTexture.Load),
+                ".dae" => MeshFactory.HackyImportCollada(path, progress),
+                _ => throw new NotSupportedException($"Unsupported model format '{extension}'."),
+            });
+        }
+
         world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.35f, -0.5f, -1f) });
 
-        // Frame the model: pull the camera back proportional to its bounding radius and push
-        // the far plane out far enough to contain it, whatever units the file uses.
-        var radius = meshes.Length == 0 ? 1f : meshes.Max(m => m.BoundingRadius);
-        if (radius <= 0f || float.IsInfinity(radius) || float.IsNaN(radius))
+        // Frame the model: pull the camera back proportional to its extent and push the far
+        // plane out far enough to contain it, whatever units the file uses. The extent is
+        // measured in world space, since a glTF's node tree routinely scales its meshes.
+        var radius = 0f;
+        foreach (var mesh in world.Meshes)
+        {
+            var scaled = mesh.BoundingRadius * MeshExtensions.MaxScale(mesh.WorldMatrix);
+
+            if (float.IsFinite(scaled))
+            {
+                radius = Math.Max(radius, mesh.WorldMatrix.Translation.Length() + scaled);
+            }
+        }
+
+        if (radius <= 0f)
         {
             radius = 1f;
         }
@@ -1434,6 +1631,6 @@ public sealed partial class MainScreen : Form
         var cameraPosition = new Vector3(0, 0, -radius * 3f);
         var projection = new PerspectiveProjection(FieldOfView, .01f, Math.Max(500f, radius * 20f));
 
-        return new WorldSetup(world, cameraPosition, projection);
+        return new WorldSetup(world, cameraPosition, projection) { SkeletonTickSize = radius * 0.05f };
     }
 }

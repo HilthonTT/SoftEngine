@@ -1,4 +1,4 @@
-namespace SoftEngine.Core.Diagnostics;
+﻿namespace SoftEngine.Core.Diagnostics;
 
 /// <summary>The pipeline step a <see cref="GraphicsEvent"/> records.</summary>
 public enum GraphicsEventKind
@@ -22,6 +22,7 @@ public enum GraphicsEventKind
     GizmoDrawGrid,
     GizmoDrawAxes,
     GizmoDrawSkeleton,
+    GizmoDrawTransform,
     PostProcessApply,
     DebugViewRender,
     FramePresent,

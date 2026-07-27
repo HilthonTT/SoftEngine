@@ -1,5 +1,6 @@
 using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Gizmos;
 using SoftEngine.Core.Picking;
 using SoftEngine.Core.Pipeline;
 using SoftEngine.Core.Pipeline.PostProcess;
@@ -339,6 +340,21 @@ public partial class Panel3D : UserControl
     /// <summary>Raised when the picked mesh changes, including when a click hits nothing.</summary>
     public event EventHandler? PickedChanged;
 
+    /// <summary>
+    /// The transform handles, or null when none are being offered. Held here rather than only
+    /// on the renderer settings because the same object answers three questions — what to
+    /// draw, what a press grabs, and what a drag moves — and they have to agree.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public TransformGizmo? Gizmo
+    {
+        get => RendererSettings.Gizmo;
+        set => RendererSettings.Gizmo = value;
+    }
+
+    /// <summary>Raised while a gizmo drag moves the mesh, so a status bar can follow it.</summary>
+    public event EventHandler? GizmoChanged;
+
     /// <summary>The selected pixel as a 0..1 fraction of the render target, as the status bar shows it.</summary>
     public PointF? SelectedPixelNormalized =>
         _selectedPixel is { } pixel && _bufferSize.Width > 0 && _bufferSize.Height > 0
@@ -407,6 +423,17 @@ public partial class Panel3D : UserControl
     public void ClearPick()
     {
         RendererSettings.HighlightedMesh = -1;
+
+        // The gizmo holds the mesh itself rather than an index, so it would happily go on
+        // drawing handles on a mesh from a world that is no longer being rendered — and
+        // dragging one would move geometry nothing can see.
+        if (Gizmo is { } gizmo)
+        {
+            gizmo.Cancel();
+            gizmo.Target = null;
+
+            SuspendCameraGestures(false);
+        }
 
         if (Picked is null)
         {
@@ -513,6 +540,21 @@ public partial class Panel3D : UserControl
         Focus();
         _mouseDownAt = e.Location;
         _mouseDragged = false;
+
+        // The gizmo gets first refusal on a left press. Grabbing a handle and orbiting are the
+        // same gesture on the same button, so the only way to have both is for one of them to
+        // be able to claim the drag — and it has to be the gizmo, since orbiting is what
+        // happens everywhere else in the viewport.
+        if (e.Button == MouseButtons.Left && Gizmo is { IsActive: true } gizmo && Scene is { } scene)
+        {
+            var pixel = ToSamplePixel(e.Location);
+
+            if (gizmo.Begin(scene, pixel.X, pixel.Y))
+            {
+                SuspendCameraGestures(true);
+                Invalidate();
+            }
+        }
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
@@ -523,16 +565,73 @@ public partial class Panel3D : UserControl
         {
             _mouseDragged = true;
         }
+
+        if (Gizmo is not { IsActive: true } gizmo || Scene is not { } scene)
+        {
+            return;
+        }
+
+        var pixel = ToSamplePixel(e.Location);
+
+        if (gizmo.IsDragging)
+        {
+            gizmo.Drag(scene, pixel.X, pixel.Y);
+            GizmoChanged?.Invoke(this, EventArgs.Empty);
+            Invalidate();
+            return;
+        }
+
+        // Highlighting the handle under the cursor is what makes it obvious a gizmo can be
+        // grabbed at all, and which of three overlapping handles a click would take.
+        var before = gizmo.HoveredAxis;
+        gizmo.Hover(scene, pixel.X, pixel.Y);
+
+        if (gizmo.HoveredAxis != before)
+        {
+            Invalidate();
+        }
     }
 
     protected override void OnMouseUp(MouseEventArgs e)
     {
         base.OnMouseUp(e);
 
+        if (e.Button == MouseButtons.Left && Gizmo is { IsDragging: true } gizmo)
+        {
+            gizmo.End();
+            SuspendCameraGestures(false);
+
+            GizmoChanged?.Invoke(this, EventArgs.Empty);
+            Invalidate();
+            return;
+        }
+
         // A left click that didn't orbit the camera picks the pixel under the cursor.
         if (e.Button == MouseButtons.Left && !_mouseDragged)
         {
             SelectPixel(ToBufferPixel(e.Location));
+        }
+    }
+
+    /// <summary>
+    /// A client point in render-target samples. Under supersampling one screen pixel is a
+    /// block of them, and the gizmo's ray has to go through the same sample the picker's does
+    /// or the handle you grab is not the handle you clicked.
+    /// </summary>
+    private Point ToSamplePixel(Point client)
+    {
+        var pixel = ToBufferPixel(client);
+
+        return new Point(
+            pixel.X * _superSampling + _superSampling / 2,
+            pixel.Y * _superSampling + _superSampling / 2);
+    }
+
+    private void SuspendCameraGestures(bool suspended)
+    {
+        if (ArcBall is { } camera)
+        {
+            camera.GesturesSuspended = suspended;
         }
     }
 

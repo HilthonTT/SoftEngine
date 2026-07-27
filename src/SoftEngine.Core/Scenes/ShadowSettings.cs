@@ -1,3 +1,5 @@
+using SoftEngine.Core.Shading;
+
 namespace SoftEngine.Core.Scenes;
 
 /// <summary>
@@ -43,6 +45,53 @@ public sealed class ShadowSettings
 
     /// <summary>Averages a 3×3 neighbourhood of the map (PCF), trading a little speed for softer edges.</summary>
     public bool SoftFilter { get; set; } = true;
+
+    /// <summary>
+    /// How many slices of the camera's view distance get a depth buffer of their own, from 1
+    /// (a single map over the whole world, which is what the engine did before cascades) to
+    /// <see cref="ShadowMap.MaxCascades"/>.
+    ///
+    /// One map spends its resolution uniformly over the scene, which puts the texels where
+    /// they do least good: perspective makes a shadow ten units away cover a hundred times the
+    /// pixels of one five hundred units away, and both get the same number of texels. Each
+    /// extra cascade costs one more depth-only pass — over fewer casters, though, since a
+    /// cascade only rasterizes what can reach the slice it covers.
+    ///
+    /// Cascades need to know where the camera is looking, so a pass rendered without a view
+    /// (the standalone shadow-map API, used by tests) falls back to a single map however many
+    /// this asks for.
+    /// </summary>
+    public int CascadeCount
+    {
+        get => _cascadeCount;
+        set => _cascadeCount = System.Math.Clamp(value, 1, ShadowMap.MaxCascades);
+    }
+
+    private int _cascadeCount = 1;
+
+    /// <summary>
+    /// How the view distance is divided between the cascades, from 0 (evenly by distance) to 1
+    /// (evenly by ratio — each slice a fixed multiple of the one before it).
+    ///
+    /// Neither extreme is right. Splitting evenly by distance gives the near slice, where the
+    /// pixels are, the same span as the far one; splitting by ratio alone gives it a span so
+    /// small that the second cascade's edge lands in the middle of the frame. The usual
+    /// practice is a blend weighted toward the ratio, which is what this defaults to.
+    /// </summary>
+    public float SplitBlend
+    {
+        get => _splitBlend;
+        set => _splitBlend = System.Math.Clamp(value, 0f, 1f);
+    }
+
+    private float _splitBlend = 0.8f;
+
+    /// <summary>
+    /// How far from the camera shadows are drawn at all, or 0 to use the projection's own far
+    /// plane. Fitting the cascades to a distance nothing is legible at anyway is the single
+    /// cheapest way to make the near ones sharper.
+    /// </summary>
+    public float MaxDistance { get; set; }
 
     /// <summary>How dark a fully shadowed surface goes: 1 removes the light entirely, 0 disables shadowing.</summary>
     public float Strength { get; set; } = 1f;

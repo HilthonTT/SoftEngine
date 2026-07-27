@@ -1,3 +1,6 @@
+using System.Numerics;
+using System.Runtime.CompilerServices;
+
 namespace SoftEngine.Core.Animation;
 
 /// <summary>
@@ -54,5 +57,39 @@ internal static class Keyframes
 
         var span = times[index + 1] - times[index];
         blend = span > 0f ? (time - times[index]) / span : 0f;
+    }
+
+    /// <summary>
+    /// Cubic Hermite between two keys, given the tangent leaving the first and the one
+    /// arriving at the second.
+    ///
+    /// The tangents are expressed per unit of <em>time</em>, not per unit of the 0..1 blend,
+    /// so they are scaled by the gap between the keys — which is what makes a curve keep its
+    /// shape when the same motion is authored at a different frame rate.
+    /// </summary>
+    public static Vector3 Hermite(Vector3 from, Vector3 outTangent, Vector3 to, Vector3 inTangent, float t, float span)
+    {
+        var (a, b, c, d) = Weights(t, span);
+        return a * from + b * outTangent + c * to + d * inTangent;
+    }
+
+    /// <inheritdoc cref="Hermite(Vector3, Vector3, Vector3, Vector3, float, float)"/>
+    public static Quaternion Hermite(Quaternion from, Quaternion outTangent, Quaternion to, Quaternion inTangent, float t, float span)
+    {
+        var (a, b, c, d) = Weights(t, span);
+        return from * a + outTangent * b + to * c + inTangent * d;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static (float From, float OutTangent, float To, float InTangent) Weights(float t, float span)
+    {
+        var t2 = t * t;
+        var t3 = t2 * t;
+
+        return (
+            2f * t3 - 3f * t2 + 1f,
+            span * (t3 - 2f * t2 + t),
+            -2f * t3 + 3f * t2,
+            span * (t3 - t2));
     }
 }

@@ -1,4 +1,4 @@
-using SoftEngine.WinForms.Debugging;
+﻿using SoftEngine.WinForms.Debugging;
 
 namespace SoftEngine.WinForms;
 
@@ -64,6 +64,10 @@ public sealed partial class MainScreen
         rdbPbrShading = new RadioButton();
         lblBufferHeader = new Label();
         cboBufferView = new ComboBox();
+        lblCascadeHeader = new Label();
+        cboCascades = new ComboBox();
+        lblGizmoHeader = new Label();
+        cboGizmo = new ComboBox();
         lblPostHeader = new Label();
         flpPost = new FlowLayoutPanel();
         chkSsao = new CheckBox();
@@ -171,6 +175,10 @@ public sealed partial class MainScreen
         tlpSidebar.Controls.Add(flpPost, 0, 9);
         tlpSidebar.Controls.Add(lblBufferHeader, 0, 10);
         tlpSidebar.Controls.Add(cboBufferView, 0, 11);
+        tlpSidebar.Controls.Add(lblCascadeHeader, 0, 12);
+        tlpSidebar.Controls.Add(cboCascades, 0, 13);
+        tlpSidebar.Controls.Add(lblGizmoHeader, 0, 14);
+        tlpSidebar.Controls.Add(cboGizmo, 0, 15);
         // Sized to its content and docked to the top of a scrolling panel. Filling the panel
         // instead would let the table squeeze its own rows to fit whatever height it was
         // given, so the content would never overflow and the scrollbar would never appear.
@@ -179,7 +187,11 @@ public sealed partial class MainScreen
         tlpSidebar.Dock = DockStyle.Top;
         tlpSidebar.Name = "tlpSidebar";
         tlpSidebar.Padding = new Padding(16, 12, 16, 12);
-        tlpSidebar.RowCount = 12;
+        tlpSidebar.RowCount = 16;
+        tlpSidebar.RowStyles.Add(new RowStyle());
+        tlpSidebar.RowStyles.Add(new RowStyle());
+        tlpSidebar.RowStyles.Add(new RowStyle());
+        tlpSidebar.RowStyles.Add(new RowStyle());
         tlpSidebar.RowStyles.Add(new RowStyle());
         tlpSidebar.RowStyles.Add(new RowStyle());
         tlpSidebar.RowStyles.Add(new RowStyle());
@@ -490,6 +502,42 @@ public sealed partial class MainScreen
         cboBufferView.Name = "cboBufferView";
         cboBufferView.TabIndex = 3;
         toolTip1.SetToolTip(cboBufferView, "Present one of the frame's own buffers instead of the shaded image");
+        //
+        // lblCascadeHeader
+        //
+        lblCascadeHeader.AutoSize = true;
+        lblCascadeHeader.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
+        lblCascadeHeader.Margin = new Padding(2, 10, 0, 6);
+        lblCascadeHeader.Name = "lblCascadeHeader";
+        lblCascadeHeader.Text = "SHADOW CASCADES";
+        //
+        // cboCascades
+        //
+        cboCascades.Dock = DockStyle.Fill;
+        cboCascades.DropDownStyle = ComboBoxStyle.DropDownList;
+        cboCascades.FlatStyle = FlatStyle.Flat;
+        cboCascades.Margin = new Padding(0, 0, 0, 6);
+        cboCascades.Name = "cboCascades";
+        cboCascades.TabIndex = 4;
+        toolTip1.SetToolTip(cboCascades, "Split the shadow pass across several depth buffers, each fitted to a slice of the view");
+        //
+        // lblGizmoHeader
+        //
+        lblGizmoHeader.AutoSize = true;
+        lblGizmoHeader.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
+        lblGizmoHeader.Margin = new Padding(2, 10, 0, 6);
+        lblGizmoHeader.Name = "lblGizmoHeader";
+        lblGizmoHeader.Text = "TRANSFORM GIZMO";
+        //
+        // cboGizmo
+        //
+        cboGizmo.Dock = DockStyle.Fill;
+        cboGizmo.DropDownStyle = ComboBoxStyle.DropDownList;
+        cboGizmo.FlatStyle = FlatStyle.Flat;
+        cboGizmo.Margin = new Padding(0, 0, 0, 6);
+        cboGizmo.Name = "cboGizmo";
+        cboGizmo.TabIndex = 5;
+        toolTip1.SetToolTip(cboGizmo, "Drag the handles on the picked mesh to move, turn or stretch it");
         //
         // lblPostHeader
         //
@@ -961,6 +1009,10 @@ public sealed partial class MainScreen
     private RadioButton rdbPbrShading;
     private Label lblBufferHeader;
     private ComboBox cboBufferView;
+    private Label lblCascadeHeader;
+    private ComboBox cboCascades;
+    private Label lblGizmoHeader;
+    private ComboBox cboGizmo;
     private Label lblPostHeader;
     private FlowLayoutPanel flpPost;
     private CheckBox chkBloom;

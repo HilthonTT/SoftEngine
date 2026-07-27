@@ -1,0 +1,127 @@
+using SoftEngine.Benchmarks;
+using System.Diagnostics;
+using System.Globalization;
+
+// A headless frame-time harness for SoftEngine.Core. The engine renders into a plain int[],
+// so measuring it needs no window, no GPU and no platform beyond the runtime — which is what
+// makes a benchmark of it reproducible on any machine that can build the solution.
+//
+//   dotnet run -c Release --project bench/SoftEngine.Benchmarks
+//   dotnet run -c Release --project bench/SoftEngine.Benchmarks -- --scene overdraw --compare
+//   dotnet run -c Release --project bench/SoftEngine.Benchmarks -- --csv results.csv
+
+// Results get pasted into issues and READMEs, so the table reads the same on every machine
+// rather than picking up whichever thousands separator the operating system was installed with.
+CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
+
+var options = Options.Parse(args);
+
+if (options.ShowHelp)
+{
+    Options.PrintUsage();
+    return 0;
+}
+
+var scenes = BenchmarkScene.All
+    .Where(scene => options.Scene is null || scene.Name.Contains(options.Scene, StringComparison.OrdinalIgnoreCase))
+    .ToList();
+
+if (scenes.Count == 0)
+{
+    Console.Error.WriteLine(
+        $"No scene matches '{options.Scene}'. Known scenes: {string.Join(", ", BenchmarkScene.All.Select(s => s.Name))}");
+
+    return 1;
+}
+
+Console.WriteLine(
+    $"SoftEngine benchmarks — {options.Width}×{options.Height}, {Environment.ProcessorCount} hardware threads, " +
+    $"{options.Frames} frames after {options.Warmup} warm-up");
+
+if (!IsOptimized())
+{
+    Console.WriteLine();
+    Console.WriteLine("  ! This build is not optimized — rebuild with -c Release, or the numbers measure the debugger.");
+}
+
+Console.WriteLine();
+
+Console.WriteLine(options.Compare
+    ? $"{"scene",-16}{"median",10}{"min",10}{"p95",10}{"no hi-z",10}{"speedup",9}{"triangles",12}{"pixels",13}"
+    : $"{"scene",-16}{"median",10}{"min",10}{"p95",10}{"triangles",12}{"drawn",12}{"pixels",13}");
+
+var rows = new List<(BenchmarkResult Result, BenchmarkResult? Baseline)>();
+
+foreach (var scene in scenes)
+{
+    var result = BenchmarkRunner.Run(scene, options.Width, options.Height, options.Frames, options.Warmup, hierarchicalZ: true);
+
+    BenchmarkResult? baseline = options.Compare
+        ? BenchmarkRunner.Run(scene, options.Width, options.Height, options.Frames, options.Warmup, hierarchicalZ: false)
+        : null;
+
+    rows.Add((result, baseline));
+
+    if (baseline is { } without)
+    {
+        var speedup = (without.MedianMs / result.MedianMs).ToString("0.00", CultureInfo.InvariantCulture) + "×";
+
+        Console.WriteLine(
+            $"{result.Scene,-16}{Ms(result.MedianMs),10}{Ms(result.MinMs),10}{Ms(result.P95Ms),10}" +
+            $"{Ms(without.MedianMs),10}{speedup,9}{result.Triangles,12:N0}{result.Pixels,13:N0}");
+    }
+    else
+    {
+        Console.WriteLine(
+            $"{result.Scene,-16}{Ms(result.MedianMs),10}{Ms(result.MinMs),10}{Ms(result.P95Ms),10}" +
+            $"{result.Triangles,12:N0}{result.DrawnTriangles,12:N0}{result.Pixels,13:N0}");
+    }
+}
+
+Console.WriteLine();
+
+foreach (var scene in scenes)
+{
+    Console.WriteLine($"  {scene.Name,-16}{scene.Description}");
+}
+
+if (options.CsvPath is { } csvPath)
+{
+    WriteCsv(csvPath, rows);
+
+    Console.WriteLine();
+    Console.WriteLine($"Wrote {csvPath}");
+}
+
+return 0;
+
+static string Ms(double value) => value.ToString("0.00", CultureInfo.InvariantCulture) + "ms";
+
+// Whether the engine assembly was built with optimizations. A Debug build measures
+// unoptimized IL and reports numbers several times worse than the engine's — worth saying out
+// loud, rather than letting someone quote them.
+static bool IsOptimized() =>
+    typeof(SoftEngine.Core.Pipeline.Renderer).Assembly
+        .GetCustomAttributes(typeof(DebuggableAttribute), false)
+        .OfType<DebuggableAttribute>()
+        .FirstOrDefault() is not { IsJITOptimizerDisabled: true };
+
+static void WriteCsv(string path, List<(BenchmarkResult Result, BenchmarkResult? Baseline)> rows)
+{
+    using var writer = new StreamWriter(path);
+    writer.WriteLine("scene,median_ms,min_ms,p95_ms,median_no_hiz_ms,triangles,drawn_triangles,pixels");
+
+    foreach (var (result, baseline) in rows)
+    {
+        writer.WriteLine(string.Join(
+            ',',
+            result.Scene,
+            result.MedianMs.ToString("0.000", CultureInfo.InvariantCulture),
+            result.MinMs.ToString("0.000", CultureInfo.InvariantCulture),
+            result.P95Ms.ToString("0.000", CultureInfo.InvariantCulture),
+            baseline?.MedianMs.ToString("0.000", CultureInfo.InvariantCulture) ?? string.Empty,
+            result.Triangles,
+            result.DrawnTriangles,
+            result.Pixels));
+    }
+}

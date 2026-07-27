@@ -6,4 +6,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/SoftEngine.Core.Tests/SoftEngine.Core.Tests.csproj" />
   </Folder>
+  <Folder Name="/bench/">
+    <Project Path="bench/SoftEngine.Benchmarks/SoftEngine.Benchmarks.csproj" />
+  </Folder>
 </Solution>

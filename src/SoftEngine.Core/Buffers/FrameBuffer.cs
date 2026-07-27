@@ -462,6 +462,39 @@ public sealed class FrameBuffer(int width, int height)
     /// parallel rasterization doesn't contend on shared counters per pixel.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    /// <summary>
+    /// Writes a pixel over whatever is there, testing nothing and leaving the depth buffer
+    /// alone.
+    ///
+    /// This is for an overlay that is not part of the scene — the transform gizmo. Its handles
+    /// have to be visible where they are grabbable, and they are grabbable by a ray that knows
+    /// nothing about depth, so a handle hidden inside the mesh it is attached to would be a
+    /// control you can use but cannot see. Depth is left untouched rather than overwritten
+    /// because a screen-space effect reading the buffer afterwards must not find a line of
+    /// geometry that was never in the scene.
+    /// </summary>
+    public bool PutPixelOnTop(int x, int y, LinearColor color)
+    {
+        if ((uint)x >= (uint)Width || (uint)y >= (uint)Height)
+        {
+            return false;
+        }
+
+        var index = x + y * Width;
+
+        CountWrite(index);
+
+        if (index == _probeIndex)
+        {
+            // Nothing was compared, so the history records the write as one that passed at
+            // the depth already stored — which is what happened.
+            RecordProbe(index, _zBuffer[index], color, _zBuffer[index], passed: true);
+        }
+
+        StoreAt(index, color);
+        return true;
+    }
+
     public bool PutPixel(int x, int y, int z, LinearColor color)
     {
 #if DEBUG
@@ -693,6 +726,56 @@ public sealed class FrameBuffer(int width, int height)
         VertexBuffer? VertexBuffer);
 
     #endregion
+
+    /// <summary>
+    /// A line drawn over everything, ignoring depth — see <see cref="PutPixelOnTop"/> for why
+    /// an overlay would want that. Off-screen pixels are dropped rather than clipped, since
+    /// the caller has already clipped in clip space and this only guards the rounding.
+    /// </summary>
+    public void DrawLineOnTop(Vector3 p0, Vector3 p1, ColorRGB color)
+    {
+        int x0 = (int)p0.X;
+        int y0 = (int)p0.Y;
+        int x1 = (int)p1.X;
+        int y1 = (int)p1.Y;
+
+        int dx = System.Math.Abs(x1 - x0);
+        int dy = System.Math.Abs(y1 - y0);
+
+        int sx = x0 < x1 ? 1 : -1;
+        int sy = y0 < y1 ? 1 : -1;
+
+        int dmax = System.Math.Max(dx, dy);
+
+        int ex = 0;
+        int ey = 0;
+
+        // Counted from what actually landed, not from the line's length: a handle running off
+        // the side of the viewport has its off-screen pixels dropped, and reporting them as
+        // drawn would inflate the frame's pixel count by however far it overhangs.
+        var drawn = 0;
+
+        if (PutPixelOnTop(x0, y0, color)) { drawn++; }
+
+        int i = 0;
+        while (i++ < dmax)
+        {
+            ex += dx;
+            if (ex >= dmax)
+            {
+                ex -= dmax; x0 += sx;
+            }
+            ey += dy;
+            if (ey >= dmax)
+            {
+                ey -= dmax; y0 += sy;
+            }
+
+            if (PutPixelOnTop(x0, y0, color)) { drawn++; }
+        }
+
+        Stats?.AddPixelCounts(drawn, 0);
+    }
 
     public void DrawLine(Vector3 p0, Vector3 p1, ColorRGB color)
     {
