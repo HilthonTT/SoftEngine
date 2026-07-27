@@ -12,7 +12,7 @@ A **software 3D rasterizer** written in C#. The entire pipeline — model transf
 
 - Loads and renders 3D models (Wavefront `.obj`, Collada `.dae`) and procedural primitives in real time.
 - Rasterizes triangles with a generic scanline filler and a depth (z) buffer.
-- Supports several shading modes — wireframe, solid, flat, Gouraud, Phong, textured and full material — selectable at runtime.
+- Supports several shading modes — wireframe, solid, flat, Gouraud, Phong, textured, full material and **physically-based** — selectable at runtime.
 - Lights a scene with **any number of coloured lights** — directional, point with distance falloff, and spot.
 - Rasterizes into an **HDR linear float target**, so highlights brighter than white survive to the post-process stack.
 - Surrounds the scene with an **environment cube map**, drawn as a skybox and reduced to the ambient light the painters use.
@@ -21,6 +21,9 @@ A **software 3D rasterizer** written in C#. The entire pipeline — model transf
 - Deforms **skinned meshes** over a **scene graph** of transforms, played from keyframed animation clips — all imported from Collada.
 - Runs a **post-process stack** over the finished frame — bloom, tone mapping, FXAA, vignette.
 - Anti-aliases by **supersampling**: render at a multiple of the display resolution and average down.
+- Shades **metallic-roughness materials** with a Cook-Torrance microfacet model, lit by the scene's lights and by a split-sum approximation of its environment.
+- Answers clicks by **ray-casting the world** rather than reading the frame, and outlines what it hits.
+- Presents the frame's own **intermediate buffers** — depth, normals, overdraw, the shadow map — in place of the shaded image.
 - Provides an interactive arc-ball camera, WASD fly controls, gizmos (world axes, ground grid), and a live stats overlay.
 - Ships a **graphics debugger** — event list, object table and per-pixel history — built on the renderer's own instrumentation.
 
@@ -39,6 +42,7 @@ A **software 3D rasterizer** written in C#. The entire pipeline — model transf
 | **Phong** | `PhongPainter` | Per-pixel Blinn-Phong from an interpolated world position and normal. |
 | **Textured** | `TexturedPainter` | Perspective-correct texturing with Gouraud lighting, bilinear filtering and mip-maps. |
 | **Material** | `MaterialPainter` | Per-pixel albedo, normal and specular maps over Blinn-Phong — the full material path. |
+| **Physically based** | `PbrPainter` | Cook-Torrance metallic-roughness, lit by the scene's lights and by its environment. |
 
 A `WireFramePainter` overlay (Liang–Barsky homogeneous line clipping) can be drawn on top of any mode.
 
@@ -140,6 +144,86 @@ The OBJ importer reads `Kd`, `Ks`, `Ns`, `d`/`Tr`, `map_Kd`, `map_Ks` and the no
 under all of its spellings (`map_Bump`, `bump`, `norm`).
 [`NormalMapBuilder`](src/SoftEngine.Core/Geometry/NormalMapBuilder.cs) converts a height map
 into a normal map, since `map_Bump` was specified as one and is used as the other.
+
+## Physically-based shading
+
+![Eighteen spheres: roughness left to right, metalness bottom to top](docs/screenshots/pbr-spheres.png)
+
+*One albedo and one lighting setup. Roughness runs left to right, metalness bottom to top —
+and the top row reads as a different **material** rather than as the bottom row at another
+brightness, which is the whole point of the model.*
+
+[`PbrPainter`](src/SoftEngine.Core/Rasterization/Painters/PbrPainter.cs) and
+[`PbrShader`](src/SoftEngine.Core/Rasterization/PbrShader.cs) shade a metallic-roughness
+material with the Cook-Torrance microfacet model. What separates it from the Blinn-Phong path
+is not the number of terms but what they are answerable to: specular strength and shininess
+are two dials with no units, tuned under one light and wrong again when it moves, where
+roughness and metalness describe the *surface* and hold under any lighting.
+
+Three functions do the work, and everything else is one of them evaluated somewhere
+([`Ggx`](src/SoftEngine.Core/Shading/Ggx.cs)):
+
+| Term | What it says |
+| --- | --- |
+| **D** — Trowbridge-Reitz distribution | What fraction of the microfacets face a given direction. Its long tail is why a real highlight has a bright core fading into a wide haze rather than an edge. |
+| **V** — height-correlated Smith visibility | How much the surface shadows and masks itself at grazing angles, carried with the specular denominator already folded in. Height-correlated because masking and shadowing happen on the same surface. |
+| **F** — Schlick Fresnel | How reflectivity climbs toward 1 edge-on. A dielectric reflects the same 4% whatever colour it is; a metal has no diffuse at all and tints its reflection with the albedo. That one interpolation is the entire difference between the rows above. |
+
+Roughness is squared into the model's α before use — the Disney mapping, which makes the
+visible change per unit of roughness roughly even.
+
+**The environment is half the lighting**, and it arrives through the split-sum approximation.
+[`PrefilteredEnvironment`](src/SoftEngine.Core/Shading/PrefilteredEnvironment.cs) convolves the
+cube map with the GGX lobe once per roughness, so a surface looks up what it reflects with a
+single sample instead of integrating a hemisphere per pixel; level 0 is the source map itself,
+because a mirror wants the sharpest image available rather than a blurred copy of it.
+[`BrdfLut`](src/SoftEngine.Core/Shading/BrdfLut.cs) is the other half — the BRDF integrated
+against a *white* environment, which depends on nothing but `n·v` and roughness because F0
+factors out of it into a scale and a bias. Two numbers per texel, one 32×32 table, every
+material in every scene.
+
+**One deliberate deviation.** The physical BRDF divides diffuse by π, and every other painter
+here multiplies albedo by `n·l` with no such divisor — so an identical scene would render
+about three times darker the moment you clicked a different radio button. The whole BRDF is
+therefore scaled by π, which is the same as saying the engine's lights carry irradiance with
+the 1/π already folded in. It changes the exposure, never the ratio of diffuse to specular,
+which is the part that has to be right.
+
+Maps degrade one at a time, exactly as `MaterialPainter`'s do: metallic from a map's blue
+channel and roughness from its green (the channels glTF packs them into), falling back to the
+material's scalars, falling back to a mid-grey dielectric lit from the triangle colour. So the
+mode can be switched on over any scene in the viewer, not only ones authored for it.
+
+## Picking
+
+![The picked sphere outlined in amber over the shaded frame](docs/screenshots/picking.png)
+
+[`ScenePicker`](src/SoftEngine.Core/Picking/ScenePicker.cs) answers *what did I just click on*
+by intersecting the world with a ray, not by reading anything the frame drew.
+
+The alternative — rendering an identifier per pixel and looking one up — is what a GPU
+renderer usually does, and it answers a subtly different question: what was *drawn* there, at
+the resolution it was drawn at, after culling and the depth test. A ray answers what is
+*there*. It costs nothing per frame, works on geometry the frame never rasterized, reports the
+exact triangle and the point on it rather than a pixel's worth of it, and — being pure
+geometry with no framebuffer in it — can be tested without rendering anything at all.
+
+- The ray is the pipeline run backwards, and its screen mapping matches
+  [`FrameBuffer.ToScreen3`](src/SoftEngine.Core/Buffers/FrameBuffer.cs) exactly. It goes
+  through the pixel's **centre**, which is where the rasterizer decided coverage; aiming at the
+  corner would put the two answers half a pixel apart along every silhouette in the frame —
+  exactly where a person is most likely to click.
+- Whole meshes are rejected against their bounding spheres first, so a click on a scene of
+  forty thousand cubes tests a handful of them. The sphere follows the whole scene-graph chain,
+  not just the mesh's own scale.
+- **Möller-Trumbore, both faces.** A click is a question about geometry, not about winding: a
+  single-sided test would make an inward-facing wall unclickable for no reason the user can see.
+- Hidden and fully-faded meshes are skipped; transparent ones are not. Something you can see
+  through is still something you can point at.
+
+`Settings.HighlightedMesh` outlines the hit in amber, and it walks the frame's own draw lists
+rather than the mesh — so a mesh culled out of the frame highlights nothing, which is the
+honest answer.
 
 ## Scene graph
 
@@ -319,8 +403,9 @@ Per frame, the `Renderer` ([`Pipeline/Renderer.cs`](src/SoftEngine.Core/Pipeline
 6. Fills the tiles in parallel through the active painter.
 7. Draws the sky into whatever pixels the opaque pass left untouched.
 8. Blends the transparent triangles over the result, farthest first.
-9. Draws optional gizmos (XZ grid, world axes, skeleton).
+9. Draws optional gizmos (XZ grid, world axes, skeleton) and outlines the picked mesh.
 10. Runs the post-process stack over the finished image, and encodes it for presentation.
+11. Swaps the image for one of the buffers that produced it, if a buffer view is selected.
 
 The rasterizer ([`Rasterization/ScanlineRasterizer.cs`](src/SoftEngine.Core/Rasterization/ScanlineRasterizer.cs)) sorts a triangle's vertices by Y, splits it at the middle vertex, and walks two half-triangles, interpolating depth plus an arbitrary *varying* payload. Painters only supply a **varying** type and a **shader** — both are `struct` generics, so the JIT devirtualizes and inlines the per-pixel shade call with no allocation on the hot path.
 
@@ -370,9 +455,11 @@ The WinForms app ([`SoftEngine.WinForms`](src/SoftEngine.WinForms)) renders the 
 | **Right-drag** | Pan; **left+right-drag** dollies |
 | **Mouse wheel** | Move the camera in/out — the status bar's zoom percentage follows it (100% is the framing a world loads with) |
 | **W / A / S / D** | Fly the camera forward / left / back / right (**Q**/**E** for down/up). Hold **Shift** to move faster, **Ctrl** for fine steps; the step scales with the camera's distance, so it works on a 2-unit skull and a 1500-unit elephant alike |
-| **Left-click the viewport** | Probe that pixel — its full write history appears in the Pixel History panel (**Esc** clears it) |
-| **Load model…** | Pick a bundled world (skull, parrot, elephant, teapot, cubes, spheres, towns, shadows, normal mapping, the three animated ones…) or open an OBJ/Collada file from disk |
-| **Shading radios** | Switch between None / Classic / Flat / Gouraud / Phong / Textured / Material |
+| **Left-click the viewport** | Probe that pixel *and* pick what is under it — the write history appears in the Pixel History panel, the hit mesh is outlined in amber and selected in the object table, and the status bar names it (**Esc** clears both) |
+| **F12** | Save the current view as a PNG |
+| **Load model…** | Pick a bundled world (skull, parrot, elephant, teapot, cubes, spheres, towns, shadows, normal mapping, PBR spheres, the three animated ones…) or open an OBJ/Collada file from disk |
+| **Shading radios** | Switch between None / Classic / Flat / Gouraud / Phong / Textured / Material / Physically based |
+| **Buffer view** | Present the shaded image, or the depth, normals, overdraw or shadow-map buffer that produced it |
 | **Display checkboxes** | Toggle wireframe triangles, back-face culling, XZ grid, world axes, skeleton, animation, fog, shadows, sky, gamma-correct light, HDR target, texture filtering, 2× supersampling |
 | **Post-processing checkboxes** | Toggle ambient occlusion, bloom, tone mapping, FXAA and vignette independently |
 
@@ -388,7 +475,37 @@ The front-end doubles as a small graphics debugger, modelled on [Rasterizr Studi
 | **Graphics Object Table** | Every object the frame touched — render target, depth buffer, camera, projection, painter, shadow map, post-process stack, lights, meshes and textures — with its size, vertex/triangle counts and dimensions. Meshes carry an **active** checkbox that drops them from the frame. |
 | **Pixel History** | For the selected pixel: the clear, then each triangle that tried to write it — including the ones the depth test rejected — with the input-assembler and transformed vertex data, the depth comparison, and the previous → resulting colour, ending with the post-process pass's before → after. |
 
-Identifiers are shared: `obj:7` in the event list is `obj:7` in the object table, and clicking an entry in the pixel history selects both.
+Identifiers are shared: `obj:7` in the event list is `obj:7` in the object table, and clicking an entry in the pixel history selects both. Clicking the viewport asks the same pixel two questions at once: the probe records what the renderer *did* there, and the ray says which mesh is *under* it — and the second selects the matching row in the object table.
+
+### Buffer views
+
+[`BufferVisualizer`](src/SoftEngine.Core/Pipeline/Debugging/BufferVisualizer.cs) presents one
+of the frame's intermediate buffers in place of the shaded image. Everything it draws already
+exists by the time the frame ends; the work is choosing a mapping to colour a person can read,
+which is most of what makes a buffer view useful rather than merely available. The pass runs
+last, over the finished image, so nothing upstream has to know it exists — and the buffer
+being shown is the one the frame really used.
+
+| ![The shaded frame](docs/screenshots/buffer-shaded.png) | ![Depth, auto-ranged over the geometry on screen](docs/screenshots/buffer-depth.png) |
+| :--: | :--: |
+| **Shaded** — the frame the other four came from | **Depth** — auto-ranged over the geometry actually on screen, because a perspective depth buffer presented literally is a white screen |
+| ![Normals reconstructed from the depth buffer](docs/screenshots/buffer-normals.png) | ![Overdraw as a heat map](docs/screenshots/buffer-overdraw.png) |
+| **Normals** — differenced out of the depth buffer, since a forward renderer has no normal buffer to show | **Overdraw** — writes per pixel, blue through red. Shown here with back-face culling off, which is the frame paying for the far side of every surface |
+| ![The shadow map as the light sees it](docs/screenshots/buffer-shadowmap.png) | |
+| **Shadow map** — the depth the light recorded, fitted into the viewport with its aspect preserved | |
+
+Two details that are the difference between a view you can trust and one you cannot:
+
+- **Depth is fitted to the frame, not to the frustum.** The same view stays legible on a
+  2-unit skull and a 1500-unit elephant.
+- **Overdraw counts writes the rasterizer attempted**, not triangles that geometrically cover
+  the pixel. A triangle the tile's coarse depth bound dropped whole never reaches a pixel and
+  never shows up. That is the intended reading — the view answers "what did this frame pay
+  for", which is the question overdraw is asked for.
+
+A view the frame carries nothing for — normals under a parallel projection, the shadow map of
+a scene that casts none — leaves the image alone, and says so in the event list rather than
+logging a pass that never ran.
 
 Recording is driven from `RenderDiagnostics` on the renderer ([`Diagnostics/`](src/SoftEngine.Core/Diagnostics)):
 
@@ -408,13 +525,16 @@ src/
 │   ├── Diagnostics/        # render stats, graphics event log, pixel history
 │   ├── Geometry/           # IMesh/Mesh, Material, Triangle, tangents, primitives, OBJ/Collada importers
 │   │   └── Skinning/       # skeleton, skin weights, linear blend skinning, generated bone chain
+│   ├── Picking/            # ray, ray-triangle intersection, scene picker
 │   ├── Pipeline/           # Renderer, settings, homogeneous clipping, sky pass
+│   │   ├── Debugging/      # buffer views: depth, normals, overdraw, shadow map
 │   │   ├── PostProcess/    # effect stack: SSAO, bloom, tone map, FXAA, vignette
 │   │   └── Shadows/        # depth-only shadow-map pass
 │   ├── Rasterization/      # scanline filler, painters, shaders, varyings, texture sampling
 │   ├── Scenes/             # world, camera, projections, lights, fog and shadow settings
 │   │   └── Graph/          # SceneNode transform hierarchy
-│   └── Shading/            # linear colour, light sets, ambient cube, sRGB conversion, shadow map
+│   └── Shading/            # linear colour, light sets, ambient cube, sRGB conversion, shadow map,
+│                           #   GGX, BRDF table, prefiltered environment
 └── SoftEngine.WinForms/    # interactive front-end (net10.0-windows)
     ├── Debugging/          # event list, object table and pixel history panels
     └── Dialogs/            # model picker
@@ -457,12 +577,12 @@ median frame time.
 ## Roadmap
 
 - Cascaded shadow maps, so a large scene doesn't spend one uniform resolution on all of it.
-- Physically-based shading (metallic–roughness), which the environment map is already most of the way to supporting.
-- A glTF 2.0 importer, which would bring PBR materials and skinning in one well-specified format.
+- A glTF 2.0 importer, which would bring PBR materials and skinning in one well-specified format — and metallic-roughness textures the PBR path can already read.
 - Replace `Mesh`'s `Rotation3D` (Euler angles) with the quaternion rotation `SceneNode` already uses.
 - Animation blending — crossfading two clips, and layering one over another — which the player is one weight away from.
 - Frame capture history, so the debugger can step back through earlier frames.
-- Buffer visualizers in the debugger: depth, normals, overdraw, mip level, the shadow map itself.
+- A mip-level buffer view, the one view of the frame the visualizer still has nothing to draw from.
+- More than one shadow-casting light, which needs a depth buffer and a pass per light.
 
 ## Credits
 

@@ -132,7 +132,7 @@ public sealed class Renderer : IRenderer
 
         // The shadow pass runs first: painters pick the map up in Prepare and every
         // subsequent shade reads it, so it has to be complete before any of them start.
-        scene.ShadowMap = RenderShadowMap(scene, events);
+        scene.ShadowMap = RenderShadowMap(scene, events, painter);
 
         painter?.Prepare(scene);
         events.Add(GraphicsEventKind.PainterPrepare, SceneObjectIds.Painter);
@@ -196,8 +196,12 @@ public sealed class Renderer : IRenderer
 
             // Whole-mesh rejection: if the mesh's bounding sphere is fully outside the
             // frustum, skip transforming its vertices and culling its triangles.
-            var radius = mesh.BoundingRadius * MaxAbsComponent(mesh.Scale);
-            if (!float.IsPositiveInfinity(radius))
+            //
+            // Sized off the world matrix rather than the mesh's own Scale: the centre below
+            // already follows the whole scene-graph chain, and a radius that did not would
+            // cull a mesh hanging off a scaled node while it is still on screen.
+            var radius = mesh.BoundingRadius * MeshExtensions.MaxScale(worldMatrix);
+            if (float.IsFinite(radius))
             {
                 var viewCenter = Vector3.Transform(Vector3.Zero, modelViewMatrix);
                 if (IsSphereOutside(frustumPlanes, viewCenter, radius))
@@ -532,7 +536,7 @@ public sealed class Renderer : IRenderer
     /// Renders the world's depth from the scene's first light, or returns null when the
     /// scene casts no shadows — disabled, no lights, or nothing opaque to cast one.
     /// </summary>
-    private ShadowMap? RenderShadowMap(Scene scene, GraphicsEventLog events)
+    private ShadowMap? RenderShadowMap(Scene scene, GraphicsEventLog events, IPainter? painter)
     {
         var settings = scene.Shadows;
 
@@ -544,8 +548,11 @@ public sealed class Renderer : IRenderer
         _shadowRenderer ??= new ShadowMapRenderer();
 
         // The same resolution the lit painters use, so the scene is shadowed from wherever
-        // it is lit from — including the fallback light of a world that declares none.
-        var map = _shadowRenderer.Render(scene.World, SceneLights.Resolve(scene.World), settings);
+        // it is lit from — including the fallback light of a world that declares none, which
+        // is why the painter's own fallback is passed rather than left to default. A painter
+        // built around a particular light and pointed at a world with none of its own would
+        // otherwise shade from that light and cast shadows from a different one.
+        var map = _shadowRenderer.Render(scene.World, SceneLights.Resolve(scene.World, painter?.FallbackLight), settings);
 
         if (map is not null)
         {
@@ -905,7 +912,4 @@ public sealed class Renderer : IRenderer
         }
         return false;
     }
-
-    private static float MaxAbsComponent(Vector3 v) =>
-        MathF.Max(MathF.Abs(v.X), MathF.Max(MathF.Abs(v.Y), MathF.Abs(v.Z)));
 }

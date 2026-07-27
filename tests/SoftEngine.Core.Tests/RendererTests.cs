@@ -4,6 +4,7 @@ using SoftEngine.Core.Pipeline;
 using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Cameras;
+using SoftEngine.Core.Scenes.Graph;
 using SoftEngine.Core.Scenes.Projections;
 using System.Numerics;
 
@@ -79,6 +80,39 @@ public class RendererTests
 
         Assert.Equal(0, renderer.Stats.DrawnPixelCount);
         Assert.Equal(0, renderer.Stats.DrawnTriangleCount);
+    }
+
+    [Fact]
+    public void Render_MeshScaledByItsParentNode_IsCulledAsIfItScaledItself()
+    {
+        // The bounding sphere the frustum cull tests has to follow the whole scene-graph
+        // chain, not just the mesh's own Scale. Sized from the mesh alone it is eight times
+        // too small here, and a cube reaching well into the frame is rejected whole.
+        var node = new SceneNode("rig")
+        {
+            Position = new Vector3(0, 6f, 0),
+            Scale = new Vector3(8f, 8f, 8f),
+        };
+        node.UpdateWorldMatrices();
+
+        var (parented, parentedScene) = MakeCubeScene(new Vector3(0, 0, 5f));
+        parentedScene.World.Meshes[0] = new Cube { Parent = node };
+
+        // The same cube placed and scaled directly, which is the answer the parented one
+        // has to agree with.
+        var (direct, directScene) = MakeCubeScene(new Vector3(0, 0, 5f));
+        directScene.World.Meshes[0] = new Cube
+        {
+            Position = new Vector3(0, 6f, 0),
+            Scale = new Vector3(8f, 8f, 8f),
+        };
+
+        parented.Render(parentedScene, new ClassicPainter());
+        direct.Render(directScene, new ClassicPainter());
+
+        Assert.True(direct.Stats.DrawnPixelCount > 0, "the reference cube should reach the frame");
+        Assert.Equal(direct.Stats.DrawnTriangleCount, parented.Stats.DrawnTriangleCount);
+        Assert.Equal(direct.Stats.DrawnPixelCount, parented.Stats.DrawnPixelCount);
     }
 
     [Fact]

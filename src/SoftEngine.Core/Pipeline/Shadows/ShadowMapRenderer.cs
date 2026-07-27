@@ -115,8 +115,10 @@ public sealed class ShadowMapRenderer
                 continue;
             }
 
-            var meshCenter = Vector3.Transform(Vector3.Zero, mesh.WorldMatrix);
-            var meshRadius = mesh.BoundingRadius * MaxAbsComponent(mesh.Scale);
+            var worldMatrix = mesh.WorldMatrix;
+
+            var meshCenter = Vector3.Transform(Vector3.Zero, worldMatrix);
+            var meshRadius = mesh.BoundingRadius * MeshExtensions.MaxScale(worldMatrix);
 
             if (float.IsNaN(meshRadius) || float.IsInfinity(meshRadius))
             {
@@ -349,7 +351,4 @@ public sealed class ShadowMapRenderer
     /// <summary>Twice the signed area of (a, b, point); its sign says which side the point is on.</summary>
     private static float Edge(in Vector3 a, in Vector3 b, float x, float y) =>
         (b.X - a.X) * (y - a.Y) - (b.Y - a.Y) * (x - a.X);
-
-    private static float MaxAbsComponent(Vector3 v) =>
-        MathF.Max(MathF.Abs(v.X), MathF.Max(MathF.Abs(v.Y), MathF.Abs(v.Z)));
 }

@@ -50,6 +50,39 @@ public static class MeshExtensions
         }
     }
 
+    /// <summary>
+    /// Radius of a world-space sphere around the mesh: its model-space
+    /// <see cref="IMesh.BoundingRadius"/> grown by the largest scale factor its world matrix
+    /// applies.
+    ///
+    /// A mesh's own <see cref="IMesh.Scale"/> is not enough. A mesh parented to a
+    /// <see cref="Scenes.Graph.SceneNode"/> inherits everything the chain above it does, and
+    /// exported rigs routinely carry a unit conversion — a factor of a hundred — on their top
+    /// node. A sphere sized from the mesh's own scale alone is then smaller than the geometry
+    /// it is meant to contain, and every test that trusts it rejects a mesh that is really
+    /// there: the frustum cull drops it from the frame, the shadow pass sizes the light's
+    /// projection too small for it, and a ray passes straight through it.
+    /// </summary>
+    public static float WorldBoundingRadius(this IMesh mesh)
+    {
+        ArgumentNullException.ThrowIfNull(mesh, nameof(mesh));
+
+        return mesh.BoundingRadius * MaxScale(mesh.WorldMatrix);
+    }
+
+    /// <summary>
+    /// The largest scale factor a transform applies, read off the lengths of its rows — which
+    /// are where a row-vector matrix keeps its basis vectors.
+    /// </summary>
+    public static float MaxScale(in Matrix4x4 matrix)
+    {
+        var x = new Vector3(matrix.M11, matrix.M12, matrix.M13).Length();
+        var y = new Vector3(matrix.M21, matrix.M22, matrix.M23).Length();
+        var z = new Vector3(matrix.M31, matrix.M32, matrix.M33).Length();
+
+        return MathF.Max(x, MathF.Max(y, z));
+    }
+
     public static Triangle[] BuildTriangleIndices(this int[] indices)
     {
         var triangles = new List<Triangle>();

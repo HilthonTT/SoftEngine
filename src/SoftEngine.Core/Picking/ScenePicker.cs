@@ -118,7 +118,7 @@ public static class ScenePicker
             // Reject against the bounding sphere in world space, before paying for the
             // matrix inverse the triangle test needs.
             var center = Vector3.Transform(Vector3.Zero, worldMatrix);
-            var radius = mesh.BoundingRadius * MaxScale(worldMatrix);
+            var radius = mesh.BoundingRadius * MeshExtensions.MaxScale(worldMatrix);
 
             if (!ray.IntersectsSphere(center, radius, out var approach) || approach > nearestDistance)
             {
@@ -241,22 +241,5 @@ public static class ScenePicker
 
         // Behind the ray's origin is not something it can run into.
         return distance > epsilon;
-    }
-
-    /// <summary>
-    /// The largest scale factor a transform applies, read off the lengths of its rows.
-    ///
-    /// A mesh's own <c>Scale</c> is not enough: a mesh parented to a scene-graph node
-    /// inherits everything the chain above it does, and exported rigs routinely carry a unit
-    /// conversion — a factor of a hundred — on their top node. A bounding sphere sized
-    /// without it rejects a mesh that the ray passes straight through.
-    /// </summary>
-    private static float MaxScale(in Matrix4x4 matrix)
-    {
-        var x = new Vector3(matrix.M11, matrix.M12, matrix.M13).Length();
-        var y = new Vector3(matrix.M21, matrix.M22, matrix.M23).Length();
-        var z = new Vector3(matrix.M31, matrix.M32, matrix.M33).Length();
-
-        return MathF.Max(x, MathF.Max(y, z));
     }
 }

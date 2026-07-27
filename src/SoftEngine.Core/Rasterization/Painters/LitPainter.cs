@@ -20,6 +20,9 @@ public abstract class LitPainter(ILight? light, float ambient) : IPainter
 
     private RasterState _fogState;
 
+    /// <inheritdoc />
+    public ILight? FallbackLight => _fallback;
+
     // Reused across frames; grown only when a world brings more lights than the last one.
     private ShaderLight[] _lightStorage = [];
 

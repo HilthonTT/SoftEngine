@@ -6,6 +6,7 @@ using SoftEngine.Core.Pipeline.Shadows;
 using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Cameras;
+using SoftEngine.Core.Scenes.Graph;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
 using System.Numerics;
@@ -233,5 +234,57 @@ public class ShadowMappingTests
         renderer.Render(scene, new PhongPainter());
 
         Assert.NotNull(scene.ShadowMap);
+    }
+
+    [Fact]
+    public void Render_WorldWithoutLights_ShadowsFromThePaintersOwnLightNotTheSharedDefault()
+    {
+        // A painter built around one light, pointed at a world that declares none. The shadow
+        // pass runs before the painter prepares, so it has to be told which light that is —
+        // otherwise the scene is lit from the painter's light and shadowed from the shared
+        // default, which sits somewhere else entirely.
+        var renderer = new Renderer();
+
+        var scene = new Scene
+        {
+            Surface = new FrameBuffer(64, 64) { Stats = renderer.Stats },
+            Camera = new FixedCamera(new Vector3(0, 0, 6f)),
+            Projection = new PerspectiveProjection(MathF.PI / 4f, 0.1f, 100f),
+            World = new SimpleWorld { Meshes = [new Cube()], Lights = [] },
+            Shadows = Settings(),
+        };
+
+        // Lighting the cube from +X puts its shadow at negative X. The shared default light
+        // sits above and behind at (0, 10, 10) and would leave that point lit.
+        renderer.Render(scene, new PhongPainter(new DirectionalLight { Direction = -Vector3.UnitX }));
+
+        Assert.NotNull(scene.ShadowMap);
+        Assert.True(
+            scene.ShadowMap.Visibility(new Vector3(-1.2f, 0, 0), 1f) < 1f,
+            "the point behind the cube, as the painter's light sees it, should be shadowed");
+    }
+
+    [Fact]
+    public void Render_CasterScaledByItsParentNode_IsCoveredByTheMap()
+    {
+        // The caster's extent has to follow the whole scene-graph chain: sized off the mesh's
+        // own Scale alone, the light's projection is fitted to a cube eight times smaller than
+        // the one actually standing there, and everything outside it stops casting.
+        var node = new SceneNode("rig") { Scale = new Vector3(8f, 8f, 8f) };
+        node.UpdateWorldMatrices();
+
+        var world = new SimpleWorld
+        {
+            Meshes = [new Cube { Parent = node }],
+            Lights = [new DirectionalLight { Direction = -Vector3.UnitY }],
+        };
+
+        var map = new ShadowMapRenderer().Render(world, world.Lights[0], Settings());
+
+        Assert.NotNull(map);
+
+        // The cube now spans ±4, so a point under its far corner is in shadow. Under a map
+        // fitted to the unscaled cube it falls outside the mapped area and reads as lit.
+        Assert.True(map.Visibility(new Vector3(3f, -5f, 3f), 1f) < 1f);
     }
 }
