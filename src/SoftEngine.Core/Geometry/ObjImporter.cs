@@ -10,7 +10,8 @@ namespace SoftEngine.Core.Geometry;
 /// <c>f</c> faces (any of <c>v</c>, <c>v/vt</c>, <c>v//vn</c>, <c>v/vt/vn</c>, including
 /// negative relative indices), n-gon fan triangulation, <c>mtllib</c>/<c>usemtl</c>, and from
 /// the material file the <c>Kd</c> diffuse colour, the <c>Ks</c>/<c>Ns</c> highlight, the
-/// <c>d</c>/<c>Tr</c> opacity, and the <c>map_Kd</c>, <c>map_Ks</c> and
+/// <c>d</c>/<c>Tr</c> opacity, the <c>Pr</c>/<c>Pm</c>/<c>Ke</c> physically-based parameters,
+/// and the <c>map_Kd</c>, <c>map_Ks</c>, <c>map_Pr</c>, <c>map_Pm</c>, <c>map_Ke</c> and
 /// <c>map_Bump</c>/<c>bump</c>/<c>norm</c> textures.
 ///
 /// One <see cref="IMesh"/> is emitted per material actually used, so each mesh carries a
@@ -225,6 +226,38 @@ public static class ObjImporter
                     current.NormalMap = tokens[^1];
                     break;
 
+                // The PBR extension to the format: roughness, metalness and emission, added
+                // long after the original spec and written by every exporter that speaks
+                // metallic-roughness at all. A file without them still loads — the material's
+                // own defaults stand, and the physically-based painter shades a satin
+                // dielectric rather than refusing to draw.
+                case "Pr" when current is not null:
+                    current.Roughness = System.Math.Clamp(ParseFloat(tokens, 1), 0f, 1f);
+                    break;
+
+                case "Pm" when current is not null:
+                    current.Metallic = System.Math.Clamp(ParseFloat(tokens, 1), 0f, 1f);
+                    break;
+
+                case "Ke" when current is not null:
+                    current.Emissive = new ColorRGB(
+                        ToByte(ParseFloat(tokens, 1)),
+                        ToByte(ParseFloat(tokens, 2)),
+                        ToByte(ParseFloat(tokens, 3)));
+                    break;
+
+                case "map_Pr" when current is not null:
+                    current.RoughnessMap = tokens[^1];
+                    break;
+
+                case "map_Pm" when current is not null:
+                    current.MetallicMap = tokens[^1];
+                    break;
+
+                case "map_Ke" when current is not null:
+                    current.EmissiveMap = tokens[^1];
+                    break;
+
                 default:
                     break;
             }
@@ -252,11 +285,23 @@ public static class ObjImporter
 
         public float Opacity { get; set; } = 1f;
 
+        public float Roughness { get; set; } = 0.5f;
+
+        public float Metallic { get; set; }
+
+        public ColorRGB Emissive { get; set; } = ColorRGB.Black;
+
         public string? DiffuseMap { get; set; }
 
         public string? NormalMap { get; set; }
 
         public string? SpecularMap { get; set; }
+
+        public string? RoughnessMap { get; set; }
+
+        public string? MetallicMap { get; set; }
+
+        public string? EmissiveMap { get; set; }
     }
 
     /// <summary>
@@ -364,6 +409,9 @@ public static class ObjImporter
             {
                 mesh.Material.SpecularStrength = material.SpecularStrength;
                 mesh.Material.Shininess = material.Shininess;
+                mesh.Material.Roughness = material.Roughness;
+                mesh.Material.Metallic = material.Metallic;
+                mesh.Material.Emissive = material.Emissive;
             }
 
             // Every map is addressed by UV; without them there is nothing to sample with.
@@ -374,6 +422,9 @@ public static class ObjImporter
                 mesh.Material.DiffuseMap = ResolveTexture(material?.DiffuseMap, baseDirectory, textureLoader, textureCache);
                 mesh.Material.NormalMap = ResolveTexture(material?.NormalMap, baseDirectory, textureLoader, textureCache);
                 mesh.Material.SpecularMap = ResolveTexture(material?.SpecularMap, baseDirectory, textureLoader, textureCache);
+                mesh.Material.RoughnessMap = ResolveTexture(material?.RoughnessMap, baseDirectory, textureLoader, textureCache);
+                mesh.Material.MetallicMap = ResolveTexture(material?.MetallicMap, baseDirectory, textureLoader, textureCache);
+                mesh.Material.EmissiveMap = ResolveTexture(material?.EmissiveMap, baseDirectory, textureLoader, textureCache);
             }
 
             return mesh;

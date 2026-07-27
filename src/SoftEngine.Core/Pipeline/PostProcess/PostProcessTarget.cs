@@ -1,3 +1,4 @@
+using SoftEngine.Core.Buffers;
 using System.Numerics;
 
 namespace SoftEngine.Core.Pipeline.PostProcess;
@@ -51,59 +52,17 @@ public sealed class PostProcessTarget
     public float ProjectionScaleY { get; private set; } = 1f;
 
     /// <summary>
-    /// The point in view space a pixel shows, or a position at infinity for background.
-    /// The inverse of the projection, for the one pixel: undo the screen mapping to get a
-    /// normalized device coordinate, undo the projection's scale to get a direction, and
-    /// scale that by the distance the depth buffer recorded.
-    ///
-    /// A coordinate outside the frame counts as background: there is no recorded geometry
-    /// there, which is exactly what background means. Saying so is what keeps an effect that
-    /// walks a pixel's neighbours from indexing past the end of the buffer at the border —
-    /// and the depth buffer is only ever grown, never shrunk, so an overrun would otherwise
-    /// read a stale pixel from a larger frame on most frames and throw on the rest.
+    /// The depth buffer read as geometry — positions and normals per pixel. Only meaningful
+    /// while <see cref="HasDepth"/>; see <see cref="DepthField"/>.
     /// </summary>
-    public Vector3 ViewPositionAt(int x, int y)
-    {
-        if ((uint)x >= (uint)Width || (uint)y >= (uint)Height)
-        {
-            return new Vector3(0f, 0f, float.NegativeInfinity);
-        }
+    public DepthField Field => new(_viewDepth, Width, Height, ProjectionScaleX, ProjectionScaleY);
 
-        var w = _viewDepth[x + y * Width];
+    /// <inheritdoc cref="DepthField.PositionAt"/>
+    public Vector3 ViewPositionAt(int x, int y) => Field.PositionAt(x, y);
 
-        if (float.IsPositiveInfinity(w))
-        {
-            return new Vector3(0f, 0f, float.NegativeInfinity);
-        }
-
-        // Matching FrameBuffer.ToScreen3, which maps NDC ±1 onto pixel 0 and pixel n - 1.
-        var ndcX = x * (2f / MathF.Max(Width - 1, 1)) - 1f;
-        var ndcY = 1f - y * (2f / MathF.Max(Height - 1, 1));
-
-        // The view looks down -Z, so a point at distance w sits at z = -w.
-        return new Vector3(ndcX * w / ProjectionScaleX, ndcY * w / ProjectionScaleY, -w);
-    }
-
-    /// <summary>Where a view-space point lands on screen, in pixels. The inverse of <see cref="ViewPositionAt"/>.</summary>
-    public bool ProjectToScreen(Vector3 viewPosition, out int x, out int y, out float distance)
-    {
-        distance = -viewPosition.Z;
-
-        if (distance <= 1e-6f)
-        {
-            x = 0;
-            y = 0;
-            return false;
-        }
-
-        var ndcX = viewPosition.X * ProjectionScaleX / distance;
-        var ndcY = viewPosition.Y * ProjectionScaleY / distance;
-
-        x = (int)((ndcX + 1f) * 0.5f * MathF.Max(Width - 1, 1) + 0.5f);
-        y = (int)((1f - ndcY) * 0.5f * MathF.Max(Height - 1, 1) + 0.5f);
-
-        return (uint)x < (uint)Width && (uint)y < (uint)Height;
-    }
+    /// <inheritdoc cref="DepthField.ProjectToScreen"/>
+    public bool ProjectToScreen(Vector3 viewPosition, out int x, out int y, out float distance) =>
+        Field.ProjectToScreen(viewPosition, out x, out y, out distance);
 
     internal void Resize(int width, int height)
     {

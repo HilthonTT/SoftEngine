@@ -63,6 +63,8 @@ public readonly record struct GraphicsEvent(GraphicsEventKind Kind, int ObjectId
                 string.Create(c, $"{(int)A} joints"),
             GraphicsEventKind.PostProcessApply =>
                 string.Create(c, $"obj:{ObjectId} — {(int)A} effects over {(int)B} × {(int)C}"),
+            GraphicsEventKind.DebugViewRender =>
+                string.Create(c, $"obj:{ObjectId} — {(Pipeline.Debugging.DebugView)(int)A}{(B > 0f ? string.Empty : " — nothing to show, image unchanged")}"),
             GraphicsEventKind.FramePresent =>
                 string.Create(c, $"{(int)A} pixels drawn, {(int)B} z-rejected"),
             _ => string.Empty,

@@ -4,6 +4,7 @@ using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Geometry.Skinning;
 using SoftEngine.Core.Math;
+using SoftEngine.Core.Pipeline.Debugging;
 using SoftEngine.Core.Pipeline.PostProcess;
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Rasterization.Painters;
@@ -50,6 +51,7 @@ public sealed partial class MainScreen : Form
         new("Transparency", "transparency"),
         new("Shadows", "shadows"),
         new("Normal mapping", "normalmapping"),
+        new("PBR spheres", "pbrspheres"),
         new("Empty", "empty"),
     ];
 
@@ -115,6 +117,7 @@ public sealed partial class MainScreen : Form
         rdbPhongShading.Checked = panel3D1.Painter is PhongPainter;
         rdbTexturedShading.Checked = panel3D1.Painter is TexturedPainter;
         rdbMaterialShading.Checked = panel3D1.Painter is MaterialPainter;
+        rdbPbrShading.Checked = panel3D1.Painter is PbrPainter;
 
         rdbNoneShading.CheckedChanged += (s, e) =>
         {
@@ -179,6 +182,15 @@ public sealed partial class MainScreen : Form
             panel3D1.Painter = CreateMaterialPainter();
             panel3D1.Invalidate();
         };
+        rdbPbrShading.CheckedChanged += (s, e) =>
+        {
+            if (s is not RadioButton { Checked: true })
+            {
+                return;
+            }
+            panel3D1.Painter = CreatePbrPainter();
+            panel3D1.Invalidate();
+        };
 
         chkShowTriangles.Checked = panel3D1.RendererSettings.ShowTriangles;
         chkShowBackFacesCulling.Checked = panel3D1.RendererSettings.BackFaceCulling;
@@ -237,6 +249,8 @@ public sealed partial class MainScreen : Form
 
         InitializePostProcessing();
 
+        InitializeBufferViews();
+
         InitializeDebugger();
 
         _ = PrepareWorldAsync("skull");
@@ -257,6 +271,19 @@ public sealed partial class MainScreen : Form
         panel3D1.FrameRendered += (s, e) => _frameDirty = true;
         panel3D1.ZoomChanged += (s, e) => UpdateStatus();
         panel3D1.SelectedPixelChanged += (s, e) => UpdateStatus();
+
+        // A click asks two questions of the same pixel: the probe records what the renderer
+        // did there, and the ray says which mesh is actually under it. The second is what
+        // selects the row in the object table — the same obj:N the event list would name.
+        panel3D1.PickedChanged += (s, e) =>
+        {
+            if (panel3D1.Picked is { } hit && panel3D1.Scene?.World is { } world)
+            {
+                objectTablePanel.SelectObject(SceneObjectIds.Mesh(world.Lights.Count, hit.MeshIndex));
+            }
+
+            UpdateStatus();
+        };
 
         tmrDebugRefresh.Tick += (s, e) => RefreshDebugPanels();
         tmrDebugRefresh.Start();
@@ -364,11 +391,23 @@ public sealed partial class MainScreen : Form
 
         if (panel3D1.SelectedPixel is { } pixel && panel3D1.SelectedPixelNormalized is { } normalized)
         {
-            lblPixelStatus.Text = $"Selected pixel X: {pixel.X} ({normalized.X:0.000}) Y: {pixel.Y} ({normalized.Y:0.000})";
+            // What the ray found under the same pixel, when it found anything — the mesh's
+            // own identifier, so it can be looked up in the object table and the event list.
+            var picked = string.Empty;
+
+            if (panel3D1.Picked is { } hit && panel3D1.Scene?.World is { } world)
+            {
+                var objectId = SceneObjectIds.Mesh(world.Lights.Count, hit.MeshIndex);
+
+                picked = $"  ·  picked obj:{objectId} ({hit.Mesh.GetType().Name}) tri:{hit.TriangleIndex} at {hit.Distance:0.##}";
+            }
+
+            lblPixelStatus.Text =
+                $"Selected pixel X: {pixel.X} ({normalized.X:0.000}) Y: {pixel.Y} ({normalized.Y:0.000}){picked}";
         }
         else
         {
-            lblPixelStatus.Text = "Selected pixel: none — click the viewport to probe one";
+            lblPixelStatus.Text = "Selected pixel: none — click the viewport to probe and pick one";
         }
 
         if (panel3D1.Scene?.Camera is { } camera)
@@ -473,6 +512,14 @@ public sealed partial class MainScreen : Form
         return painter;
     }
 
+    /// <summary>A physically-based painter configured from the "Texture filtering" checkbox.</summary>
+    private PbrPainter CreatePbrPainter()
+    {
+        var painter = new PbrPainter();
+        ApplyTextureFiltering(painter);
+        return painter;
+    }
+
     /// <summary>Applies the filtering checkbox to whichever painter samples textures, if any.</summary>
     private void ApplyTextureFiltering(IPainter? painter)
     {
@@ -489,7 +536,45 @@ public sealed partial class MainScreen : Form
                 material.Filtering = filtering;
                 material.UseMipMaps = chkTextureFiltering.Checked;
                 break;
+
+            case PbrPainter pbr:
+                pbr.Filtering = filtering;
+                pbr.UseMipMaps = chkTextureFiltering.Checked;
+                break;
         }
+    }
+
+    /// <summary>One entry of the buffer-view selector; the label is what the list shows.</summary>
+    private sealed record BufferViewChoice(string Label, DebugView View)
+    {
+        public override string ToString() => Label;
+    }
+
+    /// <summary>
+    /// Fills the buffer-view selector and points it at the renderer. Each entry is one of the
+    /// frame's own buffers presented in place of the shaded image.
+    /// </summary>
+    private void InitializeBufferViews()
+    {
+        cboBufferView.Items.AddRange(
+        [
+            new BufferViewChoice("Shaded image", DebugView.Off),
+            new BufferViewChoice("Depth", DebugView.Depth),
+            new BufferViewChoice("Normals", DebugView.Normals),
+            new BufferViewChoice("Overdraw", DebugView.Overdraw),
+            new BufferViewChoice("Shadow map", DebugView.ShadowMap),
+        ]);
+
+        cboBufferView.SelectedIndex = 0;
+
+        cboBufferView.SelectedIndexChanged += (s, e) =>
+        {
+            if (cboBufferView.SelectedItem is BufferViewChoice choice)
+            {
+                panel3D1.RendererSettings.DebugView = choice.View;
+                panel3D1.Invalidate();
+            }
+        };
     }
 
     /// <summary>Points each post-processing checkbox at its effect in the viewport's stack.</summary>
@@ -574,6 +659,10 @@ public sealed partial class MainScreen : Form
         lblDisplayHeader.ForeColor = Theme.TextSecondary;
         lblShadingHeader.ForeColor = Theme.TextSecondary;
         lblPostHeader.ForeColor = Theme.TextSecondary;
+        lblBufferHeader.ForeColor = Theme.TextSecondary;
+
+        cboBufferView.BackColor = Theme.Selection;
+        cboBufferView.ForeColor = Theme.TextPrimary;
 
         lblModelHeader.ForeColor = Theme.TextSecondary;
         lblCurrentModel.ForeColor = Theme.TextPrimary;
@@ -725,6 +814,11 @@ public sealed partial class MainScreen : Form
             // farthest geometry visibly slices models while they are orbited, and the
             // previous world's projection must not leak into this one.
             panel3D1.Scene?.Projection = setup.Projection ?? ProjectionFor(setup);
+
+            // Before the world goes in, not after: the pick addresses meshes by their position
+            // in the list that is about to be replaced.
+            panel3D1.ClearPick();
+
             panel3D1.Scene?.World = setup.World;
 
             panel3D1.RendererSettings.SkeletonTickSize = setup.SkeletonTickSize;
@@ -1199,6 +1293,64 @@ public sealed partial class MainScreen : Form
                 world.Meshes.Add(flat);
 
                 cameraPosition = new Vector3(-11f, 0, -70);
+                break;
+            }
+
+            case "pbrspheres":
+            {
+                // The chart every physically-based renderer is checked against: one albedo,
+                // one lighting setup, and the two parameters that describe the surface varied
+                // across the grid. Roughness runs left to right, metalness bottom to top.
+                //
+                // What it is for is that the two rows are supposed to look like different
+                // *materials* rather than like the same material at two brightnesses — the
+                // metals lose their diffuse entirely and tint what they reflect, and every
+                // sphere on the top row is showing you the sky rather than the lights.
+                const int columns = 6;
+                const int rows = 3;
+                const float spacing = 2.6f;
+
+                var albedo = new ColorRGB(222, 180, 140);
+
+                for (var row = 0; row < rows; row++)
+                {
+                    for (var column = 0; column < columns; column++)
+                    {
+                        var sphere = new IcoSphere(3)
+                        {
+                            Position = new Vector3(
+                                (column - (columns - 1) / 2f) * spacing,
+                                (row - (rows - 1) / 2f) * spacing,
+                                0f),
+                        };
+
+                        sphere.Material.Diffuse = albedo;
+                        sphere.Material.Metallic = rows == 1 ? 0f : row / (float)(rows - 1);
+
+                        // Away from 0 at the smooth end: a perfect mirror lit by point lights
+                        // shows no highlight at all, which reads as a bug rather than as the
+                        // consequence of a light with no area that it is.
+                        sphere.Material.Roughness = 0.06f + 0.94f * column / (columns - 1);
+
+                        world.Meshes.Add(sphere);
+                    }
+                }
+
+                // A key and a fill, so the highlights have somewhere to be. Most of what the
+                // metals show, though, comes from the environment rather than from these.
+                world.Lights.Add(new DirectionalLight
+                {
+                    Direction = new Vector3(-0.4f, -0.5f, 1f),
+                    Color = new ColorRGB(255, 244, 224),
+                });
+                world.Lights.Add(new PointLight
+                {
+                    Position = new Vector3(-14f, 6f, -14f),
+                    Color = new ColorRGB(150, 185, 255),
+                    Intensity = 0.5f,
+                });
+
+                cameraPosition = new Vector3(0, 0, -24f);
                 break;
             }
 

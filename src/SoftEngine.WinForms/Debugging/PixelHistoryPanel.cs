@@ -137,6 +137,7 @@ internal sealed class PixelHistoryPanel : UserControl
             PixelWriteSource.Axes => "GizmoDrawAxes",
             PixelWriteSource.Skeleton => "GizmoDrawSkeleton",
             PixelWriteSource.PostProcess => "PostProcess",
+            PixelWriteSource.DebugView => "DebugViewRender",
             _ => "Write",
         };
 

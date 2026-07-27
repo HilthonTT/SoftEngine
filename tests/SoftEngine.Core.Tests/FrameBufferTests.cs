@@ -1,5 +1,9 @@
 using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Geometry.Primitives;
+using SoftEngine.Core.Scenes;
+using SoftEngine.Core.Scenes.Lights;
+using SoftEngine.Core.Scenes.Projections;
 using System.Numerics;
 
 namespace SoftEngine.Core.Tests;
@@ -96,5 +100,68 @@ public class FrameBufferTests
         var far = surface.ToScreen3(new Vector4(0, 0, 50, 50f));
 
         Assert.True(near.Z < far.Z);
+    }
+
+    /// <summary>
+    /// Switching to HDR has to be what sizes the float buffer, not the clear that follows it.
+    ///
+    /// The pixel probe records what a pixel held <em>before</em> the clear, which on an HDR
+    /// target means reading the float buffer while the clear that used to allocate it has not
+    /// run. Every frame after the first found the buffer already grown; the first one read
+    /// off the end of an empty array — and a render target is new once per window resize and
+    /// once per change of supersampling.
+    /// </summary>
+    [Fact]
+    public void SwitchingToHighDynamicRange_SizesTheFloatBufferImmediately()
+    {
+        var surface = new FrameBuffer(16, 9);
+
+        Assert.Empty(surface.HdrColor);
+
+        surface.SetHighDynamicRange(true);
+
+        Assert.True(
+            surface.HdrColor.Length >= 16 * 9 * 3,
+            $"expected room for the frame, got {surface.HdrColor.Length} floats");
+    }
+
+    [Fact]
+    public void ProbingTheFirstHdrFrameOfANewRenderTarget_DoesNotThrow()
+    {
+        // End to end, in the order the front-end produces: a fresh render target (a resize, or
+        // a change of supersampling), HDR on, and a pixel still selected from before.
+        foreach (var superSampling in new[] { 1, 2, 4 })
+        {
+            var world = new SimpleWorld();
+            world.Meshes.Add(new Cube { Scale = new Vector3(3f, 3f, 3f) });
+            world.Lights.Add(new DirectionalLight { Direction = new Vector3(0, -0.3f, 1f) });
+
+            var scene = new Scene
+            {
+                World = world,
+                Camera = new ProbeCamera(new Vector3(0, 0, -10f)),
+                Projection = new PerspectiveProjection(MathF.PI / 4f, 0.5f, 100f),
+                Surface = new FrameBuffer(37 * superSampling, 23 * superSampling) { Stats = new RenderStats() },
+                HighDynamicRange = true,
+            };
+
+            var renderer = new Pipeline.Renderer();
+
+            // Panel3D aims the probe at the sample nearest the centre of the clicked pixel.
+            renderer.Diagnostics.SetProbe(
+                36 * superSampling + superSampling / 2,
+                22 * superSampling + superSampling / 2);
+
+            renderer.Render(scene, new Rasterization.Painters.PhongPainter());
+
+            Assert.NotNull(renderer.Diagnostics.PixelHistory);
+        }
+    }
+
+    private sealed class ProbeCamera(Vector3 position) : Scenes.Cameras.ICamera
+    {
+        public Vector3 Position { get; set; } = position;
+
+        public Matrix4x4 ViewMatrix => Matrix4x4.CreateLookAt(Position, Vector3.Zero, Vector3.UnitY);
     }
 }

@@ -61,6 +61,8 @@ public readonly struct ColorRGB
             (byte)(from.G + (to.G - from.G) * t),
             (byte)(from.B + (to.B - from.B) * t));
 
+    public static readonly ColorRGB Black = new(0, 0, 0);
+
     public static readonly ColorRGB White = new(255, 255, 255);
 
     public static readonly ColorRGB Yellow = new(255, 255, 0);

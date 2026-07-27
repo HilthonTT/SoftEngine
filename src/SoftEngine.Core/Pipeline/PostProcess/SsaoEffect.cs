@@ -96,6 +96,7 @@ public sealed class SsaoEffect : IPostEffect
         var width = target.Width;
         var height = target.Height;
         var depth = target.ViewDepth;
+        var field = target.Field;
 
         var radius = MathF.Max(1e-4f, Radius);
         var cutoff = radius * MathF.Max(0f, RangeCutoff);
@@ -118,8 +119,8 @@ public sealed class SsaoEffect : IPostEffect
                     continue;
                 }
 
-                var origin = target.ViewPositionAt(x, y);
-                var normal = ReconstructNormal(target, x, y);
+                var origin = field.PositionAt(x, y);
+                var normal = field.NormalAt(x, y);
 
                 if (normal == Vector3.Zero)
                 {
@@ -157,7 +158,7 @@ public sealed class SsaoEffect : IPostEffect
                     var offset = tangent * sample.X + bitangent * sample.Y + normal * sample.Z;
                     var point = origin + offset * radius;
 
-                    if (!target.ProjectToScreen(point, out var sx, out var sy, out var sampleDistance))
+                    if (!field.ProjectToScreen(point, out var sx, out var sy, out var sampleDistance))
                     {
                         continue;
                     }
@@ -191,68 +192,6 @@ public sealed class SsaoEffect : IPostEffect
             }
         });
     }
-
-    /// <summary>
-    /// The surface normal at a pixel, from the two neighbours on each side. Whichever of
-    /// the forward and backward differences spans the smaller depth step is used, so a
-    /// pixel on a silhouette takes its normal from the surface it belongs to rather than
-    /// from the gap across the edge.
-    /// </summary>
-    private static Vector3 ReconstructNormal(PostProcessTarget target, int x, int y)
-    {
-        var depth = target.ViewDepth;
-        var width = target.Width;
-        var height = target.Height;
-
-        var here = depth[x + y * width];
-
-        var left = x > 0 ? depth[x - 1 + y * width] : float.PositiveInfinity;
-        var right = x < width - 1 ? depth[x + 1 + y * width] : float.PositiveInfinity;
-        var up = y > 0 ? depth[x + (y - 1) * width] : float.PositiveInfinity;
-        var down = y < height - 1 ? depth[x + (y + 1) * width] : float.PositiveInfinity;
-
-        var origin = target.ViewPositionAt(x, y);
-
-        // Whichever side spans the smaller depth step — but never a pixel off the edge of the
-        // frame. At a border one of the two neighbours does not exist, and the other one has
-        // to be used however the depths compare: when both are background the comparison is a
-        // tie between two infinities, which resolves to "take the far side" and walks straight
-        // off the end of the row. Reading the pixel that follows is wrong everywhere and
-        // out of bounds on the last one.
-        var useLeft = x > 0 && (x == width - 1 || Closer(here, left, right));
-        var useUp = y > 0 && (y == height - 1 || Closer(here, up, down));
-
-        var horizontal = useLeft
-            ? target.ViewPositionAt(x - 1, y) - origin
-            : origin - target.ViewPositionAt(x + 1, y);
-
-        var vertical = useUp
-            ? target.ViewPositionAt(x, y - 1) - origin
-            : origin - target.ViewPositionAt(x, y + 1);
-
-        // A neighbour that is background sits at infinity, and the difference against it
-        // carries that through — Z is where it lands, since that is the axis distance runs
-        // along. A pixel with nothing usable beside it gets no normal and no occlusion.
-        if (!float.IsFinite(horizontal.Z) || !float.IsFinite(vertical.Z))
-        {
-            return Vector3.Zero;
-        }
-
-        var normal = Vector3.Cross(vertical, horizontal);
-
-        if (normal.LengthSquared() < 1e-16f)
-        {
-            return Vector3.Zero;
-        }
-
-        normal = Vector3.Normalize(normal);
-
-        // The frame is a view space looking down -Z, so a visible surface faces the eye.
-        return normal.Z < 0f ? -normal : normal;
-    }
-
-    private static bool Closer(float here, float a, float b) =>
-        MathF.Abs(a - here) < MathF.Abs(b - here);
 
     /// <summary>
     /// Separable box blur over the occlusion buffer. The kernel rotation deliberately made

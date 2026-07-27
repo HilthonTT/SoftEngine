@@ -23,5 +23,6 @@ public enum GraphicsEventKind
     GizmoDrawAxes,
     GizmoDrawSkeleton,
     PostProcessApply,
+    DebugViewRender,
     FramePresent,
 }

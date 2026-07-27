@@ -32,6 +32,10 @@ public sealed class FrameBuffer(int width, int height)
     private float[] _hdr = [];
     private bool _hdrEnabled;
 
+    // Write attempts per pixel, allocated only while the overdraw view is asking for them.
+    private int[] _overdraw = [];
+    private bool _countOverdraw;
+
     public RenderStats? Stats { get; set; }
 
     public int[] Screen { get; set; } = new int[width * height];
@@ -66,8 +70,79 @@ public sealed class FrameBuffer(int width, int height)
     ///
     /// Costs one float triple per pixel of memory and the encode at resolve; take it when
     /// the scene has highlights worth keeping.
+    ///
+    /// The buffer is allocated here rather than at the next <see cref="Clear"/>, so that
+    /// "HDR is on" and "there is somewhere to put the floats" become the same fact. They were
+    /// two facts, and between them sat the pixel probe: it records the colour a pixel held
+    /// <em>before</em> the clear, which on an HDR target means reading the float buffer the
+    /// clear had not allocated yet. The first HDR frame on a new render target — one per
+    /// window resize, one per change of supersampling — read off the end of an empty array.
     /// </summary>
-    public void SetHighDynamicRange(bool enabled) => _hdrEnabled = enabled;
+    public void SetHighDynamicRange(bool enabled)
+    {
+        _hdrEnabled = enabled;
+
+        if (!enabled)
+        {
+            return;
+        }
+
+        var length = Width * Height * 3;
+
+        if (_hdr.Length < length)
+        {
+            _hdr = new float[length];
+        }
+    }
+
+    /// <summary>
+    /// Whether every write is also counted per pixel, for
+    /// <see cref="Pipeline.Debugging.DebugView.Overdraw"/>. The counters are allocated here
+    /// and reset by <see cref="Clear"/>, so turning counting on mid-frame reports the rest of
+    /// that frame rather than throwing on the next write.
+    ///
+    /// What it counts is <em>writes the rasterizer attempted</em>, not the triangles that
+    /// geometrically cover the pixel. A triangle the tile's coarse depth bound dropped whole,
+    /// or a run of pixels the vectorized depth test rejected together, never reaches a pixel
+    /// and so never shows up here. That is the intended reading: the view answers "what did
+    /// this frame actually pay for", which is the question overdraw is asked for, rather than
+    /// "what covers this pixel", which the geometry already told you.
+    /// </summary>
+    public void SetOverdrawCounting(bool enabled)
+    {
+        _countOverdraw = enabled;
+
+        if (!enabled)
+        {
+            return;
+        }
+
+        var count = Width * Height;
+
+        if (_overdraw.Length < count)
+        {
+            _overdraw = new int[count];
+        }
+    }
+
+    /// <summary>Whether <see cref="Overdraw"/> holds counts for the current frame.</summary>
+    public bool IsCountingOverdraw => _countOverdraw;
+
+    /// <summary>
+    /// Write attempts per pixel, row-major, or an empty span when counting is off.
+    /// </summary>
+    public ReadOnlySpan<int> Overdraw =>
+        _countOverdraw ? _overdraw.AsSpan(0, Width * Height) : ReadOnlySpan<int>.Empty;
+
+    /// <summary>Counts one write attempt at a pixel. Tiles never overlap, so this needs no interlock.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void CountWrite(int index)
+    {
+        if (_countOverdraw)
+        {
+            _overdraw[index]++;
+        }
+    }
 
     /// <summary>
     /// Defines the depth mapping from the active projection's clip planes. Device depth is 0 at
@@ -184,6 +259,17 @@ public sealed class FrameBuffer(int width, int height)
             Array.Clear(_hdr, 0, length);
         }
 
+        if (_countOverdraw)
+        {
+            var count = Width * Height;
+            if (_overdraw.Length < count)
+            {
+                _overdraw = new int[count];
+            }
+
+            Array.Clear(_overdraw, 0, count);
+        }
+
         Array.Fill(Screen, 0);
         Array.Fill(_zBuffer, DepthResolution);
     }
@@ -293,6 +379,8 @@ public sealed class FrameBuffer(int width, int height)
     {
         var index = x + y * Width;
 
+        CountWrite(index);
+
         if (index == _probeIndex)
         {
             RecordProbe(index, DepthResolution, color, DepthResolution, true);
@@ -387,6 +475,8 @@ public sealed class FrameBuffer(int width, int height)
         int previousDepth = _zBuffer[index];
         bool passed = z <= previousDepth;
 
+        CountWrite(index);
+
         // One int compare against a field that is -1 unless a pixel is being probed:
         // predictable enough not to show up next to the depth test itself.
         if (index == _probeIndex)
@@ -423,6 +513,8 @@ public sealed class FrameBuffer(int width, int height)
         int index = x + y * Width;
         int previousDepth = _zBuffer[index];
         bool passed = z <= previousDepth;
+
+        CountWrite(index);
 
         if (passed || index == _probeIndex)
         {

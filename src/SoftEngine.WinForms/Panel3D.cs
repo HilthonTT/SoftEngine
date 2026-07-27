@@ -1,5 +1,6 @@
 using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Picking;
 using SoftEngine.Core.Pipeline;
 using SoftEngine.Core.Pipeline.PostProcess;
 using SoftEngine.Core.Rasterization;
@@ -323,6 +324,21 @@ public partial class Panel3D : UserControl
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Point? SelectedPixel => _selectedPixel;
 
+    /// <summary>
+    /// What the last selected pixel's ray ran into, or null when it hit nothing.
+    ///
+    /// Selecting a pixel asks two different questions at once, and both are worth answering:
+    /// the probe says what the renderer <em>did</em> at that pixel, and this says what is
+    /// <em>there</em>. They can disagree — a mesh switched off in the object table is still
+    /// geometry, and a pixel the depth test rejected still has a history — and where they do,
+    /// the disagreement is usually the bug.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public PickHit? Picked { get; private set; }
+
+    /// <summary>Raised when the picked mesh changes, including when a click hits nothing.</summary>
+    public event EventHandler? PickedChanged;
+
     /// <summary>The selected pixel as a 0..1 fraction of the render target, as the status bar shows it.</summary>
     public PointF? SelectedPixelNormalized =>
         _selectedPixel is { } pixel && _bufferSize.Width > 0 && _bufferSize.Height > 0
@@ -339,6 +355,10 @@ public partial class Panel3D : UserControl
             pixel = null;
         }
 
+        // Before the early-out below: the same pixel can be over something different once
+        // the camera has moved, so a second click on it is still a question worth asking.
+        UpdatePick(pixel);
+
         if (pixel == _selectedPixel)
         {
             return;
@@ -349,6 +369,52 @@ public partial class Panel3D : UserControl
         ApplyProbe();
 
         SelectedPixelChanged?.Invoke(this, EventArgs.Empty);
+        Invalidate();
+    }
+
+    /// <summary>
+    /// Casts a ray through the selected pixel and records what it hits, outlining that mesh
+    /// in the viewport. Under supersampling a screen pixel is a block of samples, so the ray
+    /// goes through the one nearest its centre — the same sample the probe follows.
+    /// </summary>
+    private void UpdatePick(Point? pixel)
+    {
+        var hit = pixel is { } p && Scene is { Surface.Width: > 0, World: not null }
+            ? ScenePicker.Pick(
+                Scene,
+                p.X * _superSampling + _superSampling / 2,
+                p.Y * _superSampling + _superSampling / 2)
+            : null;
+
+        var changed = hit?.MeshIndex != Picked?.MeshIndex || hit?.TriangleIndex != Picked?.TriangleIndex;
+
+        Picked = hit;
+        RendererSettings.HighlightedMesh = hit?.MeshIndex ?? -1;
+
+        if (changed)
+        {
+            PickedChanged?.Invoke(this, EventArgs.Empty);
+            Invalidate();
+        }
+    }
+
+    /// <summary>
+    /// Forgets what was picked. A selection is a statement about the meshes in front of you,
+    /// so it cannot outlive them: the index it holds addresses the world's mesh list by
+    /// position, and a world swapped in under it would leave the highlight on whatever
+    /// happens to sit at that position now.
+    /// </summary>
+    public void ClearPick()
+    {
+        RendererSettings.HighlightedMesh = -1;
+
+        if (Picked is null)
+        {
+            return;
+        }
+
+        Picked = null;
+        PickedChanged?.Invoke(this, EventArgs.Empty);
         Invalidate();
     }
 

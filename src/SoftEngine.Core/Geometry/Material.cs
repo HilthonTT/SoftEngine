@@ -39,6 +39,55 @@ public sealed class Material
     /// </summary>
     public float NormalStrength { get; set; } = 1f;
 
+    /// <summary>
+    /// How metallic the surface is: 0 is a dielectric (plastic, stone, skin), 1 is bare
+    /// metal. Read by the physically-based path only.
+    ///
+    /// The parameter is a switch rather than a dial, because that is what it describes. A
+    /// dielectric reflects a few percent of the light at every angle and scatters the rest
+    /// as diffuse colour; a metal has no diffuse term at all and tints its reflection with
+    /// the albedo instead. Values in between exist only to let a texture cross from one to
+    /// the other without a seam.
+    /// </summary>
+    public float Metallic { get; set; }
+
+    /// <summary>
+    /// How rough the surface is, in [0, 1]: 0 is a mirror, 1 is fully diffuse. Read by the
+    /// physically-based path in place of <see cref="Shininess"/>, which measures the same
+    /// thing on a scale with no physical meaning and no top.
+    /// </summary>
+    public float Roughness { get; set; } = 0.5f;
+
+    /// <summary>
+    /// Per-texel <see cref="Metallic"/>, read from the <em>blue</em> channel, and per-texel
+    /// <see cref="Roughness"/>, read from the <em>green</em> one.
+    ///
+    /// Those are the channels glTF's packed metallic-roughness texture puts them in, so one
+    /// packed map can be assigned to both properties and each will find its own channel. A
+    /// greyscale map — which is what OBJ's <c>map_Pm</c> and <c>map_Pr</c> are — works
+    /// either way round, since all three of its channels carry the same value.
+    /// </summary>
+    public Texture? MetallicMap { get; set; }
+
+    /// <inheritdoc cref="MetallicMap"/>
+    public Texture? RoughnessMap { get; set; }
+
+    /// <summary>
+    /// Light the surface emits on its own, added after everything else. Black (the default)
+    /// emits nothing.
+    ///
+    /// It is not a light: it brightens the surface it is on and nothing around it. What it
+    /// is for is the part of a model that should read as *being* bright — a screen, a
+    /// filament, a hot vent — which on an HDR target can sit above white and bloom.
+    /// </summary>
+    public ColorRGB Emissive { get; set; } = ColorRGB.Black;
+
+    /// <summary>Per-texel multiplier for <see cref="Emissive"/>, sampled as sRGB colour.</summary>
+    public Texture? EmissiveMap { get; set; }
+
+    /// <summary>Scales <see cref="Emissive"/>; above 1 needs an HDR target to mean anything.</summary>
+    public float EmissiveStrength { get; set; } = 1f;
+
     /// <summary>Whether this material needs per-pixel tangents — that is, whether it has a normal map.</summary>
     public bool NeedsTangents => NormalMap is not null;
 }

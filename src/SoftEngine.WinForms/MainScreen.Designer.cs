@@ -61,6 +61,9 @@ public sealed partial class MainScreen
         rdbPhongShading = new RadioButton();
         rdbTexturedShading = new RadioButton();
         rdbMaterialShading = new RadioButton();
+        rdbPbrShading = new RadioButton();
+        lblBufferHeader = new Label();
+        cboBufferView = new ComboBox();
         lblPostHeader = new Label();
         flpPost = new FlowLayoutPanel();
         chkSsao = new CheckBox();
@@ -166,6 +169,8 @@ public sealed partial class MainScreen
         tlpSidebar.Controls.Add(flpShading, 0, 7);
         tlpSidebar.Controls.Add(lblPostHeader, 0, 8);
         tlpSidebar.Controls.Add(flpPost, 0, 9);
+        tlpSidebar.Controls.Add(lblBufferHeader, 0, 10);
+        tlpSidebar.Controls.Add(cboBufferView, 0, 11);
         // Sized to its content and docked to the top of a scrolling panel. Filling the panel
         // instead would let the table squeeze its own rows to fit whatever height it was
         // given, so the content would never overflow and the scrollbar would never appear.
@@ -174,7 +179,9 @@ public sealed partial class MainScreen
         tlpSidebar.Dock = DockStyle.Top;
         tlpSidebar.Name = "tlpSidebar";
         tlpSidebar.Padding = new Padding(16, 12, 16, 12);
-        tlpSidebar.RowCount = 10;
+        tlpSidebar.RowCount = 12;
+        tlpSidebar.RowStyles.Add(new RowStyle());
+        tlpSidebar.RowStyles.Add(new RowStyle());
         tlpSidebar.RowStyles.Add(new RowStyle());
         tlpSidebar.RowStyles.Add(new RowStyle());
         tlpSidebar.RowStyles.Add(new RowStyle());
@@ -386,6 +393,7 @@ public sealed partial class MainScreen
         flpShading.Controls.Add(rdbPhongShading);
         flpShading.Controls.Add(rdbTexturedShading);
         flpShading.Controls.Add(rdbMaterialShading);
+        flpShading.Controls.Add(rdbPbrShading);
         flpShading.FlowDirection = FlowDirection.TopDown;
         flpShading.Margin = new Padding(0);
         flpShading.Name = "flpShading";
@@ -454,6 +462,34 @@ public sealed partial class MainScreen
         rdbMaterialShading.Text = "Material";
         rdbMaterialShading.UseVisualStyleBackColor = true;
         toolTip1.SetToolTip(rdbMaterialShading, "Per-pixel albedo, normal and specular maps");
+        //
+        // rdbPbrShading
+        //
+        rdbPbrShading.AutoSize = true;
+        rdbPbrShading.Margin = new Padding(2, 2, 0, 2);
+        rdbPbrShading.Name = "rdbPbrShading";
+        rdbPbrShading.TabStop = true;
+        rdbPbrShading.Text = "Physically based";
+        rdbPbrShading.UseVisualStyleBackColor = true;
+        toolTip1.SetToolTip(rdbPbrShading, "Metallic-roughness materials lit by the scene and by the environment");
+        //
+        // lblBufferHeader
+        //
+        lblBufferHeader.AutoSize = true;
+        lblBufferHeader.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
+        lblBufferHeader.Margin = new Padding(2, 10, 0, 6);
+        lblBufferHeader.Name = "lblBufferHeader";
+        lblBufferHeader.Text = "BUFFER VIEW";
+        //
+        // cboBufferView
+        //
+        cboBufferView.Dock = DockStyle.Fill;
+        cboBufferView.DropDownStyle = ComboBoxStyle.DropDownList;
+        cboBufferView.FlatStyle = FlatStyle.Flat;
+        cboBufferView.Margin = new Padding(0, 0, 0, 6);
+        cboBufferView.Name = "cboBufferView";
+        cboBufferView.TabIndex = 3;
+        toolTip1.SetToolTip(cboBufferView, "Present one of the frame's own buffers instead of the shaded image");
         //
         // lblPostHeader
         //
@@ -922,6 +958,9 @@ public sealed partial class MainScreen
     private RadioButton rdbPhongShading;
     private RadioButton rdbTexturedShading;
     private RadioButton rdbMaterialShading;
+    private RadioButton rdbPbrShading;
+    private Label lblBufferHeader;
+    private ComboBox cboBufferView;
     private Label lblPostHeader;
     private FlowLayoutPanel flpPost;
     private CheckBox chkBloom;

@@ -3,6 +3,7 @@ using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Gizmos;
 using SoftEngine.Core.Pipeline.Clipping;
+using SoftEngine.Core.Pipeline.Debugging;
 using SoftEngine.Core.Pipeline.PostProcess;
 using SoftEngine.Core.Pipeline.Shadows;
 using SoftEngine.Core.Rasterization;
@@ -55,6 +56,10 @@ public sealed class Renderer : IRenderer
     // it owns the depth buffer and the projected-vertex scratch.
     private ShadowMapRenderer? _shadowRenderer;
 
+    // Created on the first frame that presents a buffer instead of the image; owns the
+    // depth read-back it works from.
+    private BufferVisualizer? _visualizer;
+
     public RendererSettings Settings { get; set; } = new();
 
     /// <summary>
@@ -97,8 +102,9 @@ public sealed class Renderer : IRenderer
         }
         diagnostics.PixelHistory = history;
 
-        // Has to be set before the clear, which allocates and clears the float buffer.
+        // Both have to be set before the clear, which allocates and resets what they own.
         surface.SetHighDynamicRange(scene.HighDynamicRange);
+        surface.SetOverdrawCounting(rendererSettings.DebugView == DebugView.Overdraw);
 
         // Match the depth buffer to the projection's clip planes for this frame. A parallel
         // projection carries its depth in z rather than w, so it needs the other mapping.
@@ -406,7 +412,22 @@ public sealed class Renderer : IRenderer
             GizmoRenderer.DrawSkeleton(surface, viewMatrix * projectionMatrix, skeletonRoot, rendererSettings.SkeletonTickSize);
         }
 
+        // The picked mesh, outlined over everything else. Drawn before the post-process so
+        // it lives in the image rather than on top of it — the same choice the wireframe
+        // overlay makes, and the reason a highlighted edge blooms and tone-maps with the
+        // frame instead of floating above it.
+        if (rendererSettings.HighlightedMesh >= 0)
+        {
+            DrawHighlight(surface, worldBuffer, events, rendererSettings.HighlightedMesh, drawEvents, meshIdBase);
+        }
+
         ResolveFrame(surface, projection, events);
+
+        // Last of all: swap the finished image for one of the buffers that produced it.
+        if (rendererSettings.DebugView != DebugView.Off)
+        {
+            RenderDebugView(surface, scene, projection, events, rendererSettings.DebugView);
+        }
 
         Stats.StopTime();
 
@@ -417,6 +438,93 @@ public sealed class Renderer : IRenderer
             history.FinalColor = surface.GetColor(history.X, history.Y);
             history.FinalDepth = surface.GetDepth(history.X, history.Y);
             surface.EndProbe();
+        }
+    }
+
+    /// <summary>
+    /// The colour a picked mesh is outlined in. Amber rather than the wireframe overlay's
+    /// magenta, so the two can be on at once and still be told apart.
+    /// </summary>
+    private static readonly ColorRGB HighlightColor = new(255, 190, 60);
+
+    /// <summary>
+    /// Outlines one mesh's triangles over the finished image. It walks the frame's own draw
+    /// lists rather than the mesh, so what is outlined is exactly what was drawn — a mesh
+    /// culled out of the frame highlights nothing, which is the honest answer.
+    /// </summary>
+    private void DrawHighlight(
+        FrameBuffer surface,
+        WorldBuffer worldBuffer,
+        GraphicsEventLog events,
+        int meshIndex,
+        int[]? drawEvents,
+        int meshIdBase)
+    {
+        var highlightEvent = events.Add(GraphicsEventKind.WireFrameOverlayDraw, meshIdBase + meshIndex);
+
+        DrawHighlightList(surface, worldBuffer, _visible, meshIndex, highlightEvent, drawEvents, meshIdBase);
+        DrawHighlightList(surface, worldBuffer, _transparent, meshIndex, highlightEvent, drawEvents, meshIdBase);
+    }
+
+    private void DrawHighlightList(
+        FrameBuffer surface,
+        WorldBuffer worldBuffer,
+        List<(int MeshIndex, int TriangleIndex)> list,
+        int meshIndex,
+        int highlightEvent,
+        int[]? drawEvents,
+        int meshIdBase)
+    {
+        foreach (var (mesh, triangleIndex) in list)
+        {
+            if (mesh != meshIndex)
+            {
+                continue;
+            }
+
+            var vbx = worldBuffer.VertexBuffers[mesh];
+
+            if (drawEvents is not null)
+            {
+                FrameBuffer.SetProbeContext(
+                    highlightEvent,
+                    PixelWriteSource.WireFrame,
+                    meshIdBase + mesh,
+                    vbx.SourceTriangleIndex(triangleIndex),
+                    vbx);
+            }
+
+            _internalWireFramePainter.DrawTriangle(surface, HighlightColor, vbx, triangleIndex, ScreenTile.Full);
+        }
+    }
+
+    /// <summary>
+    /// Presents one of the frame's buffers in place of the shaded image. A probed pixel gets
+    /// one more history entry for it, as the post-process pass does: it replaces the whole
+    /// image at once, so there is no per-triangle write to attribute.
+    /// </summary>
+    private void RenderDebugView(
+        FrameBuffer surface,
+        Scene scene,
+        IProjection projection,
+        GraphicsEventLog events,
+        DebugView view)
+    {
+        _visualizer ??= new BufferVisualizer();
+
+        var before = surface.IsProbing ? surface.GetProbedColor() : 0;
+
+        // The event is logged after the fact, carrying whether the buffer could actually be
+        // shown: a view the frame has nothing for leaves the image alone, and a log claiming
+        // it redrew the frame would send you looking for a pass that never ran.
+        var drawn = _visualizer.Render(surface, projection, scene.ShadowMap, view);
+
+        var eventIndex = events.Add(
+            GraphicsEventKind.DebugViewRender, SceneObjectIds.RenderTarget, (int)view, drawn ? 1f : 0f);
+
+        if (drawn && surface.IsProbing)
+        {
+            surface.RecordProbeOverwrite(eventIndex, PixelWriteSource.DebugView, SceneObjectIds.RenderTarget, before);
         }
     }
 

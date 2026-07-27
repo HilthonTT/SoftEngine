@@ -11,4 +11,5 @@ public enum PixelWriteSource
     Axes,
     Skeleton,
     PostProcess,
+    DebugView,
 }

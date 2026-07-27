@@ -1,4 +1,6 @@
-﻿namespace SoftEngine.Core.Pipeline;
+﻿using SoftEngine.Core.Pipeline.Debugging;
+
+namespace SoftEngine.Core.Pipeline;
 
 public sealed class RendererSettings
 {
@@ -30,4 +32,17 @@ public sealed class RendererSettings
     /// orders of magnitude apart, so the front-end sizes this to whatever it has loaded.
     /// </summary>
     public float SkeletonTickSize { get; set; } = 1f;
+
+    /// <summary>
+    /// Which of the frame's own buffers to present instead of the shaded image. The pass
+    /// runs last, over the finished frame, so everything else in the pipeline is unaffected
+    /// by it — and the buffer being shown is the one the frame really used.
+    /// </summary>
+    public DebugView DebugView { get; set; } = DebugView.Off;
+
+    /// <summary>
+    /// Index of a mesh to outline over the finished image, or -1 for none. Set by picking:
+    /// a click has to answer "which of these is it" visibly, not only in a table.
+    /// </summary>
+    public int HighlightedMesh { get; set; } = -1;
 }
