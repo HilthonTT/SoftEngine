@@ -17,13 +17,17 @@ internal sealed class ModelPickerDialog : Form
         StartPosition = FormStartPosition.CenterParent;
 
         // Sizable rather than fixed: the list is the point of the dialog, and a longer one
-        // is worth more room. The minimum keeps the button row from ever being squeezed.
+        // is worth more room.
         FormBorderStyle = FormBorderStyle.Sizable;
         SizeGripStyle = SizeGripStyle.Show;
         MinimizeBox = false;
         MaximizeBox = false;
-        ClientSize = new Size(480, 560);
-        MinimumSize = new Size(440, 380);
+        ClientSize = new Size(520, 560);
+
+        // Wide enough for the whole button row — the browse button's label is the longest
+        // thing in the dialog, and the row is the part that has no way to degrade: the list
+        // above it can always give up a few entries, while a clipped button is unusable.
+        MinimumSize = new Size(540, 420);
         BackColor = Theme.Background;
         ForeColor = Theme.TextPrimary;
         Font = new Font("Segoe UI", 9.75f);
@@ -69,44 +73,51 @@ internal sealed class ModelPickerDialog : Form
         var browse = MakeButton("Open file from my PC…");
         browse.Click += (s, e) => Browse();
 
-        // Browse sits on the left and the two verbs on the right, each in its own flow
-        // panel. Sharing one row is what used to wrap the widest button onto a second line
-        // and then clip it — this way the row's width never decides what stays visible.
+        // Browse on the left, the two verbs on the right, in one row of three columns: the
+        // two button groups size to their own content and an empty column between them takes
+        // whatever is left over.
+        //
+        // Docking them to opposite edges of a plain panel is what this replaces, and the
+        // reason is that docking resolves one edge at a time. Whichever of the two is laid
+        // out first takes the width it wants, and the other gets the remainder — so on a
+        // narrow dialog the longest label ends up underneath its neighbour with its right
+        // half cut off. Columns cannot do that: neither group can be given less than it
+        // asked for, and the slack is all in the column that has nothing in it.
         var confirm = new FlowLayoutPanel
         {
-            Dock = DockStyle.Right,
-            FlowDirection = FlowDirection.RightToLeft,
-            WrapContents = false,
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            BackColor = Theme.Background,
-        };
-
-        confirm.Controls.Add(load);
-        confirm.Controls.Add(cancel);
-
-        var alternatives = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Left,
+            Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Margin = Padding.Empty,
             BackColor = Theme.Background,
         };
 
-        alternatives.Controls.Add(browse);
+        confirm.Controls.Add(cancel);
+        confirm.Controls.Add(load);
 
-        var buttons = new Panel
+        var buttons = new TableLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 62,
-            Padding = new Padding(14, 12, 14, 14),
+            ColumnCount = 3,
+            RowCount = 1,
+
+            // Sized by what it holds rather than to a number that has to be kept in step
+            // with the buttons' own height — the row cannot end up shorter than they are.
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Padding = new Padding(14, 14, 14, 16),
             BackColor = Theme.Background,
         };
 
-        buttons.Controls.Add(confirm);
-        buttons.Controls.Add(alternatives);
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        buttons.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        buttons.Controls.Add(browse, 0, 0);
+        buttons.Controls.Add(confirm, 2, 0);
 
         var content = new Panel { Dock = DockStyle.Fill, Padding = new Padding(14, 10, 14, 6) };
         content.Controls.Add(_list);
@@ -128,12 +139,12 @@ internal sealed class ModelPickerDialog : Form
         Text = text,
         AutoSize = true,
         AutoSizeMode = AutoSizeMode.GrowAndShrink,
-        MinimumSize = new Size(100, 32),
-        Padding = new Padding(14, 4, 14, 4),
+        MinimumSize = new Size(104, 36),
+        Padding = new Padding(16, 6, 16, 6),
         FlatStyle = FlatStyle.Flat,
         BackColor = accent ? Theme.Accent : Theme.Surface,
         ForeColor = accent ? Color.White : Theme.TextPrimary,
-        Margin = new Padding(6, 0, 0, 0),
+        Margin = new Padding(8, 0, 0, 0),
         UseVisualStyleBackColor = false,
     };
 

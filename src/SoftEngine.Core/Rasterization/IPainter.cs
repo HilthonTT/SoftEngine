@@ -35,6 +35,29 @@ public interface IPainter
     bool SupportsTiles => true;
 
     /// <summary>
+    /// How this painter samples a texture. Painters that sample none say bilinear and mean
+    /// nothing by it.
+    ///
+    /// <para>
+    /// It is on the interface, rather than only on the painters that have a sampler, because
+    /// a renderer that is not this one has to be able to ask. The GPU backend renders the
+    /// mode the front-end selected, and "the mode" includes whether filtering is on — a scene
+    /// the viewer is showing unfiltered must not turn smooth because the frame moved to the
+    /// graphics card.
+    /// </para>
+    /// </summary>
+    Geometry.TextureFiltering Filtering => Geometry.TextureFiltering.Bilinear;
+
+    /// <summary>Whether this painter samples from a mip chain. See <see cref="Filtering"/>.</summary>
+    bool UseMipMaps => true;
+
+    /// <summary>
+    /// The flat ambient level this painter falls back on when the scene has no environment to
+    /// take one from. Unlit painters have no ambient and report zero.
+    /// </summary>
+    float AmbientLevel => 0f;
+
+    /// <summary>
     /// Draws one triangle, restricted to the pixels owned by <paramref name="tile"/>.
     /// The renderer calls this concurrently with disjoint tiles; implementations must
     /// not mutate shared state here.

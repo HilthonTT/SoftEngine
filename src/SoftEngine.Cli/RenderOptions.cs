@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Numerics;
+using SoftEngine.Gpu;
 
 namespace SoftEngine.Cli;
 
@@ -62,6 +63,12 @@ internal sealed class RenderOptions
     public float Time { get; set; }
 
     public bool Stats { get; set; }
+
+    /// <summary>Which rasterizer draws the frame. Automatic takes a GPU when there is one.</summary>
+    public RenderBackend Backend { get; set; } = RenderBackend.Automatic;
+
+    /// <summary>Print what graphics adapter is available and exit, rendering nothing.</summary>
+    public bool ShowGpuInfo { get; set; }
 
     public bool ShowHelp { get; set; }
 
@@ -168,6 +175,39 @@ internal sealed class RenderOptions
                     options.Stats = true;
                     break;
 
+                case "--backend":
+                    {
+                        var name = Next(args, ref i, options, arg);
+
+                        if (name is null)
+                        {
+                            break;
+                        }
+
+                        if (RenderBackends.TryParse(name, out var backend))
+                        {
+                            options.Backend = backend;
+                        }
+                        else
+                        {
+                            options.Errors.Add($"unknown backend '{name}' — expected auto, cpu or gpu");
+                        }
+                    }
+
+                    break;
+
+                case "--gpu":
+                    options.Backend = RenderBackend.Gpu;
+                    break;
+
+                case "--cpu":
+                    options.Backend = RenderBackend.Cpu;
+                    break;
+
+                case "--gpu-info":
+                    options.ShowGpuInfo = true;
+                    break;
+
                 case "--help" or "-?":
                     options.ShowHelp = true;
                     break;
@@ -197,7 +237,7 @@ internal sealed class RenderOptions
 
     private static void Validate(RenderOptions options)
     {
-        if (options.ShowHelp)
+        if (options.ShowHelp || options.ShowGpuInfo)
         {
             return;
         }
@@ -357,6 +397,17 @@ internal sealed class RenderOptions
               -h, --height <px>     render height (default 1080)
                   --ss <n>          supersample n× and average down, 1-4 (default 1)
                   --stats           print triangle, pixel and timing counts
+
+            Where it renders
+                  --backend <name>  auto, cpu or gpu (default auto)
+                  --gpu             shorthand for --backend gpu
+                  --cpu             shorthand for --backend cpu
+                  --gpu-info        print the graphics adapter, if any, and exit
+
+              auto uses a graphics adapter when one is there and the software rasterizer when
+              it is not. gpu says so explicitly and falls back with a reason — an OpenGL served
+              by a CPU implementation (llvmpipe, GDI Generic, SwiftShader) is reported as no
+              adapter, since rendering through one is slower than rendering without it.
 
             Shading
               -p, --painter <name>  none, classic, flat, gouraud, phong, textured, material, pbr

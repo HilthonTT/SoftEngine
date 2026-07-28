@@ -11,6 +11,7 @@ using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.Core.Scenes.Serialization;
+using SoftEngine.Gpu;
 using System.Diagnostics;
 using System.Numerics;
 
@@ -20,6 +21,11 @@ if (options.ShowHelp || args.Length == 0)
 {
     RenderOptions.PrintUsage();
     return options.ShowHelp ? 0 : 1;
+}
+
+if (options.ShowGpuInfo)
+{
+    return ReportGpu();
 }
 
 if (options.Errors.Count > 0)
@@ -44,6 +50,26 @@ catch (Exception exception) when (
     // directory that cannot be written. Anything else is a bug and deserves its stack trace.
     Console.Error.WriteLine($"softengine: {exception.Message}");
     return 1;
+}
+
+static int ReportGpu()
+{
+    if (GpuAvailability.Probe(out var adapter, out var error))
+    {
+        Console.WriteLine($"  adapter   {adapter!.Renderer}");
+        Console.WriteLine($"  vendor    {adapter.Vendor}");
+        Console.WriteLine($"  kind      {adapter.Kind}");
+        Console.WriteLine($"  opengl    {adapter.Version}");
+        Console.WriteLine($"  glsl      {adapter.ShadingLanguage}");
+
+        return 0;
+    }
+
+    Console.WriteLine("  no graphics adapter is available for rendering.");
+    Console.WriteLine($"  {error}");
+
+    // Not an error: "there is no GPU here" is a true answer to the question that was asked.
+    return 0;
 }
 
 static int Render(RenderOptions options)
@@ -84,7 +110,16 @@ static int Render(RenderOptions options)
 
     var factor = SuperSampler.ClampFactor(options.SuperSampling);
 
-    var renderer = new Renderer();
+    var backend = RenderBackends.Create(options.Backend);
+    var renderer = backend.Renderer;
+
+    // Said before the render rather than after it, so a fallback explains the frame time that
+    // is about to follow instead of arriving too late to.
+    if (backend.Fallback is { } fallback)
+    {
+        Console.Error.WriteLine($"softengine: {fallback}");
+        Console.Error.WriteLine("softengine: rendering on the CPU instead.");
+    }
 
     // The event log allocates nothing but does real work per mesh, and none of it can reach a
     // pixel. A batch render should be a recording of the renderer, not of its debugger.
@@ -217,6 +252,10 @@ static int Render(RenderOptions options)
     renderer.Render(scene, painter);
     var renderTime = Stopwatch.GetElapsedTime(renderStart);
 
+    // The GPU renderer owns a context, a window and a pile of buffers; the CPU one owns
+    // nothing and does not implement IDisposable.
+    (renderer as IDisposable)?.Dispose();
+
     int[] pixels;
 
     if (factor == 1)
@@ -256,6 +295,7 @@ static int Render(RenderOptions options)
     {
         var stats = renderer.Stats;
 
+        Console.WriteLine($"  drawn by {backend.Describe()}");
         Console.WriteLine($"  load    {loadTime.TotalMilliseconds:0.#} ms");
         Console.WriteLine($"  render  {renderTime.TotalMilliseconds:0.#} ms");
         Console.WriteLine($"  meshes  {loaded.World.Meshes.Count} ({stats.OccludedMeshCount} hidden behind {stats.OccluderMeshCount} occluder(s))");

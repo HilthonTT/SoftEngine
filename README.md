@@ -2,6 +2,11 @@
 
 A **software 3D rasterizer** written in C#. The entire pipeline — model transforms, projection, culling, clipping, scanline rasterization, z-buffering and shading — runs on the CPU with no GPU or graphics-API dependency. A WinForms front-end renders live into a bitmap so you can orbit models, switch shading modes, and watch per-frame render statistics.
 
+It can also be told to fill the frame on a **graphics adapter** instead, through OpenGL, and draw
+the same scene the same way — see [Rendering on the GPU](#rendering-on-the-gpu). The software path
+remains the point of the project and the default everywhere; the GPU one is there to be switched to,
+and to be compared against.
+
 ![Skull model (31k triangles) rendered with Gouraud shading](docs/screenshots/skull.png)
 
 | ![Elephant model (26k triangles, 5 meshes) with Gouraud shading](docs/screenshots/elephant.png) | ![Parrot model (7k triangles) with Gouraud shading](docs/screenshots/parrot.png) |
@@ -890,6 +895,120 @@ Recording is driven from `RenderDiagnostics` on the renderer ([`Diagnostics/`](s
 
 Both can be switched off from the **View** menu, along with each panel.
 
+## Rendering on the GPU
+
+The frame can be filled by a graphics adapter rather than by the scanline rasterizer. It is the
+same scene, the same `IPainter` choosing the shading model, the same settings, and a finished frame
+in the same `FrameBuffer` — what changes is where the triangles are rasterized, and therefore how
+the cost of a frame scales.
+
+```bash
+# what adapter is here, if any
+dotnet run -c Release --project src/SoftEngine.Cli -- --gpu-info
+
+# render on it
+dotnet run -c Release --project src/SoftEngine.Cli -- model.gltf --gpu -o frame.png --stats
+```
+
+In the viewer it is **View → Rendered by → CPU / GPU**, and the status bar names the device the
+frame is being drawn by.
+
+### "GPU" means a graphics adapter
+
+An OpenGL context is perfectly happy to be served by a CPU implementation — Mesa's `llvmpipe`,
+Windows' `GDI Generic` fallback, SwiftShader — and one of those would run this engine's own job on
+the CPU anyway, only through a driver, and slower. So the backend reads the driver's account of
+itself and refuses to call that hardware: an explicit `--gpu` falls back to the software renderer
+with the reason, and `--backend auto` quietly does the right thing. Discrete and integrated are
+both accepted and both reported, because integrated is still a graphics processor and still several
+times faster here than the software path. A device the classifier does not recognise is treated as
+hardware, which is the safe direction — new graphics cards appear constantly and new CPU
+rasterizers essentially never.
+
+### What runs where
+
+Everything that scales with triangles times pixels runs on the adapter: the shadow cascades, the
+opaque fill, the sky, the transparent blend, the wireframe overlay. Everything that runs once over
+the finished image runs where it already did — the post-process stack, the debug views, the gizmos
+and the grid — over a frame read back into the engine's own buffers.
+
+That read-back is the deliberate trade. Every one of those passes already exists, already works, and
+reads a `FrameBuffer`; reproducing them in GLSL would be a second implementation of each, free to
+disagree with the first. Handing the pixels back instead costs one transfer of the finished image
+and buys all of them unchanged. Depth comes back only when something is going to read it.
+
+It is also the ceiling on what the backend is worth. The transfer is linear in pixels, so the
+advantage is largest where the fill is dense relative to the frame and narrows as the viewport
+grows — and on a **discrete** card, where the read-back crosses PCIe rather than staying in shared
+memory, it narrows faster. Supersampling multiplies the transferred area by the square of the
+factor, which is why 2× supersampling costs a GPU frame far more than four times the fill.
+
+### Agreement with the software renderer
+
+The two backends are held to the same picture, not merely to plausible ones. Both are built from the
+same matrices, the shading maths in [`common.glsl`](src/SoftEngine.Gpu/Shaders/common.glsl) is a
+port of the CPU shaders function for function, and where the cascades go is
+[`ShadowCascadePlanner`](src/SoftEngine.Core/Pipeline/Shadows/ShadowCascadePlanner.cs) — one object,
+shared, so the two cannot drift.
+
+A sphere over a ground plane, rendered at 480×360 by both backends across the features the backend
+touches. Mean absolute difference per channel, out of 255:
+
+| | mean | >8/255 | | | mean | >8/255 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Phong | 0.59 | 0.3% | | Orthographic | 0.13 | 0.2% |
+| Gouraud | 0.58 | 0.3% | | No gamma correction | 0.64 | 0.3% |
+| Flat | 0.69 | 0.4% | | Fog, linear / exponential | 0.63 / 0.57 | 0.3% |
+| Classic | 0.50 | 0.3% | | Four lights, mixed types | 0.65 | 0.3% |
+| Material | 0.59 | 0.3% | | Spot / ranged point | 0.75 / 0.72 | 0.3% |
+| Physically based | 1.02 | 0.3% | | Transparency | 0.60 | 0.4% |
+| Shadows, soft / hard | 0.70 | 0.7% / 0.4% | | Sky off | 0.38 | 0.3% |
+| Shadows, 3 cascades | 0.70 | 0.6% | | No back-face culling | 0.59 | 0.3% |
+| Depth view | 0.79 | 0.1% | | SSAO | 0.60 | 0.3% |
+| Normals view | 0.64 | 0.3% | | Tone map / FXAA / vignette | 0.59 | 0.3% |
+| Overdraw view | 0.29 | 0.6% | | Shadow-map view | 0.00 | 0.0% |
+
+Most of what is left is silhouette coverage — the two rasterizers disagree about which pixels a
+triangle's edge owns, which shows up as a one-pixel outline and nothing else.
+
+Two things deviate further, both knowingly. The **physically-based** path uses Karis' analytic fit
+for the environment BRDF rather than the CPU's tabulated integral, and takes its reflections from
+the sky's mip chain rather than a per-roughness convolution. The **wireframe overlay and the picked
+mesh's outline** differ by about 5 and 4 — the software renderer draws them as Bresenham lines whose
+depth is interpolated along the line, which disagrees slightly with the depth its own triangle fill
+wrote at the same pixel, so parts of every line lose the depth test and the outline comes out
+dotted. OpenGL's line-mode polygons inherit the polygon's own depth exactly and stay continuous. The
+GPU's outline is the more complete of the two.
+
+### What it does not do
+
+The graphics debugger's **per-pixel history** is a log of every write the software rasterizer
+attempted, including the ones the depth test rejected. A GPU discards those inside the hardware and
+has nowhere to write them down, so a probed pixel reports nothing under the GPU backend. The event
+list, the object table and the frame statistics are recorded as usual.
+
+The **occlusion pre-pass** is also absent, and deliberately: it exists to spare the software
+rasterizer the fill of geometry it cannot see, and the hardware's own early-depth rejection does
+that job without a pass over the frame first. Frustum culling stays, because it removes draw calls.
+The occlusion buffer view therefore reports having nothing to show, rather than presenting a
+pyramid no pass built.
+
+Two views cost extra and so are computed only while they are open. **Overdraw** needs a second pass
+over the frame's geometry, additively blending one per fragment, because a GPU rejects a fragment
+inside the hardware and leaves no counter to read. The **shadow map** lives in a texture that
+shading samples directly, and is copied back only when the view that displays it is showing.
+
+There is a ceiling of **16 lights** in the fragment shader, where the software path has none.
+
+### Presenting a frame at 2× supersampling is the expensive case
+
+Supersampling renders at a multiple of the display resolution, so the read-back area — and the
+CPU-side resolve that averages it down — both grow with the *square* of the factor. Rendering four
+times the pixels is nothing to a graphics card; transferring four times the pixels back across
+PCIe and averaging them on the CPU is most of the frame. Downsampling on the adapter and reading
+back only the display-resolution image would fix it, and is not done: the viewport sizes the render
+target itself and resolves afterwards, so the renderer is never told what the factor is.
+
 ## Project layout
 
 ```
@@ -916,6 +1035,8 @@ src/
 │   │   └── Serialization/  # the JSON scene document, and moving it on and off a live Scene
 │   └── Shading/            # linear colour, light sets, ambient cube, sRGB conversion, shadow map,
 │                           #   GGX, BRDF table, prefiltered environment
+├── SoftEngine.Gpu/         # OpenGL backend via Silk.NET: same IRenderer, fill on the adapter
+│   └── Shaders/            # GLSL — the CPU shaders ported, plus the depth, sky and overlay passes
 ├── SoftEngine.Cli/         # headless renderer: model or scene in, PNG out (net10.0 console)
 └── SoftEngine.WinForms/    # interactive front-end (net10.0-windows)
     ├── Debugging/          # event list, object table and pixel history panels
@@ -938,6 +1059,9 @@ held but a line being paid for repeatedly.
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - Windows (the interactive app uses WinForms; `SoftEngine.Core` itself is platform-neutral).
+- Nothing else to render on the CPU. The GPU backend wants an OpenGL 3.3 driver, and says so
+  and falls back when there isn't one — `SoftEngine.Core` still has no graphics-API dependency,
+  and neither does anything that only references it.
 
 ## Build & run
 
@@ -950,6 +1074,9 @@ dotnet run --project src/SoftEngine.WinForms
 
 # render a model to a PNG with no window
 dotnet run -c Release --project src/SoftEngine.Cli -- model.gltf -o frame.png -w 1920 -h 1080
+
+# the same, filled by a graphics adapter (see "Rendering on the GPU")
+dotnet run -c Release --project src/SoftEngine.Cli -- model.gltf --gpu -o frame.png --stats
 
 # run the tests
 dotnet test tests/SoftEngine.Core.Tests
@@ -972,6 +1099,31 @@ One cost was accepted rather than avoided: shaders now return `LinearColor`, so 
 no HDR range to give converts a `ColorRGB` in and the framebuffer converts it back out —
 six lookup-table reads per pixel that the old packed-byte path did not pay. Both tables are
 small enough to stay in L1, and the alternative was two parallel shading paths.
+
+### Work the frame no longer does
+
+Three things the renderer used to pay for and now does not. Figures are the benchmark harness at
+1280×720 on twenty hardware threads, best of thirty frames.
+
+**The parallel fill was chosen by triangle count.** Below thirty-two triangles the frame was filled
+on the calling thread, on the grounds that scheduling would cost more than it saved. That is true
+while triangles are small and false in the way that matters: sixteen triangles that each cover the
+viewport are fourteen million pixels of fill, and sixteen is fewer than thirty-two, so they were
+being drawn on one core. The decision is now made on tile coverage — the unit the fill is actually
+divided into — after binning rather than before it. *`big-triangles` 22.3 ms → 3.4 ms.*
+
+**The clear was one thread, and cleared a buffer nothing was going to read.** At 1080p the depth
+buffer alone is 8 MB, and one thread sweeping it cannot saturate the memory controller; it is now
+split into bands of rows. On an HDR target the shaded pixels live in the float buffer and `Screen`
+holds nothing until the frame resolves — which rewrites every pixel of it — so clearing it first
+was a sweep of the whole image thrown away later in the same frame. *`overdraw` 7.8 ms → 6.0 ms,
+`shadows` 7.2 ms → 5.4 ms.*
+
+**Model-to-view was one thread.** Transforming a mesh's vertices is a pure map — every vertex reads
+its own slot and writes its own — so a dense model's, which is tens of thousands of them, is now
+split across the cores. The cull phase around it stays sequential: it appends to the frame's draw
+list, whose order the transparent sort and the pixel probe both depend on.
+*`dense-model` 9.2 ms → 7.9 ms.*
 
 ## Testing
 

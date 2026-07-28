@@ -11,6 +11,7 @@ using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
 using SoftEngine.WinForms.Cameras;
 using SoftEngine.WinForms.Interop;
+using SoftEngine.Gpu;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
@@ -76,7 +77,11 @@ public partial class Panel3D : UserControl
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Scene? Scene { get; set; }
 
-    public RenderStats Stats { get; }
+    /// <summary>
+    /// The counters for the frame just drawn. Read off the current renderer rather than
+    /// captured once, because switching backends replaces it.
+    /// </summary>
+    public RenderStats Stats => Renderer.Stats;
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public RendererSettings RendererSettings
@@ -97,6 +102,93 @@ public partial class Panel3D : UserControl
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public RenderDiagnostics Diagnostics => Renderer.Diagnostics;
+
+    #region Backend
+
+    private RenderBackend _backend = RenderBackend.Cpu;
+
+    /// <summary>
+    /// Which rasterizer draws the viewport: this engine's own, on the CPU, or a graphics
+    /// adapter through OpenGL.
+    ///
+    /// <para>
+    /// Setting it rebuilds the renderer, carrying the settings, the post-process stack and
+    /// the debugger's own switches across — switching backends is a statement about where the
+    /// triangles are filled, and nothing else about the viewport should move. Read it back
+    /// afterwards: asking for the GPU on a machine that has none leaves this on
+    /// <see cref="RenderBackend.Cpu"/>, and <see cref="BackendFallback"/> says why.
+    /// </para>
+    ///
+    /// <para>
+    /// It defaults to the CPU rather than to whatever is available. The viewer is a
+    /// demonstration of a software rasterizer, and starting it on the graphics card would
+    /// quietly show you something else.
+    /// </para>
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public RenderBackend Backend
+    {
+        get => _backend;
+        set => SetBackend(value);
+    }
+
+    /// <summary>The adapter the viewport is rendering on, or null on the CPU.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public GpuAdapter? Adapter { get; private set; }
+
+    /// <summary>Why the last GPU request fell back to the CPU, or null when nothing did.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public string? BackendFallback { get; private set; }
+
+    /// <summary>One line naming what the viewport is being drawn by.</summary>
+    public string BackendDescription => _backend == RenderBackend.Gpu && Adapter is { } adapter
+        ? $"GPU · {adapter.Describe()}"
+        : "CPU · software rasterizer";
+
+    /// <summary>Raised after <see cref="Backend"/> settles, whether or not it is what was asked for.</summary>
+    public event EventHandler? BackendChanged;
+
+    private void SetBackend(RenderBackend requested)
+    {
+        if (requested == _backend && BackendFallback is null)
+        {
+            return;
+        }
+
+        var result = RenderBackends.Create(requested);
+
+        var previous = Renderer;
+
+        // Carried across rather than left behind: these are the viewport's state, not the
+        // renderer's, and a mode switch that reset the wireframe overlay or forgot that the
+        // event log was being recorded would read as a bug.
+        result.Renderer.Settings = previous.Settings;
+        result.Renderer.PostProcess = previous.PostProcess;
+
+        result.Renderer.Diagnostics.CaptureEvents = previous.Diagnostics.CaptureEvents;
+        result.Renderer.Diagnostics.HistoryCapacity = previous.Diagnostics.HistoryCapacity;
+
+        if (previous.Diagnostics.IsProbing)
+        {
+            result.Renderer.Diagnostics.SetProbe(previous.Diagnostics.ProbeX, previous.Diagnostics.ProbeY);
+        }
+
+        Renderer = result.Renderer;
+        _backend = result.Backend;
+        Adapter = result.Adapter;
+        BackendFallback = result.Fallback;
+
+        // The old one may hold an OpenGL context, a window and a pile of buffers.
+        (previous as IDisposable)?.Dispose();
+
+        // The render target carries a reference to the old renderer's counters.
+        _renderTargetStale = true;
+
+        BackendChanged?.Invoke(this, EventArgs.Empty);
+        Invalidate();
+    }
+
+    #endregion
 
     /// <summary>Draws the per-frame counters over the top-left of the viewport.</summary>
     [DefaultValue(true)]
@@ -214,7 +306,6 @@ public partial class Panel3D : UserControl
         PostProcess = PostProcessStack.CreateDefault();
         Renderer.PostProcess = PostProcess;
 
-        Stats = Renderer.Stats;
         Painter = new GouraudPainter();
 
         ResizeRedraw = true;
@@ -962,6 +1053,9 @@ public partial class Panel3D : UserControl
         _animationTimer.Dispose();
         bmp?.Dispose();
         bmp = null;
+
+        // The GPU renderer owns an OpenGL context and a window; the software one owns nothing.
+        (Renderer as IDisposable)?.Dispose();
     }
 
     private void DrawSelectionMarker(Graphics g)

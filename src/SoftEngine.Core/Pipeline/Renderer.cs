@@ -21,9 +21,20 @@ namespace SoftEngine.Core.Pipeline;
 
 public sealed class Renderer : IRenderer
 {
-    // Below this many triangles, binning and scheduling cost more than the parallel fill
-    // saves, so the frame is filled on the calling thread.
-    private const int ParallelFillThreshold = 32;
+    /// <summary>
+    /// Below this many triangle-in-tile pairs, scheduling costs more than the parallel fill
+    /// saves and the frame is filled on the calling thread.
+    ///
+    /// <para>
+    /// Measured in tile coverage rather than in triangles, because that is the unit the fill
+    /// is divided into and the unit its cost is in. The threshold used to be a triangle
+    /// count, which is the same thing only while triangles are small: sixteen that each cover
+    /// the viewport are fourteen million pixels of fill and were being drawn on one thread,
+    /// because sixteen is fewer than thirty-two. A tile is 32×32, so this is about sixty-five
+    /// thousand pixels of coverage — roughly where the join stops dominating.
+    /// </para>
+    /// </summary>
+    private const int ParallelFillThreshold = 64;
 
     // How many triangles a tile draws before it re-reads its farthest depth. Rescanning
     // after every triangle would cost more than the rejections it buys.
@@ -260,13 +271,9 @@ public sealed class Renderer : IRenderer
             }
 
             var vertices = mesh.Vertices;
-
-            // Transform and store vertices to View
             var vertexCount = vertices.Length;
-            for (var idxVertex = 0; idxVertex < vertexCount; idxVertex++)
-            {
-                vbx.Vertices[idxVertex] = vbx.Vertices[idxVertex].SetView(Vector3.Transform(vertices[idxVertex], modelViewMatrix));
-            }
+
+            TransformToView(vbx, vertices, vertexCount, modelViewMatrix);
 
             events.Add(GraphicsEventKind.MeshTransformVertices, objectId, vertexCount);
 
@@ -364,16 +371,26 @@ public sealed class Renderer : IRenderer
 
         if (painter is not null && _visible.Count > 0)
         {
-            if (!parallelFill || _visible.Count < ParallelFillThreshold)
+            if (!parallelFill)
             {
                 PaintAll(painter, surface, meshes, worldBuffer, drawEvents, meshIdBase);
             }
             else
             {
+                // Binned before the decision rather than after it: how much fill there is to
+                // divide is exactly what the bins measure, and binning costs about what one
+                // pass over the same triangles would.
                 BinTriangles(_opaqueBins, surface, worldBuffer, _visible, _visible.Count);
 
-                Parallel.For(0, _opaqueBins.TileCount, t =>
-                    PaintOpaqueTile(painter, surface, meshes, worldBuffer, t, drawEvents, meshIdBase));
+                if (_opaqueBins.TotalItems < ParallelFillThreshold)
+                {
+                    PaintAll(painter, surface, meshes, worldBuffer, drawEvents, meshIdBase);
+                }
+                else
+                {
+                    Parallel.For(0, _opaqueBins.TileCount, t =>
+                        PaintOpaqueTile(painter, surface, meshes, worldBuffer, t, drawEvents, meshIdBase));
+                }
             }
         }
 
@@ -395,7 +412,7 @@ public sealed class Renderer : IRenderer
 
         if (painter is not null && transparentCount > 0)
         {
-            if (!parallelFill || transparentCount < ParallelFillThreshold)
+            if (!parallelFill)
             {
                 PaintTransparentAll(painter, surface, meshes, worldBuffer, transparentCount, drawEvents, meshIdBase);
             }
@@ -403,8 +420,15 @@ public sealed class Renderer : IRenderer
             {
                 BinTriangles(_transparentBins, surface, worldBuffer, _transparentOrder, transparentCount);
 
-                Parallel.For(0, _transparentBins.TileCount, t =>
-                    PaintTransparentTile(painter, surface, meshes, worldBuffer, t, drawEvents, meshIdBase));
+                if (_transparentBins.TotalItems < ParallelFillThreshold)
+                {
+                    PaintTransparentAll(painter, surface, meshes, worldBuffer, transparentCount, drawEvents, meshIdBase);
+                }
+                else
+                {
+                    Parallel.For(0, _transparentBins.TileCount, t =>
+                        PaintTransparentTile(painter, surface, meshes, worldBuffer, t, drawEvents, meshIdBase));
+                }
             }
         }
 
@@ -521,6 +545,58 @@ public sealed class Renderer : IRenderer
         // Last of all, after the event list is complete and the clocks have stopped: file the
         // frame, if anyone asked for a history. Does nothing when nobody did.
         diagnostics.CaptureFrame(Stats);
+    }
+
+    /// <summary>
+    /// Vertices below which transforming a mesh on one thread beats scheduling it across
+    /// several. A dense model is one mesh of tens of thousands, and the transform is the
+    /// first thing every frame pays for it.
+    /// </summary>
+    private const int ParallelTransformThreshold = 4096;
+
+    /// <summary>How many vertices one worker takes at a time.</summary>
+    private const int TransformBandSize = 1024;
+
+    /// <summary>
+    /// Model space to view space for one mesh's vertices.
+    ///
+    /// <para>
+    /// A pure map: every vertex reads its own slot of the source and writes its own slot of
+    /// the destination, so there is nothing to coordinate and a large mesh can be split
+    /// straight across the cores. The cull phase around it is still sequential — it appends
+    /// to the frame's draw list, whose order the transparent sort and the pixel probe both
+    /// depend on — but the transform, which is where a dense model's time in that phase
+    /// actually goes, does not have to be.
+    /// </para>
+    /// </summary>
+    private static void TransformToView(VertexBuffer vbx, Vector3[] vertices, int vertexCount, in Matrix4x4 modelViewMatrix)
+    {
+        if (vertexCount < ParallelTransformThreshold || Environment.ProcessorCount <= 1)
+        {
+            var target = vbx.Vertices;
+
+            for (var i = 0; i < vertexCount; i++)
+            {
+                target[i] = target[i].SetView(Vector3.Transform(vertices[i], modelViewMatrix));
+            }
+
+            return;
+        }
+
+        var matrix = modelViewMatrix;
+        var buffer = vbx.Vertices;
+        var bands = (vertexCount + TransformBandSize - 1) / TransformBandSize;
+
+        Parallel.For(0, bands, band =>
+        {
+            var from = band * TransformBandSize;
+            var to = System.Math.Min(from + TransformBandSize, vertexCount);
+
+            for (var i = from; i < to; i++)
+            {
+                buffer[i] = buffer[i].SetView(Vector3.Transform(vertices[i], matrix));
+            }
+        });
     }
 
     /// <summary>

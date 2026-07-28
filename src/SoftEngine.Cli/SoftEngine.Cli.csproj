@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SoftEngine.Core\SoftEngine.Core.csproj" />
+    <ProjectReference Include="..\SoftEngine.Gpu\SoftEngine.Gpu.csproj" />
   </ItemGroup>
 
 </Project>

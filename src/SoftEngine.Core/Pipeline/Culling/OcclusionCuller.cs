@@ -113,8 +113,10 @@ public sealed class OcclusionCuller
     /// <summary>Triangles rasterized by the last <see cref="Prepare"/>.</summary>
     public int TriangleCount { get; private set; }
 
+    private int _culledMeshCount;
+
     /// <summary>Meshes <see cref="IsOccluded"/> has rejected since the last <see cref="Prepare"/>.</summary>
-    public int CulledMeshCount { get; private set; }
+    public int CulledMeshCount => _culledMeshCount;
 
     /// <summary>
     /// Chooses this frame's occluders and rasterizes them. Must be called before
@@ -136,7 +138,7 @@ public sealed class OcclusionCuller
 
         OccluderCount = 0;
         TriangleCount = 0;
-        CulledMeshCount = 0;
+        _culledMeshCount = 0;
 
         var meshCount = world.Meshes.Count;
 
@@ -457,7 +459,10 @@ public sealed class OcclusionCuller
             return false;
         }
 
-        CulledMeshCount++;
+        // Interlocked because the cull phase may test meshes from several threads, and this
+        // is the one piece of state the test writes — everything above it reads the pyramid
+        // and the occluder flags, both finished before Prepare returned.
+        Interlocked.Increment(ref _culledMeshCount);
         return true;
     }
 
@@ -467,6 +472,6 @@ public sealed class OcclusionCuller
         _prepared = false;
         OccluderCount = 0;
         TriangleCount = 0;
-        CulledMeshCount = 0;
+        _culledMeshCount = 0;
     }
 }

@@ -129,6 +129,39 @@ public sealed class FrameBuffer(int width, int height)
     public bool IsCountingOverdraw => _countOverdraw;
 
     /// <summary>
+    /// Replaces the per-pixel write counts, for a frame counted somewhere other than here.
+    ///
+    /// <para>
+    /// The counters exist because <see cref="PutPixel"/> increments them, and a frame drawn
+    /// on a graphics adapter never calls it — the depth test happens inside the hardware,
+    /// which has nowhere to write a tally. The GPU backend counts the same thing with a
+    /// second pass that additively blends one per fragment, and hands the result here, so
+    /// <see cref="Pipeline.Debugging.DebugView.Overdraw"/> shows the frame that was actually
+    /// drawn rather than an empty buffer.
+    /// </para>
+    ///
+    /// Does nothing unless <see cref="SetOverdrawCounting"/> has turned counting on — with
+    /// it off there is nothing asking for these, and no buffer to put them in.
+    /// </summary>
+    public void WriteOverdraw(ReadOnlySpan<int> counts)
+    {
+        if (!_countOverdraw)
+        {
+            return;
+        }
+
+        var length = Width * Height;
+
+        if (counts.Length < length)
+        {
+            throw new ArgumentException(
+                $"Expected {length} counts, got {counts.Length}.", nameof(counts));
+        }
+
+        counts[..length].CopyTo(_overdraw.AsSpan(0, length));
+    }
+
+    /// <summary>
     /// Write attempts per pixel, row-major, or an empty span when counting is off.
     /// </summary>
     public ReadOnlySpan<int> Overdraw =>
@@ -246,32 +279,96 @@ public sealed class FrameBuffer(int width, int height)
         return new Vector3(x, y, z);
     }
 
+    /// <summary>
+    /// Rows a clear worker takes at a time. Clearing is memory-bandwidth bound, so the bands
+    /// have to be big enough that the scheduling costs less than the writes — and small
+    /// enough that a tall frame still spreads over every core.
+    /// </summary>
+    private const int ClearBandRows = 32;
+
     public void Clear()
     {
+        var pixels = Width * Height;
+
         if (_hdrEnabled)
         {
-            var length = Width * Height * 3;
+            var length = pixels * 3;
             if (_hdr.Length < length)
             {
                 _hdr = new float[length];
             }
-
-            Array.Clear(_hdr, 0, length);
         }
 
         if (_countOverdraw)
         {
-            var count = Width * Height;
-            if (_overdraw.Length < count)
+            if (_overdraw.Length < pixels)
             {
-                _overdraw = new int[count];
+                _overdraw = new int[pixels];
             }
-
-            Array.Clear(_overdraw, 0, count);
         }
 
-        Array.Fill(Screen, 0);
-        Array.Fill(_zBuffer, DepthResolution);
+        // Every one of these is a sweep of megabytes — at 1080p the depth buffer alone is
+        // 8 MB — and a single thread clearing them cannot saturate the memory controller.
+        // Splitting into bands of rows does, and the bands are disjoint, so nothing needs
+        // coordinating beyond the join.
+        var bands = (Height + ClearBandRows - 1) / ClearBandRows;
+
+        // The one case where the sequential path wins: a viewport small enough that the
+        // scheduling costs more than the writes.
+        if (bands <= 1 || Environment.ProcessorCount <= 1)
+        {
+            ClearBand(0, Height);
+            return;
+        }
+
+        Parallel.For(0, bands, band =>
+        {
+            var from = band * ClearBandRows;
+            ClearBand(from, System.Math.Min(from + ClearBandRows, Height));
+        });
+    }
+
+    /// <summary>
+    /// Resets the depth buffer to the far plane, leaving the colour alone.
+    ///
+    /// For a backend that rasterized somewhere else and did not transfer its depth back: an
+    /// untouched z-buffer reads as zero, which is the <em>near</em> plane, and a buffer
+    /// claiming every pixel has geometry pressed against the lens is worse than one saying
+    /// it has none.
+    /// </summary>
+    public void ClearDepth() => _zBuffer.AsSpan(0, Width * Height).Fill(DepthResolution);
+
+    private void ClearBand(int rowFrom, int rowTo)
+    {
+        var width = Width;
+        var from = rowFrom * width;
+        var count = (rowTo - rowFrom) * width;
+
+        if (count <= 0)
+        {
+            return;
+        }
+
+        if (_hdrEnabled)
+        {
+            _hdr.AsSpan(from * 3, count * 3).Clear();
+        }
+        else
+        {
+            // Only when the rasterizer is going to write here. On an HDR target the shaded
+            // pixels live in the float buffer and Screen holds nothing until the frame
+            // resolves — which rewrites every pixel of it, whether through the post-process
+            // stack's encode or through ResolveToScreen. Clearing it first would be a sweep
+            // of the whole image thrown away later in the same frame.
+            Screen.AsSpan(from, count).Clear();
+        }
+
+        if (_countOverdraw)
+        {
+            _overdraw.AsSpan(from, count).Clear();
+        }
+
+        _zBuffer.AsSpan(from, count).Fill(DepthResolution);
     }
 
     /// <summary>
@@ -361,6 +458,56 @@ public sealed class FrameBuffer(int width, int height)
 
     /// <summary>Reads back one pixel of the z-buffer, in raw depth units.</summary>
     public int GetDepth(int x, int y) => _zBuffer[x + y * Width];
+
+    /// <summary>
+    /// Replaces the whole depth buffer from normalized device depth — 0 at the near plane,
+    /// 1 at the far — quantized to the buffer's own <see cref="DepthResolution"/> steps.
+    ///
+    /// <para>
+    /// This is how a frame drawn somewhere other than here hands its depth back. The GPU
+    /// backend rasterizes into an OpenGL depth attachment, which holds exactly this
+    /// normalized value, and everything downstream of the fill — the overlays' depth test,
+    /// the screen-space effects that need a view distance, the depth and occlusion debug
+    /// views — reads the z-buffer rather than the renderer that filled it. Restoring the
+    /// buffer is what lets all of them go on working, unchanged, over a frame the CPU never
+    /// rasterized.
+    /// </para>
+    ///
+    /// A depth of 1 (or anything above it) is stored as the cleared value, so
+    /// <see cref="IsBackground"/> keeps agreeing with what was actually drawn.
+    /// </summary>
+    public void WriteNormalizedDepth(ReadOnlySpan<float> normalized)
+    {
+        var count = Width * Height;
+
+        if (normalized.Length < count)
+        {
+            throw new ArgumentException(
+                $"Expected {count} depth values, got {normalized.Length}.", nameof(normalized));
+        }
+
+        var zBuffer = _zBuffer;
+        var width = Width;
+
+        // Copied out of the span before the parallel loop: a ref struct cannot be captured
+        // by the lambda, and the source is a pinned readback buffer that outlives the call.
+        var source = normalized[..count];
+
+        for (var y = 0; y < Height; y++)
+        {
+            var row = source.Slice(y * width, width);
+            var target = zBuffer.AsSpan(y * width, width);
+
+            for (var x = 0; x < width; x++)
+            {
+                var depth = row[x];
+
+                target[x] = depth >= 1f || float.IsNaN(depth)
+                    ? DepthResolution
+                    : (int)(System.Math.Max(depth, 0f) * DepthResolution);
+            }
+        }
+    }
 
     /// <summary>
     /// Whether nothing has been drawn at (x, y) yet — the depth is still the value

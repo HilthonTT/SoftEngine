@@ -20,6 +20,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SoftEngine.Core\SoftEngine.Core.csproj" />
+
+    <!-- For the parts of the GPU backend that are decisions rather than drawing — which
+         adapter names mean hardware, what a backend request resolves to. Nothing here
+         creates an OpenGL context, so the suite still runs on a machine with no display. -->
+    <ProjectReference Include="..\..\src\SoftEngine.Gpu\SoftEngine.Gpu.csproj" />
   </ItemGroup>
 
 </Project>

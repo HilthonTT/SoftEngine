@@ -75,6 +75,24 @@ public readonly struct AmbientCube
     }
 
     /// <summary>
+    /// One face's average, in the order <see cref="CubeFace"/> names them.
+    ///
+    /// Exposed so a backend that evaluates this somewhere other than here — the GPU's
+    /// fragment shader, which needs the six values as uniforms — can be handed the same cube
+    /// rather than reducing the environment a second time and getting a slightly different
+    /// answer.
+    /// </summary>
+    public LinearColor this[CubeFace face] => face switch
+    {
+        CubeFace.PositiveX => _positiveX,
+        CubeFace.NegativeX => _negativeX,
+        CubeFace.PositiveY => _positiveY,
+        CubeFace.NegativeY => _negativeY,
+        CubeFace.PositiveZ => _positiveZ,
+        _ => _negativeZ,
+    };
+
+    /// <summary>
     /// The ambient light reaching a surface with the given normal. Weights are the squared
     /// components of the normal, which sum to 1 for a unit vector — so a uniform cube
     /// evaluates to exactly its constant, whichever way the surface faces.

@@ -43,6 +43,9 @@ public abstract class LitPainter(ILight? light, float ambient) : IPainter
     /// <summary>Base intensity every surface receives regardless of the lights.</summary>
     protected float Ambient { get; } = ambient;
 
+    /// <inheritdoc />
+    public float AmbientLevel => Ambient;
+
     /// <summary>
     /// The light a surface receives from no particular direction, as a function of which
     /// way it faces. A flat grey by default — <see cref="Ambient"/> in every channel — and

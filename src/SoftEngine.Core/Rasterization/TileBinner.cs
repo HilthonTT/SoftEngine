@@ -37,6 +37,20 @@ public sealed class TileBinner
     /// <summary>Triangles added since the last <see cref="Reset"/>.</summary>
     public int Count { get; private set; }
 
+    /// <summary>
+    /// Triangle-in-tile pairs the last <see cref="Build"/> produced — one per tile each
+    /// triangle reaches, so a triangle spanning forty tiles counts forty times.
+    ///
+    /// <para>
+    /// It is the frame's fill cost in the unit the fill is actually divided into, which is
+    /// what makes it the right thing to decide parallelism on. The triangle count is not:
+    /// sixteen triangles that each cover the viewport are far more work than sixteen thousand
+    /// that each cover a dozen pixels, and a threshold on the count sends the first of those
+    /// down the single-threaded path.
+    /// </para>
+    /// </summary>
+    public int TotalItems { get; private set; }
+
     public int TilesX { get; private set; }
 
     public int TilesY { get; private set; }
@@ -64,6 +78,7 @@ public sealed class TileBinner
         }
 
         Count = 0;
+        TotalItems = 0;
     }
 
     /// <summary>
@@ -137,6 +152,7 @@ public sealed class TileBinner
             total += _counts[i];
         }
         _offsets[tiles] = total;
+        TotalItems = total;
 
         if (_items.Length < total)
         {

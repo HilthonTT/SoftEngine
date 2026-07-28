@@ -148,8 +148,18 @@ public readonly struct DepthField(float[] depth, int width, int height, float pr
 
         normal = Vector3.Normalize(normal);
 
-        // The frame is a view space looking down -Z, so a visible surface faces the eye.
-        return normal.Z < 0f ? -normal : normal;
+        // A visible surface faces the eye, which in view space sits at the origin: the ray to
+        // the pixel is the pixel's own position, and a front-facing normal opposes it.
+        //
+        // Tested against that ray rather than against the view axis. The axis test — "flip it
+        // if Z points away" — is the same statement only for a surface square to the camera,
+        // and it fails exactly where it matters: a ground plane seen at a shallow angle has a
+        // normal almost perpendicular to the axis, so the Z component that decides the flip is
+        // a rounding error, and its sign alternates from one row of pixels to the next. The
+        // result is a floor that stripes. The ray carries the pixel's full offset from the
+        // centre of the frame, so on that same floor the test is decided by a term the size of
+        // the camera's height above it.
+        return Vector3.Dot(normal, origin) > 0f ? -normal : normal;
     }
 
     private static bool Closer(float here, float a, float b) =>

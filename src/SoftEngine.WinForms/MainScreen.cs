@@ -1,5 +1,6 @@
 ﻿using SoftEngine.Core.Animation;
 using SoftEngine.Core.Diagnostics;
+using SoftEngine.Gpu;
 using SoftEngine.Core.Editing;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Gltf;
@@ -267,6 +268,109 @@ public sealed partial class MainScreen : Form
         _ = PrepareWorldAsync("skull");
     }
 
+    /// <summary>
+    /// Puts the sidebar back at the top once the window is up.
+    ///
+    /// <para>
+    /// It does not start there on its own. The sidebar scrolls, and setting
+    /// <see cref="RadioButton.Checked"/> on a control inside a scrolling panel focuses it,
+    /// which WinForms answers by scrolling it into view — so wiring up the shading buttons at
+    /// startup leaves the panel parked partway down, with the title and the load button above
+    /// the fold. Scrolling back has to happen after the first layout, because before it there
+    /// is no scroll range to move within.
+    /// </para>
+    ///
+    /// The viewport takes the focus for the same reason: it is what the arrow keys and the
+    /// WASD fly controls belong to, and leaving it on a sidebar control both steals those and
+    /// invites the next scroll.
+    /// </summary>
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+
+        pnlSidebar.AutoScrollPosition = Point.Empty;
+        panel3D1.Focus();
+    }
+
+    #region Render backend
+
+    /// <summary>
+    /// Wires View → Rendered by, and the status readout that says which one won.
+    ///
+    /// <para>
+    /// The GPU item is offered whether or not there is a GPU, and reports what happened
+    /// afterwards rather than being greyed out beforehand. Finding out costs an OpenGL
+    /// context, and a menu item that is simply missing on a machine with a graphics card in
+    /// it — because a driver is out of date, say — tells you nothing about why.
+    /// </para>
+    /// </summary>
+    private void InitializeBackendMenu()
+    {
+        mnuRenderCpu.Click += (s, e) => SelectBackend(RenderBackend.Cpu);
+        mnuRenderGpu.Click += (s, e) => SelectBackend(RenderBackend.Gpu);
+
+        panel3D1.BackendChanged += (s, e) => UpdateBackendMenu();
+
+        UpdateBackendMenu();
+    }
+
+    private void SelectBackend(RenderBackend backend)
+    {
+        if (panel3D1.Backend == backend && panel3D1.BackendFallback is null)
+        {
+            return;
+        }
+
+        using (new WaitCursorScope(this))
+        {
+            panel3D1.Backend = backend;
+        }
+
+        if (panel3D1.BackendFallback is { } fallback)
+        {
+            MessageBox.Show(
+                this,
+                $"{fallback}\n\nThe viewport is still being rendered on the CPU.",
+                "No graphics adapter",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+    }
+
+    private void UpdateBackendMenu()
+    {
+        var backend = panel3D1.Backend;
+
+        mnuRenderCpu.Checked = backend == RenderBackend.Cpu;
+        mnuRenderGpu.Checked = backend == RenderBackend.Gpu;
+
+        lblBackendStatus.Text = panel3D1.BackendDescription;
+
+        // The adapter's own name, which is the only way to tell an integrated part from the
+        // discrete one a laptop may also have.
+        lblBackendStatus.ToolTipText = panel3D1.Adapter is { } adapter
+            ? $"{adapter.Vendor} · {adapter.Renderer}\nOpenGL {adapter.Version}"
+            : "Every triangle rasterized on the CPU by this engine's own scanline filler.";
+    }
+
+    /// <summary>An hourglass for as long as it is held. Building a GL context is not instant.</summary>
+    private readonly struct WaitCursorScope : IDisposable
+    {
+        private readonly Control _control;
+        private readonly Cursor _previous;
+
+        public WaitCursorScope(Control control)
+        {
+            _control = control;
+            _previous = control.Cursor;
+            control.Cursor = Cursors.WaitCursor;
+        }
+
+        public void Dispose() => _control.Cursor = _previous;
+    }
+
+    #endregion
+
     #region Graphics debugger
 
     /// <summary>
@@ -343,6 +447,8 @@ public sealed partial class MainScreen : Form
             panel3D1.Diagnostics.CaptureEvents = mnuRecordEvents.Checked;
             panel3D1.Invalidate();
         };
+
+        InitializeBackendMenu();
 
         mnuViewFront.Click += (s, e) => panel3D1.LookAlong(AxisView.Front);
         mnuViewBack.Click += (s, e) => panel3D1.LookAlong(AxisView.Back);
