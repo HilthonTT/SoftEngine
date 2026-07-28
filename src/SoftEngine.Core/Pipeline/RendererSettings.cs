@@ -15,6 +15,21 @@ public sealed class RendererSettings
     /// </summary>
     public bool HierarchicalZ { get; set; } = true;
 
+    /// <summary>
+    /// Whether the frame rejects whole meshes that are hidden behind other meshes, before any
+    /// of their vertices are transformed.
+    ///
+    /// <para>
+    /// The companion to <see cref="HierarchicalZ"/> at the other end of the pipeline. That one
+    /// drops a triangle once it has been transformed, projected and binned, and saves only its
+    /// pixels; this one drops a mesh before any of that happens, and saves all of it. It costs
+    /// a small depth-only pass over the few largest things on screen, so it earns its keep
+    /// wherever big geometry stands in front of other geometry and gives most of it back in a
+    /// scene of scattered objects with nothing between them.
+    /// </para>
+    /// </summary>
+    public bool OcclusionCulling { get; set; } = true;
+
     public bool ShowTriangles { get; set; }
 
     public bool ShowXZGrid { get; set; }

@@ -94,6 +94,34 @@ internal sealed class BenchmarkScene(string name, string description, Func<int, 
                 return built;
             }),
 
+        new("occlusion",
+            "512 dense spheres behind a wall that covers the frame — 164k hidden triangles, every one of them transformed without the pass",
+            static (w, h) =>
+            {
+                var meshes = new List<IMesh> { Wall(5f, 0f) };
+
+                // Dense meshes rather than cubes, because that is the case the pass exists for.
+                // A twelve-triangle cube behind a wall costs almost nothing to reject and
+                // almost nothing to keep, so a scene made of them measures the pass's overhead
+                // and not its point; the work worth skipping is geometry that is expensive to
+                // transform, and a rejected mesh's cost is its whole cost.
+                for (var x = 0; x < 8; x++)
+                {
+                    for (var y = 0; y < 8; y++)
+                    {
+                        for (var z = 0; z < 8; z++)
+                        {
+                            meshes.Add(Sphere(
+                                2,
+                                new Vector3(x - 3.5f, y - 3.5f, -2f - z * 2.6f) * new Vector3(0.9f, 0.9f, 1f),
+                                0.4f));
+                        }
+                    }
+                }
+
+                return Compose(w, h, meshes, 6f, new GouraudPainter());
+            }),
+
         new("pbr",
             "36 spheres shaded by the Cook-Torrance path — the most expensive per-pixel shader",
             static (w, h) =>
@@ -188,6 +216,22 @@ internal sealed class BenchmarkScene(string name, string description, Func<int, 
         }
 
         return new Mesh(vertices, triangles, null, colors);
+    }
+
+    /// <summary>A single quad facing the camera, large enough to fill the frame at the scene's viewing distance.</summary>
+    private static Mesh Wall(float half, float z)
+    {
+        Vector3[] vertices =
+        [
+            new(-half, -half, z),
+            new(half, -half, z),
+            new(half, half, z),
+            new(-half, half, z),
+        ];
+
+        Triangle[] triangles = [new(0, 1, 2), new(0, 2, 3)];
+
+        return new Mesh(vertices, triangles, [Vector3.UnitZ, Vector3.UnitZ, Vector3.UnitZ, Vector3.UnitZ]);
     }
 
     private static Mesh Ground(float extent, float y)

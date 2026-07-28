@@ -3,6 +3,7 @@ using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Gizmos;
 using SoftEngine.Core.Pipeline.Clipping;
+using SoftEngine.Core.Pipeline.Culling;
 using SoftEngine.Core.Pipeline.Debugging;
 using SoftEngine.Core.Pipeline.PostProcess;
 using SoftEngine.Core.Pipeline.Shadows;
@@ -60,7 +61,18 @@ public sealed class Renderer : IRenderer
     // depth read-back it works from.
     private BufferVisualizer? _visualizer;
 
+    // Allocates nothing until a frame actually runs the pass, so an always-off renderer
+    // pays for one empty object.
+    private readonly OcclusionCuller _occlusion = new();
+
     public RendererSettings Settings { get; set; } = new();
+
+    /// <summary>
+    /// The pass that rejects meshes hidden behind other meshes, and the knobs that decide what
+    /// it is willing to rasterize to do it. Switched on and off through
+    /// <see cref="RendererSettings.OcclusionCulling"/>.
+    /// </summary>
+    public OcclusionCuller Occlusion => _occlusion;
 
     /// <summary>
     /// Full-screen effects applied to the finished render target, in order. Null (the
@@ -146,8 +158,32 @@ public sealed class Renderer : IRenderer
             projection.ZNear, projection.ZFar, surface.Width / (float)surface.Height);
 
         // View-space frustum planes for whole-mesh bounding-sphere culling.
-        Span<Vector4> frustumPlanes = stackalloc Vector4[6];
-        BuildFrustumPlanes(projectionMatrix, frustumPlanes);
+        Span<Vector4> frustumPlanes = stackalloc Vector4[Frustum.PlaneCount];
+        Frustum.Build(projectionMatrix, frustumPlanes);
+
+        // The occlusion pass, before anything is transformed — which is the only point at
+        // which rejecting a mesh saves the whole of its cost rather than the tail of it.
+        //
+        // A probed frame skips it, exactly as the tile's coarse depth bound does and for the
+        // same reason: the pixel history has to show the writes the depth test rejects, and a
+        // mesh dropped here never attempts them.
+        var occlusion = rendererSettings.OcclusionCulling && !surface.IsProbing ? _occlusion : null;
+
+        if (occlusion is not null)
+        {
+            occlusion.Prepare(world, viewMatrix, projectionMatrix, frustumPlanes, surface.Width, surface.Height);
+
+            Stats.OccluderMeshCount = occlusion.OccluderCount;
+
+            var (occlusionWidth, occlusionHeight) = (occlusion.Buffer.Width, occlusion.Buffer.Height);
+
+            events.Add(GraphicsEventKind.OcclusionBufferRender, SceneObjectIds.DepthBuffer,
+                occlusionWidth, occlusionHeight, occlusion.OccluderCount);
+        }
+        else
+        {
+            _occlusion.Reset();
+        }
 
         // Arrays for the transformed vertices, kept across frames: rebuilding them is one
         // allocation per mesh, which at tens of thousands of meshes dominates the frame.
@@ -204,10 +240,21 @@ public sealed class Renderer : IRenderer
             if (float.IsFinite(radius))
             {
                 var viewCenter = Vector3.Transform(Vector3.Zero, modelViewMatrix);
-                if (IsSphereOutside(frustumPlanes, viewCenter, radius))
+                if (Frustum.IsSphereOutside(frustumPlanes, viewCenter, radius))
                 {
                     Stats.OutOfViewTriangleCount += mesh.Triangles.Length;
                     events.Add(GraphicsEventKind.MeshCullBoundingSphere, objectId, mesh.Triangles.Length);
+                    continue;
+                }
+
+                // On screen, and behind something already covering all of it. The same sphere
+                // answers both questions, so being hidden costs one more test on a mesh that
+                // has survived the cheaper one.
+                if (occlusion is not null && occlusion.IsOccluded(idxVolume, viewCenter, radius))
+                {
+                    Stats.OccludedMeshTriangleCount += mesh.Triangles.Length;
+                    Stats.OccludedMeshCount++;
+                    events.Add(GraphicsEventKind.MeshCullOccluded, objectId, mesh.Triangles.Length);
                     continue;
                 }
             }
@@ -924,36 +971,4 @@ public sealed class Renderer : IRenderer
         }
     }
 
-    /// <summary>
-    /// Extracts the six view-space frustum planes from a projection matrix
-    /// (row-vector convention, clip z in [0, w]). Planes point inward:
-    /// dot(normal, point) + distance ≥ 0 means inside.
-    /// </summary>
-    private static void BuildFrustumPlanes(in Matrix4x4 p, Span<Vector4> planes)
-    {
-        var c1 = new Vector4(p.M11, p.M21, p.M31, p.M41);
-        var c2 = new Vector4(p.M12, p.M22, p.M32, p.M42);
-        var c3 = new Vector4(p.M13, p.M23, p.M33, p.M43);
-        var c4 = new Vector4(p.M14, p.M24, p.M34, p.M44);
-
-        planes[0] = c4 + c1; // left
-        planes[1] = c4 - c1; // right
-        planes[2] = c4 + c2; // bottom
-        planes[3] = c4 - c2; // top
-        planes[4] = c3;      // near (z >= 0)
-        planes[5] = c4 - c3; // far
-    }
-
-    private static bool IsSphereOutside(ReadOnlySpan<Vector4> planes, Vector3 center, float radius)
-    {
-        foreach (var plane in planes)
-        {
-            var normal = new Vector3(plane.X, plane.Y, plane.Z);
-            if (Vector3.Dot(normal, center) + plane.W < -radius * normal.Length())
-            {
-                return true;
-            }
-        }
-        return false;
-    }
 }

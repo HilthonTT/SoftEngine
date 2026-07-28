@@ -46,19 +46,27 @@ if (!IsOptimized())
 
 Console.WriteLine();
 
-Console.WriteLine(options.Compare
-    ? $"{"scene",-16}{"median",10}{"min",10}{"p95",10}{"no hi-z",10}{"speedup",9}{"triangles",12}{"pixels",13}"
-    : $"{"scene",-16}{"median",10}{"min",10}{"p95",10}{"triangles",12}{"drawn",12}{"pixels",13}");
+// "occluders" and "hidden" report what the occlusion pass did, in both tables. A pass that
+// rejects nothing and a pass that rejects everything both show up as a speedup of about one,
+// and they call for opposite responses.
+Console.WriteLine(options.Compare != ComparedFeature.None
+    ? $"{"scene",-16}{"median",10}{"min",10}{"p95",10}{options.ComparisonLabel,10}{"speedup",9}{"occluders",11}{"hidden",9}"
+    : $"{"scene",-16}{"median",10}{"min",10}{"p95",10}{"triangles",12}{"drawn",12}{"occluders",11}{"hidden",9}");
 
 var rows = new List<(BenchmarkResult Result, BenchmarkResult? Baseline)>();
 
 foreach (var scene in scenes)
 {
-    var result = BenchmarkRunner.Run(scene, options.Width, options.Height, options.Frames, options.Warmup, hierarchicalZ: true);
+    var result = BenchmarkRunner.Run(scene, options.Width, options.Height, options.Frames, options.Warmup);
 
-    BenchmarkResult? baseline = options.Compare
-        ? BenchmarkRunner.Run(scene, options.Width, options.Height, options.Frames, options.Warmup, hierarchicalZ: false)
-        : null;
+    BenchmarkResult? baseline = options.Compare switch
+    {
+        ComparedFeature.HierarchicalZ =>
+            BenchmarkRunner.Run(scene, options.Width, options.Height, options.Frames, options.Warmup, hierarchicalZ: false),
+        ComparedFeature.Occlusion =>
+            BenchmarkRunner.Run(scene, options.Width, options.Height, options.Frames, options.Warmup, occlusionCulling: false),
+        _ => null,
+    };
 
     rows.Add((result, baseline));
 
@@ -68,13 +76,13 @@ foreach (var scene in scenes)
 
         Console.WriteLine(
             $"{result.Scene,-16}{Ms(result.MedianMs),10}{Ms(result.MinMs),10}{Ms(result.P95Ms),10}" +
-            $"{Ms(without.MedianMs),10}{speedup,9}{result.Triangles,12:N0}{result.Pixels,13:N0}");
+            $"{Ms(without.MedianMs),10}{speedup,9}{result.Occluders,11:N0}{result.HiddenMeshes,9:N0}");
     }
     else
     {
         Console.WriteLine(
             $"{result.Scene,-16}{Ms(result.MedianMs),10}{Ms(result.MinMs),10}{Ms(result.P95Ms),10}" +
-            $"{result.Triangles,12:N0}{result.DrawnTriangles,12:N0}{result.Pixels,13:N0}");
+            $"{result.Triangles,12:N0}{result.DrawnTriangles,12:N0}{result.Occluders,11:N0}{result.HiddenMeshes,9:N0}");
     }
 }
 
@@ -109,7 +117,7 @@ static bool IsOptimized() =>
 static void WriteCsv(string path, List<(BenchmarkResult Result, BenchmarkResult? Baseline)> rows)
 {
     using var writer = new StreamWriter(path);
-    writer.WriteLine("scene,median_ms,min_ms,p95_ms,median_no_hiz_ms,triangles,drawn_triangles,pixels");
+    writer.WriteLine("scene,median_ms,min_ms,p95_ms,median_baseline_ms,triangles,drawn_triangles,pixels");
 
     foreach (var (result, baseline) in rows)
     {

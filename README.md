@@ -12,6 +12,7 @@ A **software 3D rasterizer** written in C#. The entire pipeline — model transf
 
 - Loads and renders 3D models (Wavefront `.obj`, Collada `.dae`, **glTF 2.0** `.gltf`/`.glb`) and procedural primitives in real time.
 - Rasterizes triangles with a generic scanline filler and a depth (z) buffer.
+- Skips **meshes hidden behind other meshes** before transforming a single one of their vertices, by rasterizing the frame's largest occluders into a small depth pyramid first.
 - Supports several shading modes — wireframe, solid, flat, Gouraud, Phong, textured, full material and **physically-based** — selectable at runtime.
 - Lights a scene with **any number of coloured lights** — directional, point with distance falloff, and spot.
 - Rasterizes into an **HDR linear float target**, so highlights brighter than white survive to the post-process stack.
@@ -535,15 +536,16 @@ Per frame, the `Renderer` ([`Pipeline/Renderer.cs`](src/SoftEngine.Core/Pipeline
 
 1. Clears the color and z-buffers.
 2. Renders the shadow map from the light, if the scene casts shadows — before any painter prepares, since every shade that follows reads it.
-3. Transforms each mesh's vertices into view space (pooled `VertexBuffer` per mesh).
-4. Rejects triangles behind the far plane, back-facing triangles (optional culling), and triangles outside the view frustum.
-5. Projects survivors into clip space, maps to screen space, and bins them into the screen tiles they cover.
-6. Fills the tiles in parallel through the active painter.
-7. Draws the sky into whatever pixels the opaque pass left untouched.
-8. Blends the transparent triangles over the result, farthest first.
-9. Draws optional gizmos (XZ grid, world axes, skeleton) and outlines the picked mesh.
-10. Runs the post-process stack over the finished image, and encodes it for presentation.
-11. Swaps the image for one of the buffers that produced it, if a buffer view is selected.
+3. Rasterizes the largest opaque meshes into an occlusion buffer, so the meshes hidden behind them can be rejected whole.
+4. Transforms each surviving mesh's vertices into view space (pooled `VertexBuffer` per mesh).
+5. Rejects triangles behind the far plane, back-facing triangles (optional culling), and triangles outside the view frustum.
+6. Projects survivors into clip space, maps to screen space, and bins them into the screen tiles they cover.
+7. Fills the tiles in parallel through the active painter.
+8. Draws the sky into whatever pixels the opaque pass left untouched.
+9. Blends the transparent triangles over the result, farthest first.
+10. Draws optional gizmos (XZ grid, world axes, skeleton) and outlines the picked mesh.
+11. Runs the post-process stack over the finished image, and encodes it for presentation.
+12. Swaps the image for one of the buffers that produced it, if a buffer view is selected.
 
 The rasterizer ([`Rasterization/ScanlineRasterizer.cs`](src/SoftEngine.Core/Rasterization/ScanlineRasterizer.cs)) sorts a triangle's vertices by Y, splits it at the middle vertex, and walks two half-triangles, interpolating depth plus an arbitrary *varying* payload. Painters only supply a **varying** type and a **shader** — both are `struct` generics, so the JIT devirtualizes and inlines the per-pixel shade call with no allocation on the hot path.
 
@@ -572,6 +574,72 @@ Three things fall out of owning a rectangle of pixels:
 Measured at 1280×720 on eight hardware threads, the three together render a dense model about
 **1.5–1.8×** faster than the row-interleaved fill they replace, and a scene with heavy overdraw
 about **2×** faster.
+
+## Occlusion culling
+
+Frustum culling answers *is it on screen*. In a scene built the way real scenes are — a room, a
+street, a hillside — most of what is on screen is standing behind something else that is also on
+screen, and every bit of it is transformed, clipped, projected and binned before the depth test
+gets to say so.
+
+[`OcclusionCuller`](src/SoftEngine.Core/Pipeline/Culling/OcclusionCuller.cs) asks the other
+question first. It picks the few largest opaque meshes in the frame, rasterizes them depth-only
+into an [`OcclusionBuffer`](src/SoftEngine.Core/Pipeline/Culling/OcclusionBuffer.cs) at half the
+frame's resolution, folds that into a pyramid, and then tests every other mesh's bounding volume
+against it. A mesh that fails is dropped before its first vertex is touched.
+
+It is the tile rasterizer's coarse depth bound moved to the other end of the pipeline, and the
+difference is what each one can still save. `HierarchicalZ` rejects a triangle that has already
+been transformed, projected and binned, so it saves the pixels; this rejects a mesh before any of
+that happens, so it saves all of it.
+
+**The rule is that it may only ever be wrong in the direction of drawing too much.** A mesh it
+fails to reject costs time. A mesh it rejects wrongly is a hole in the picture, and one that
+reads as a bug in the rasterizer rather than as a bug in a culling pass. So the depth written to
+a texel is the occluder's *farthest* point anywhere inside it, folding the pyramid takes the
+*farthest* of each group of four, an unwritten texel sits at the far plane where it can hide
+nothing, and a bounding sphere is tested through the projected corners of its box — a shape that
+contains it — rather than through anything tighter.
+
+Three decisions are the difference between a pass that helps and one that costs:
+
+- **Coverage is measured a level above the one that is rasterized.** The obvious rule is to write
+  a texel only where a single triangle covers all of it, and it is a trap: two triangles sharing
+  an edge — which is what every quad in every scene is — leave a seam along it that neither fills
+  alone, so a wall built the only way walls are built acquires a diagonal crack through the
+  middle and stops occluding anything that crosses it. Level 0 is centre-sampled instead, which
+  is watertight across a shared edge, and a level-1 texel carries a real depth only where all
+  four of its children were sampled inside the geometry. That is coverage, measured on a grid
+  twice as fine as the answer is given on.
+- **A big mesh is not automatically a good occluder.** Rasterizing one is a fixed cost paid up
+  front and repaid one rejected mesh at a time, so `MinimumTestableMeshes` declines the whole
+  pass on a world without enough meshes to repay it. Without that floor the worst case is
+  brutal and easy to hit: a handful of nested spheres are each enormous on screen, all of them
+  get chosen, drawing them costs more than the entire rest of the frame, and there is nothing
+  behind them to find. `MinimumOccluderExtent` and a triangle budget make the same judgement
+  within a scene.
+- **A wall's bounding sphere reaches the camera, and that must not disqualify it.** A wall is a
+  flat thing with a sphere as wide as its diagonal, so one filling the view from a few units
+  away has a sphere that swallows the eye while every triangle in it sits comfortably in front.
+  Rejecting those — which looks like ordinary near-plane hygiene — throws away the best occluder
+  in most scenes. Triangles that really do straddle the near plane are dropped one at a time by
+  the rasterizer, which is where a question about a triangle belongs.
+
+Measured at 1280×720 on eight hardware threads, on 512 dense meshes standing behind a wall that
+covers the frame, it renders about **1.6×** faster and rejects 362 of the 512 outright. On the
+other six benchmark scenes it is within noise of 1.00×, which is the other half of what it has to
+do: `many-meshes` has four thousand meshes and nothing large enough to occlude with, and pays
+about 4% to find that out every frame.
+
+Two honest limits. **An occluder is never tested against the buffer it helped write**, so a large
+mesh completely hidden behind another large mesh survives — testing them properly would mean
+building the pyramid incrementally, front to back, and folding it once per occluder. And because
+level 0 is centre-sampled, a mesh visible only through a gap about a pixel wide at an occluder's
+silhouette can be culled; everything wider than that is safe.
+
+`Settings.OcclusionCulling` turns it off. A probed frame turns it off too, exactly as the tile's
+coarse depth bound is turned off and for the same reason: the pixel history has to show the
+writes the depth test rejects, and a mesh dropped here never attempts them.
 
 ## Supersampling
 
@@ -670,6 +738,7 @@ src/
 │   ├── Gizmos/             # grid, world axes, skeleton, and the draggable transform handles
 │   ├── Picking/            # ray, ray-triangle intersection, scene picker
 │   ├── Pipeline/           # Renderer, settings, homogeneous clipping, sky pass
+│   │   ├── Culling/        # frustum planes, occluder selection, occlusion depth pyramid
 │   │   ├── Debugging/      # buffer views: depth, normals, overdraw, shadow cascades
 │   │   ├── PostProcess/    # effect stack: SSAO, bloom, tone map, FXAA, vignette
 │   │   └── Shadows/        # depth-only shadow-map pass, cascade fitting
@@ -684,6 +753,7 @@ src/
 
 bench/SoftEngine.Benchmarks/   # headless frame-time harness (net10.0 console)
 tests/SoftEngine.Core.Tests/   # xUnit suite over the Core
+└── Golden/                    # golden-image harness, scenes and committed baselines
 ```
 
 ## Requirements
@@ -722,6 +792,51 @@ no HDR range to give converts a `ColorRGB` in and the framebuffer converts it ba
 six lookup-table reads per pixel that the old packed-byte path did not pay. Both tables are
 small enough to stay in L1, and the alternative was two parallel shading paths.
 
+## Testing
+
+`dotnet test tests/SoftEngine.Core.Tests` runs the suite over the Core. Most of it is ordinary
+unit tests — this triangle is back-facing, that matrix round-trips, the near plane splits a
+straddling triangle into two — and there is a whole class of regression none of them can reach.
+
+A renderer can satisfy every property a test names and still produce a picture that is visibly
+wrong. Nothing in four hundred passing tests notices that the specular term came out a tenth
+dimmer, that a normal map is being sampled with its green channel flipped, or that the tone-map
+curve shifted. Each is a change to a number no test mentions, and all three are obvious the
+moment you look at the frame.
+
+### Golden images
+
+So the frame itself is an assertion. Fifteen scenes in
+[`tests/SoftEngine.Core.Tests/Golden`](tests/SoftEngine.Core.Tests/Golden) are rendered headless
+at 320×180 and compared against PNGs committed beside them — a reviewer can open the baseline,
+and a change to it shows up in the diff as a picture. Between them they cover every painter, the
+shadow pass and its cascades, materials and normal mapping, the physically-based path with its
+environment, transparency, fog, the post-process effects, skinning, supersampling and the
+overlays: each a body of arithmetic that is one edit away from being quietly wrong.
+
+Scenes are generated rather than loaded. A baseline that depends on a model in the front-end's
+assets folder breaks when the model is re-exported, which teaches everyone to re-record on
+failure without looking — the exact habit the harness exists to prevent. For the same reason
+`SOFTENGINE_UPDATE_GOLDEN=1` is the only way to rewrite one: a suite that quietly re-records
+whatever the renderer just did will agree with every regression it ever meets.
+
+Comparison is three numbers rather than one, because the failures worth catching have different
+shapes. A shading term that moves by a percent moves nearly every lit pixel a little, which a
+mean absolute error sees and a per-pixel count would let through; a geometry or culling bug
+moves a few pixels a great deal, which a count sees and a mean averages away. Exact equality is
+tempting — the same scene rendered twice on this machine really is identical, since a fill worker
+owns a screen tile and no two of them touch a pixel — but whether the JIT contracts a multiply
+and an add into one FMA is a property of the host, and an ulp of drift lands on a channel
+boundary often enough that a zero-tolerance baseline would fail somewhere other than where it was
+recorded. A failing run writes the actual frame and a diff image next to the baseline and names
+all three in the message.
+
+The occlusion pass gets a stronger test than a baseline, because it makes a stronger claim: every
+golden scene is rendered twice, with the pass on and off, and the two frames are compared at
+**zero** tolerance. An optimization that decides what not to draw is only correct if what is
+drawn does not change, and no count of rejected meshes says that — a pass that culled the wall
+itself would report splendid numbers.
+
 ### Measuring it
 
 Work is measured rather than assumed. [`bench/SoftEngine.Benchmarks`](bench/SoftEngine.Benchmarks)
@@ -734,10 +849,10 @@ dotnet run -c Release --project bench/SoftEngine.Benchmarks -- --scene overdraw 
 
 The engine renders into a plain `int[]`, so measuring it needs no window, no GPU and no
 platform beyond the runtime — which is what makes the numbers reproducible on any machine that
-can build the solution. Six scenes cover the shapes the renderer is built around: a dense
+can build the solution. Seven scenes cover the shapes the renderer is built around: a dense
 model where the cost is per-triangle setup, heavy overdraw where it is the depth test, a
-handful of screen-filling triangles, thousands of small meshes, the shadow pass, and the
-physically-based shader.
+handful of screen-filling triangles, thousands of small meshes, geometry hidden behind a wall,
+the shadow pass, and the physically-based shader.
 
 The **median** rather than the mean, because a frame time distribution on a desktop OS has a
 long right tail belonging to the scheduler rather than to the renderer — one preempted frame
@@ -745,10 +860,22 @@ moves a mean and cannot move a median. Warm-up frames are discarded for the same
 other direction: the first frame through a scene pays for JIT and for every buffer, tile bin,
 mip chain and prefiltered environment being allocated.
 
-`--compare` re-runs each scene with hierarchical-Z off and reports the ratio. On eight hardware
-threads at 1280×720 it is worth **≈4×** on the overdraw scene and about 1× everywhere else,
-which is what it should be: the tile's coarse depth bound cannot reject anything in a scene one
-layer deep, and it costs a periodic scan to find that out.
+`--compare` re-runs each scene with one optimization switched off and reports the ratio.
+`--compare` alone measures hierarchical-Z; `--compare occlusion` measures the culling pass.
+
+```bash
+dotnet run -c Release --project bench/SoftEngine.Benchmarks -- --compare occlusion
+```
+
+On eight hardware threads at 1280×720, hierarchical-Z is worth **≈4×** on the overdraw scene and
+about 1× everywhere else, which is what it should be: the tile's coarse depth bound cannot reject
+anything in a scene one layer deep, and it costs a periodic scan to find that out. Occlusion
+culling is worth **≈1.6×** on the scene built around it and about 1× on the rest.
+
+Both tables also report how many meshes were rasterized as occluders and how many were rejected
+because of them, in every scene rather than only the compared one. A pass that rejects nothing
+and a pass that rejects everything both show up as a speedup of about one, and they call for
+opposite responses.
 
 ## Roadmap
 
@@ -759,6 +886,8 @@ layer deep, and it costs a periodic scan to find that out.
 - More than one shadow-casting light, which needs a depth buffer and a pass per light.
 - Morph targets, the one part of glTF's animation the importer reads past.
 - A deferred or visibility-buffer path, which would let SSAO darken the ambient term alone instead of the finished image — the limitation the post-processing section admits to.
+- Testing occluders against each other, by building the occlusion pyramid front to back rather than all at once — the first of the two limits that section admits to.
+- An occlusion-buffer view, which is the one pass whose working the debugger cannot currently show, and the quickest way to see why a scene culls less than it should.
 
 ## Credits
 

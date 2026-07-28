@@ -21,7 +21,7 @@ namespace SoftEngine.WinForms;
 
 public partial class Panel3D : UserControl
 {
-    private const string Format = "Volumes:{0}\nTriangles:{1} - Back:{2} - Out:{3} - Behind:{4} - Clipped:{10}\nPixels:{9} drawn:{5} - Z behind:{6}\nCalc time:{7} - Paint time:{8}";
+    private const string Format = "Volumes:{0} - Hidden:{11} behind {12} occluder(s)\nTriangles:{1} - Back:{2} - Out:{3} - Behind:{4} - Clipped:{10}\nPixels:{9} drawn:{5} - Z behind:{6}\nCalc time:{7} - Paint time:{8}";
 
     private const float MoveInterval = 16f;
 
@@ -990,7 +990,9 @@ public partial class Panel3D : UserControl
             Stats.CalculationTimeMs,
             Stats.PainterTimeMs,
             Stats.DrawnPixelCount + Stats.BehindZPixelCount,
-            Stats.NearClippedTriangleCount
+            Stats.NearClippedTriangleCount,
+            Stats.OccludedMeshCount,
+            Stats.OccluderMeshCount
         );
 
         TextRenderer.DrawText(g, StatDisplay.ToString(), Font, new Point(10, 8), Theme.TextSecondary, TextFormatFlags.ExpandTabs);

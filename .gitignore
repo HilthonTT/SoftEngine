@@ -427,3 +427,7 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Golden-image failures: the actual and diff images a failed baseline comparison writes
+# out for a person to look at. Evidence about one run, never an input to the next one.
+tests/SoftEngine.Core.Tests/Golden/Artifacts/

@@ -2,16 +2,35 @@ using System.Globalization;
 
 namespace SoftEngine.Benchmarks;
 
+/// <summary>The optimization a <c>--compare</c> run switches off to measure what it is worth.</summary>
+internal enum ComparedFeature
+{
+    None,
+
+    /// <summary>The tile's coarse depth bound, which drops a binned triangle before its pixels.</summary>
+    HierarchicalZ,
+
+    /// <summary>The occlusion pass, which drops a hidden mesh before its vertices.</summary>
+    Occlusion,
+}
+
 internal sealed record Options(
     int Width,
     int Height,
     int Frames,
     int Warmup,
     string? Scene,
-    bool Compare,
+    ComparedFeature Compare,
     string? CsvPath,
     bool ShowHelp)
 {
+    /// <summary>The column heading for whatever <c>--compare</c> turned off.</summary>
+    public string ComparisonLabel => Compare switch
+    {
+        ComparedFeature.Occlusion => "no cull",
+        _ => "no hi-z",
+    };
+
     public static Options Parse(string[] args)
     {
         var width = 1280;
@@ -19,7 +38,7 @@ internal sealed record Options(
         var frames = 60;
         var warmup = 10;
         string? scene = null;
-        var compare = false;
+        var compare = ComparedFeature.None;
         string? csv = null;
         var help = false;
 
@@ -52,7 +71,13 @@ internal sealed record Options(
                     break;
 
                 case "--compare":
-                    compare = true;
+                    // Bare --compare keeps meaning hierarchical-Z, which is what it meant
+                    // before there was a second thing to compare.
+                    compare = NextText(args, ref i) switch
+                    {
+                        "occlusion" or "cull" or "culling" => ComparedFeature.Occlusion,
+                        _ => ComparedFeature.HierarchicalZ,
+                    };
                     break;
 
                 case "--help" or "-?":
@@ -74,7 +99,8 @@ internal sealed record Options(
               --frames <n>     measured frames per scene (default 60)
               --warmup <n>     discarded frames before measuring (default 10)
               --scene  <name>  run only scenes whose name contains this
-              --compare        also measure with hierarchical-Z off, and report the ratio
+              --compare [what] also measure with an optimization off, and report the ratio:
+                               "hi-z" (the default) or "occlusion"
               --csv    <path>  write the results as CSV as well
             """);
 

@@ -43,10 +43,14 @@ public readonly record struct GraphicsEvent(GraphicsEventKind Kind, int ObjectId
                 string.Create(c, $"obj:{ObjectId} — {(int)A} × {(int)A} depth × {System.Math.Max((int)C, 1)} cascade(s), {(int)B} triangles"),
             GraphicsEventKind.PainterPrepare =>
                 string.Create(c, $"obj:{ObjectId}"),
+            GraphicsEventKind.OcclusionBufferRender =>
+                string.Create(c, $"{(int)A} × {(int)B} depth from {(int)C} occluder(s)"),
             GraphicsEventKind.MeshSkipInactive =>
                 string.Create(c, $"obj:{ObjectId} — {(int)A} triangles skipped"),
             GraphicsEventKind.MeshCullBoundingSphere =>
                 string.Create(c, $"obj:{ObjectId} — outside frustum, {(int)A} triangles rejected"),
+            GraphicsEventKind.MeshCullOccluded =>
+                string.Create(c, $"obj:{ObjectId} — hidden behind nearer geometry, {(int)A} triangles rejected"),
             GraphicsEventKind.MeshTransformVertices =>
                 string.Create(c, $"obj:{ObjectId} — {(int)A} vertices → view space"),
             GraphicsEventKind.MeshCullTriangles =>

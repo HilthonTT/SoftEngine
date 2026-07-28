@@ -10,7 +10,9 @@ internal readonly record struct BenchmarkResult(
     double P95Ms,
     int Triangles,
     int DrawnTriangles,
-    int Pixels);
+    int Pixels,
+    int Occluders,
+    int HiddenMeshes);
 
 internal static class BenchmarkRunner
 {
@@ -24,10 +26,18 @@ internal static class BenchmarkRunner
     /// for the vertex buffers, the tile bins and the mip chains being allocated, and for the
     /// prefiltered environment when there is one.
     /// </summary>
-    public static BenchmarkResult Run(BenchmarkScene scene, int width, int height, int frames, int warmup, bool hierarchicalZ)
+    public static BenchmarkResult Run(
+        BenchmarkScene scene,
+        int width,
+        int height,
+        int frames,
+        int warmup,
+        bool hierarchicalZ = true,
+        bool occlusionCulling = true)
     {
         var (renderer, built, painter) = scene.Build(width, height);
         renderer.Settings.HierarchicalZ = hierarchicalZ;
+        renderer.Settings.OcclusionCulling = occlusionCulling;
 
         for (var i = 0; i < warmup; i++)
         {
@@ -52,6 +62,8 @@ internal static class BenchmarkRunner
             samples[System.Math.Min((int)(frames * 0.95), frames - 1)],
             renderer.Stats.TotalTriangleCount,
             renderer.Stats.DrawnTriangleCount,
-            renderer.Stats.DrawnPixelCount);
+            renderer.Stats.DrawnPixelCount,
+            renderer.Stats.OccluderMeshCount,
+            renderer.Stats.OccludedMeshCount);
     }
 }

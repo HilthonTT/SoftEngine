@@ -20,6 +20,25 @@ public sealed class RenderStats
     /// <summary>Triangles that straddled the near plane and were split instead of discarded.</summary>
     public int NearClippedTriangleCount { get; internal set; }
 
+    /// <summary>
+    /// Triangles belonging to meshes the occlusion pass rejected whole, because something
+    /// nearer already covered every pixel they could have reached.
+    ///
+    /// <para>
+    /// Counted apart from <see cref="OutOfViewTriangleCount"/> rather than folded into it. A
+    /// mesh rejected here was inside the frustum and facing the camera — it was in view, and
+    /// merely hidden — so adding it to the out-of-view total would answer a question nobody
+    /// asked and lose the one number that says whether the pass is paying for itself.
+    /// </para>
+    /// </summary>
+    public int OccludedMeshTriangleCount { get; internal set; }
+
+    /// <summary>Meshes the occlusion pass rejected whole.</summary>
+    public int OccludedMeshCount { get; internal set; }
+
+    /// <summary>Meshes the occlusion pass rasterized to do it.</summary>
+    public int OccluderMeshCount { get; internal set; }
+
     private int _drawnPixelCount;
     private int _behindZPixelCount;
     private int _occludedTriangleCount;
@@ -84,6 +103,9 @@ public sealed class RenderStats
         OutOfViewTriangleCount = 0;
         BehindViewTriangleCount = 0;
         NearClippedTriangleCount = 0;
+        OccludedMeshTriangleCount = 0;
+        OccludedMeshCount = 0;
+        OccluderMeshCount = 0;
         _drawnPixelCount = 0;
         _behindZPixelCount = 0;
         _occludedTriangleCount = 0;
