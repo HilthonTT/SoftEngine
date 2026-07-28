@@ -23,10 +23,12 @@ A **software 3D rasterizer** written in C#. The entire pipeline — model transf
 - Runs a **post-process stack** over the finished frame — bloom, tone mapping, FXAA, vignette.
 - Anti-aliases by **supersampling**: render at a multiple of the display resolution and average down.
 - Shades **metallic-roughness materials** with a Cook-Torrance microfacet model, lit by the scene's lights and by a split-sum approximation of its environment.
-- Answers clicks by **ray-casting the world** rather than reading the frame, outlines what it hits, and lets it be **moved, turned and stretched by dragging** the transform handles.
-- Presents the frame's own **intermediate buffers** — depth, normals, overdraw, the shadow map — in place of the shaded image.
+- Answers clicks by **ray-casting the world** rather than reading the frame, outlines what it hits, and lets it be **moved, turned and stretched by dragging** the transform handles — **snapped to a grid** and **undoable**.
+- Saves and reopens a **scene as a JSON file** you can read and edit: camera, lights, per-mesh transforms, shading and post-processing.
+- Renders **headlessly from the command line** to a PNG, at any resolution, with no window and no GPU.
+- Presents the frame's own **intermediate buffers** — depth, normals, overdraw, the shadow map, the occlusion pyramid — in place of the shaded image.
 - Provides an interactive arc-ball camera, WASD fly controls, gizmos (world axes, ground grid), and a live stats overlay.
-- Ships a **graphics debugger** — event list, object table and per-pixel history — built on the renderer's own instrumentation.
+- Ships a **graphics debugger** — event list, object table and per-pixel history — built on the renderer's own instrumentation, and able to **step back through earlier frames**.
 
 | ![Shadow mapping](docs/screenshots/shadows.png) | ![Normal mapping](docs/screenshots/normal-mapping.png) |
 | :--: | :--: |
@@ -362,6 +364,116 @@ world axis drawn; with all three set it is not, because composed Euler angles ca
 one. Turning `Mesh.Rotation` into the quaternion `SceneNode` already uses is what would fix it,
 and this is one more reason to.
 
+### Snapping, and taking it back
+
+A gizmo on its own is a control you can only commit with. Dragging is an *estimating* gesture —
+you push a mesh, look at it, push it back — and the two things that make trying cheap are an
+increment worth landing on and a way to undo it.
+
+[`GizmoSnap`](src/SoftEngine.Core/Gizmos/GizmoSnap.cs) quantizes a drag, and **snaps the
+resulting transform rather than the distance the cursor travelled.** That distinction is the
+whole feature. Rounding the travel preserves whatever offset the mesh started at, so two meshes
+"snapped" to the same gridline end up a fraction apart — precisely what a person turns snapping
+on to prevent. Rounding the result means a step of 1 puts every mesh dragged along X on an
+integer, and 15° means 15° from zero rather than from wherever the drag began. Translation is
+snapped in **world** space, before the offset is carried into a parented mesh's own space, because
+the grid the viewport draws is a world grid and a node's local axes are not it.
+
+[`EditHistory`](src/SoftEngine.Core/Editing/EditHistory.cs) is the undo stack, and it stores whole
+transforms rather than the deltas that produced them, for two reasons. Undo has to be *exact*, and
+a chain of accumulated floating-point deltas does not return to where it started. And a delta that
+knows only about its own axis would be wrong the moment two edits interleave.
+
+Three details that are the difference between a history you can trust and one you fight:
+
+- **A drag that moved nothing records nothing.** A handle grabbed and released in place is a drag
+  as far as the gizmo is concerned, and an entry that undoes nothing makes the first Ctrl+Z after
+  a misclick appear dead — so the user presses it again and loses real work.
+- **The gizmo produces the command; it does not push it.** It has no opinion about whether the
+  application keeps a history. What it has, and nothing downstream does, is the transform from
+  before the drag: by the time a caller sees the mouse-up, the mesh has already moved a hundred
+  times.
+- **Loading a world clears the stack.** The commands point at meshes that are no longer in the
+  scene, and undoing one would silently transform an object nothing draws.
+
+The menu names what it would reverse — *Undo Move Cube* — because that is what tells you whether
+the next Ctrl+Z is the one you meant before you press it.
+
+## Scene files
+
+`File ▸ Save scene as…` writes what you set up as JSON
+([`SceneSerializer`](src/SoftEngine.Core/Scenes/Serialization/SceneSerializer.cs)): the camera and
+its orientation, the projection, every light, every mesh's transform, the shading mode, the fog,
+the shadows and the whole post-process stack.
+
+**What it deliberately does not contain is vertices.** A scene document names the model it was
+built on and records what was done to it. Inlining the geometry would turn a file a person can
+read into a several-megabyte copy of a model that already exists on disk, and one that goes stale
+the moment that model is re-exported.
+
+```json
+{
+  "version": 1,
+  "world": { "demo": "cascades" },
+  "camera": { "position": [0, 12, -48], "orientation": [0, 0.38, 0, 0.92] },
+  "lights": [
+    { "kind": "directional", "direction": [-0.4, -0.6, -1], "intensity": 1.1, "color": [255, 240, 214] }
+  ],
+  "rendering": { "painter": "Pbr", "showXZGrid": true, "debugView": "Off" }
+}
+```
+
+Four decisions worth naming, all of them about being a file rather than a memory dump:
+
+- **Every section is optional, and a missing one means "leave this alone".** That is what makes
+  the format writable by hand: a file containing nothing but a camera position is a valid scene
+  document, and applying it moves the camera and changes nothing else. It is also what makes
+  applying a document to the wrong world merely partly wrong rather than destructive.
+- **Vectors are written as one-line arrays** — `[0, 12, -48]` rather than an object with three
+  named members, and on a single line, because an indented JSON writer puts every array element on
+  a line of its own and three numbers would become five lines.
+- **A light with no falloff writes no range at all.** The engine's default really is infinity and
+  JSON has no way to spell it; recording it as a very large number would turn "no falloff" into
+  "an enormous falloff", which is a different thing that happens to look the same nearby.
+- **Meshes are addressed by index, and an index past the end is skipped rather than thrown on.** A
+  document written against a model that has since been re-exported with fewer meshes is a scene
+  that has partly gone stale, not a file to refuse.
+
+The engine never interprets `world` — resolving a demo name or a path is a question about the
+machine the file is opened on, which belongs above a rendering library rather than inside one.
+
+## Headless rendering
+
+```bash
+dotnet run -c Release --project src/SoftEngine.Cli -- model.gltf -o frame.png -w 1920 -h 1080 -p pbr --ss 2
+```
+
+[`SoftEngine.Cli`](src/SoftEngine.Cli) renders a model or a saved scene straight to a PNG. The
+engine draws into a plain `int[]`, so this needs no window, no GPU and no platform beyond the
+runtime — which is what makes it usable from a build, a script or a batch of a hundred models.
+
+| | |
+| --- | --- |
+| `-w`, `-h`, `--ss` | resolution, and supersampling to average down from |
+| `-p`, `--post`, `--view` | painter, post-process effects, and which buffer to present instead of the shaded image |
+| `--yaw`, `--pitch`, `--zoom`, `--camera` | where to stand; `-t` says how far into the model's animation |
+| `--scene` | apply a saved scene document over the model named on the command line |
+| `--stats` | triangle, pixel and timing counts |
+
+Three things it does differently from the viewer, because one shot is all it gets:
+
+- **The framing is solved rather than guessed.** The distance at which a sphere of radius *r*
+  exactly fills the frame is `r / sin(fov/2)`. A multiplier that frames one model crops the next,
+  and there is no orbiting your way out of it afterwards.
+- **The camera is a bearing, not a gesture.** An arc-ball accumulates the orientation a sequence of
+  drags left behind; three numbers on a command line have to produce the same frame on every
+  machine and every run, which is what makes the output something a script can compare against.
+- **Textures decode from PNG only.** The Core deliberately does not decode images for import — a
+  texture arrives in whatever format an artist saved it in — so a host supplies the decoder. The
+  viewer answers that with GDI+, which reads everything and runs on Windows; this answers it with
+  the engine's own codec, which reads one format and runs anywhere. A model with JPEG maps renders
+  untextured, and the program says how many it skipped rather than hiding it.
+
 ## Scene graph
 
 A mesh with nothing but its own position can only ever be placed absolutely. There is no way
@@ -641,6 +753,9 @@ silhouette can be culled; everything wider than that is safe.
 coarse depth bound is turned off and for the same reason: the pixel history has to show the
 writes the depth test rejects, and a mesh dropped here never attempts them.
 
+The **occlusion buffer** view presents the pyramid itself, which is the quickest way to see why a
+scene culls less than it should — see [Buffer views](#buffer-views).
+
 ## Supersampling
 
 [`SuperSampler`](src/SoftEngine.Core/Pipeline/SuperSampler.cs) resolves a render target drawn
@@ -663,10 +778,14 @@ The WinForms app ([`SoftEngine.WinForms`](src/SoftEngine.WinForms)) renders the 
 | **W / A / S / D** | Fly the camera forward / left / back / right (**Q**/**E** for down/up). Hold **Shift** to move faster, **Ctrl** for fine steps; the step scales with the camera's distance, so it works on a 2-unit skull and a 1500-unit elephant alike |
 | **Left-click the viewport** | Probe that pixel *and* pick what is under it — the write history appears in the Pixel History panel, the hit mesh is outlined in amber and selected in the object table, and the status bar names it (**Esc** clears both) |
 | **Drag a gizmo handle** | Move, turn or stretch the picked mesh, once a mode is chosen. The handle under the cursor highlights, grabbing one suspends the camera for the drag, and the status bar reports the mesh's new position, rotation or scale |
+| **Ctrl+Z / Ctrl+Y** | Undo or redo a gizmo drag; the menu names the edit it would reverse |
+| **Ctrl+G** | Snap drags to a grid — whole units of position, 15° of rotation, tenths of scale. The grid step is scaled to the world that is loaded |
+| **Ctrl+S** | Save the whole scene as JSON; **File ▸ Open scene…** brings it back |
+| **Ctrl+← / Ctrl+→** | Step the debugger panels back and forth through kept frames |
 | **F12** | Save the current view as a PNG |
 | **Load model…** | Pick a bundled world (skull, parrot, elephant, teapot, cubes, spheres, towns, shadows, cascaded shadows, normal mapping, PBR spheres, the three animated ones…) or open an OBJ, Collada or glTF file from disk |
 | **Shading radios** | Switch between None / Classic / Flat / Gouraud / Phong / Textured / Material / Physically based |
-| **Buffer view** | Present the shaded image, or the depth, normals, overdraw or shadow-map buffer that produced it |
+| **Buffer view** | Present the shaded image, or the depth, normals, overdraw, shadow-map or occlusion buffer that produced it |
 | **Shadow cascades** | One map over the world, or two to four fitted to slices of the view distance |
 | **Transform gizmo** | Off / Move / Rotate / Scale — the handles drawn on the picked mesh |
 | **Display checkboxes** | Toggle wireframe triangles, back-face culling, XZ grid, world axes, skeleton, animation, fog, shadows, sky, gamma-correct light, HDR target, texture filtering, 2× supersampling |
@@ -683,6 +802,32 @@ The front-end doubles as a small graphics debugger, modelled on [Rasterizr Studi
 | **Graphics Event List** | Every step of the frame in pipeline order — viewport and depth-range setup, buffer clears, the shadow-map pass, the view and projection matrices, then per mesh: vertex transform, cull results and the draw call, then the post-process pass and the present. |
 | **Graphics Object Table** | Every object the frame touched — render target, depth buffer, camera, projection, painter, shadow map, post-process stack, lights, meshes and textures — with its size, vertex/triangle counts and dimensions. Meshes carry an **active** checkbox that drops them from the frame. |
 | **Pixel History** | For the selected pixel: the clear, then each triangle that tried to write it — including the ones the depth test rejected — with the input-assembler and transformed vertex data, the depth comparison, and the previous → resulting colour, ending with the post-process pass's before → after. |
+
+### Frame history
+
+The panels normally read the renderer's live log, which is one buffer reused every frame — so the
+moment you see something worth looking at, the frame that produced it has already been overwritten
+by the next one. That is fine while the camera is still and unbearable while anything moves, which
+is exactly when the interesting frames happen.
+
+`View ▸ Frame history ▸ Keep recent frames` files each finished frame into a
+[`FrameCapture`](src/SoftEngine.Core/Diagnostics/FrameCapture.cs), and **Ctrl+←** / **Ctrl+→** step
+the panels back and forth through them. Three decisions:
+
+- **It is off by default and separate from event recording.** Capturing events is a write into a
+  buffer reused for ever; *keeping* a frame means copying that buffer, and a busy scene emits
+  thousands of events per frame. It is the one piece of instrumentation here that genuinely
+  allocates, so the cost is opt-in and bounded by a number the caller chose.
+- **The pin is a frame number, not a position in the list.** The viewport goes on rendering while a
+  frame is pinned, and every new capture drops the oldest — an index would quietly come to mean a
+  different frame each time that happened, so the panels would creep forward through history while
+  claiming to stand still. If a pinned frame does age out of the window, the oldest one still kept
+  is shown and the status bar names it, so the slip is visible rather than silent.
+- **The image is not kept.** A capture holds the event list, the probed pixel's history and the
+  counts — everything the three panels draw — and none of the pixels. A frame at 1920×1080 is eight
+  megabytes of colour and as much again of depth, and keeping a dozen of those to answer "what did
+  the renderer do" would spend a hundred and sixty megabytes on the one question the panels never
+  ask. Stepping back changes what the panels show, not what the viewport shows.
 
 Identifiers are shared: `obj:7` in the event list is `obj:7` in the object table, and clicking an entry in the pixel history selects both. Clicking the viewport asks the same pixel two questions at once: the probe records what the renderer *did* there, and the ray says which mesh is *under* it — and the second selects the matching row in the object table.
 
@@ -702,6 +847,27 @@ being shown is the one the frame really used.
 | **Normals** — differenced out of the depth buffer, since a forward renderer has no normal buffer to show | **Overdraw** — writes per pixel, blue through red. Shown here with back-face culling off, which is the frame paying for the far side of every surface |
 | ![The shadow map as the light sees it](docs/screenshots/buffer-shadowmap.png) | |
 | **Shadow map** — the depth the light recorded, fitted into the viewport with its aspect preserved | |
+
+The **occlusion buffer** view is the one pass whose working nothing else in the debugger can show.
+A mesh that should have been culled and was not is a question about coverage in a buffer you have
+never seen, and coverage is invisible in the finished frame by construction: the pass only ever
+decides what *not* to draw, so when it under-performs the picture is exactly right and merely
+slower. Two decisions make it worth looking at rather than merely available:
+
+- **The level shown is the finest one a query may read, not the level that was rasterized.** Level
+  0 is centre-sampled, so a texel there is written wherever a triangle reached its middle — which
+  is not the same as covering it. Coverage only appears one level up, where a texel carries a real
+  depth exactly where all four of its children were sampled inside geometry. Showing level 0 would
+  paint a confident picture of occlusion the culler cannot actually use, and the gap between the
+  two is exactly what you opened the view to find.
+- **Texels nothing covered are a cold blue-grey rather than black**, because "nothing here" and
+  "something at the far plane" are different answers and a greyscale ramp gives them the same
+  colour — which would make an empty buffer look like a fully occluding one. The filled texels are
+  auto-ranged over the depths actually present, for the same reason the depth view is.
+
+A frame the pass declined — switched off, probed, or a world with too few meshes to repay it —
+leaves the shaded image alone and says so in the event list, rather than presenting the previous
+frame's pyramid, which would look current.
 
 Two details that are the difference between a view you can trust and one you cannot:
 
@@ -731,22 +897,26 @@ src/
 ├── SoftEngine.Core/        # engine, no UI dependency (net10.0 class library)
 │   ├── Animation/          # keyframe tracks, interpolation modes, node channels, clips, playback
 │   ├── Buffers/            # FrameBuffer (color + z-buffer + pixel probe), pooled Vertex/World buffers
-│   ├── Diagnostics/        # render stats, graphics event log, pixel history
+│   ├── Diagnostics/        # render stats, graphics event log, pixel history, frame captures
+│   ├── Editing/            # undoable edits and the history the viewport records drags into
 │   ├── Geometry/           # IMesh/Mesh, Material, Triangle, tangents, primitives, OBJ/Collada importers
 │   │   ├── Gltf/           # glTF 2.0 / GLB reader: schema, accessor decoding, scene building
 │   │   └── Skinning/       # skeleton, skin weights, linear blend skinning, generated bone chain
-│   ├── Gizmos/             # grid, world axes, skeleton, and the draggable transform handles
+│   ├── Gizmos/             # grid, world axes, skeleton, the draggable transform handles, snapping
+│   ├── Imaging/            # PNG codec for the engine's own frames
 │   ├── Picking/            # ray, ray-triangle intersection, scene picker
 │   ├── Pipeline/           # Renderer, settings, homogeneous clipping, sky pass
 │   │   ├── Culling/        # frustum planes, occluder selection, occlusion depth pyramid
-│   │   ├── Debugging/      # buffer views: depth, normals, overdraw, shadow cascades
+│   │   ├── Debugging/      # buffer views: depth, normals, overdraw, cascades, occlusion
 │   │   ├── PostProcess/    # effect stack: SSAO, bloom, tone map, FXAA, vignette
 │   │   └── Shadows/        # depth-only shadow-map pass, cascade fitting
 │   ├── Rasterization/      # scanline filler, painters, shaders, varyings, texture sampling
 │   ├── Scenes/             # world, camera, projections, lights, fog and shadow settings
-│   │   └── Graph/          # SceneNode transform hierarchy
+│   │   ├── Graph/          # SceneNode transform hierarchy
+│   │   └── Serialization/  # the JSON scene document, and moving it on and off a live Scene
 │   └── Shading/            # linear colour, light sets, ambient cube, sRGB conversion, shadow map,
 │                           #   GGX, BRDF table, prefiltered environment
+├── SoftEngine.Cli/         # headless renderer: model or scene in, PNG out (net10.0 console)
 └── SoftEngine.WinForms/    # interactive front-end (net10.0-windows)
     ├── Debugging/          # event list, object table and pixel history panels
     └── Dialogs/            # model picker
@@ -755,6 +925,14 @@ bench/SoftEngine.Benchmarks/   # headless frame-time harness (net10.0 console)
 tests/SoftEngine.Core.Tests/   # xUnit suite over the Core
 └── Golden/                    # golden-image harness, scenes and committed baselines
 ```
+
+`SoftEngine.Cli` and the golden-image harness share the Core's own
+[`PngCodec`](src/SoftEngine.Core/Imaging/PngCodec.cs), as the viewer's screenshot key does. That is
+not a retreat from the line the importers hold — an OBJ or glTF reader still resolves an image to
+bytes and hands the *decoding* to whoever hosts it, because a texture arrives in whatever format an
+artist saved it in. Writing out the frame the renderer just produced is a different question, about
+the engine's own buffer in its own layout, and three copies of a PNG encoder is not a line being
+held but a line being paid for repeatedly.
 
 ## Requirements
 
@@ -769,6 +947,9 @@ dotnet build SoftEngine.slnx
 
 # run the interactive app
 dotnet run --project src/SoftEngine.WinForms
+
+# render a model to a PNG with no window
+dotnet run -c Release --project src/SoftEngine.Cli -- model.gltf -o frame.png -w 1920 -h 1080
 
 # run the tests
 dotnet test tests/SoftEngine.Core.Tests
@@ -881,13 +1062,13 @@ opposite responses.
 
 - Replace `Mesh`'s `Rotation3D` (Euler angles) with the quaternion rotation `SceneNode` already uses — which is also what would let the transform gizmo's rings turn a mesh about a world axis rather than about its own.
 - Animation blending — crossfading two clips, and layering one over another — which the player is one weight away from.
-- Frame capture history, so the debugger can step back through earlier frames.
 - A mip-level buffer view, the one view of the frame the visualizer still has nothing to draw from.
 - More than one shadow-casting light, which needs a depth buffer and a pass per light.
 - Morph targets, the one part of glTF's animation the importer reads past.
 - A deferred or visibility-buffer path, which would let SSAO darken the ambient term alone instead of the finished image — the limitation the post-processing section admits to.
 - Testing occluders against each other, by building the occlusion pyramid front to back rather than all at once — the first of the two limits that section admits to.
-- An occlusion-buffer view, which is the one pass whose working the debugger cannot currently show, and the quickest way to see why a scene culls less than it should.
+- Alpha-tested (`MASK`) materials: the glTF importer reads `alphaMode` but only acts on `BLEND`, so foliage and fences render as opaque quads — and cast opaque shadows.
+- A JPEG decoder for the headless renderer, which reads PNG only and says so.
 
 ## Credits
 

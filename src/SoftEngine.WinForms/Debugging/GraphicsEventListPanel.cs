@@ -53,10 +53,15 @@ internal sealed class GraphicsEventListPanel : UserControl
     public event EventHandler<GraphicsEvent>? EventSelected;
 
     /// <summary>Copies the frame's events out of the renderer's log and refreshes the view.</summary>
-    public void SetEvents(GraphicsEventLog log)
-    {
-        var source = log.AsSpan();
+    public void SetEvents(GraphicsEventLog log) => SetEvents(log.AsSpan());
 
+    /// <summary>
+    /// Shows a frame's events from anywhere they have been kept. The live log is one buffer
+    /// reused every frame, so a history entry hands over its own copy instead — and the panel
+    /// does not need to know which it was given.
+    /// </summary>
+    public void SetEvents(ReadOnlySpan<GraphicsEvent> source)
+    {
         if (_events.Length < source.Length)
         {
             _events = new GraphicsEvent[Math.Max(source.Length, 256)];

@@ -25,4 +25,15 @@ public enum DebugView
 
     /// <summary>The shadow-map depth buffer, drawn as the light sees it.</summary>
     ShadowMap,
+
+    /// <summary>
+    /// The occlusion pass's depth pyramid — what the culler tests every other mesh against.
+    ///
+    /// It is the one pass whose working nothing else in the debugger can show. A mesh that
+    /// should have been culled and was not is a question about coverage in this buffer, and
+    /// coverage is invisible in the finished frame by construction: the pass only ever decides
+    /// what <em>not</em> to draw, so when it under-performs the picture is exactly right and
+    /// merely slower.
+    /// </summary>
+    OcclusionBuffer,
 }

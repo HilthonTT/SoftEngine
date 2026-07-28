@@ -209,6 +209,156 @@ public class TransformGizmoTests
         Assert.Equal(0f, cube.Rotation.YYaw, 5);
     }
 
+    /// <summary>
+    /// Snapping rounds the mesh's resulting world position, so a drag along X finishes on a
+    /// multiple of the step whatever the drag's own length was.
+    /// </summary>
+    [Fact]
+    public void Drag_WithTranslateSnapping_LandsOnAMultipleOfTheStep()
+    {
+        var (scene, gizmo, cube) = Setup(GizmoMode.Translate);
+
+        gizmo.Snap.Enabled = true;
+        gizmo.Snap.TranslateStep = 0.5f;
+
+        var (x, y) = HandleTip(scene, gizmo, GizmoAxis.X);
+
+        gizmo.Begin(scene, x, y);
+        gizmo.Drag(scene, x + 37, y);
+        gizmo.End();
+
+        Assert.Equal(cube.Position.X, MathF.Round(cube.Position.X / 0.5f) * 0.5f, 4);
+    }
+
+    /// <summary>
+    /// The claim snapping actually has to make. A mesh that starts off the grid must finish
+    /// <em>on</em> it — rounding the distance travelled instead would preserve the offset, so
+    /// two meshes "snapped" to the same line would still be a fraction apart, which is the one
+    /// thing snapping exists to prevent.
+    /// </summary>
+    [Fact]
+    public void Drag_WithSnapping_PutsAMeshThatStartedOffTheGridOntoIt()
+    {
+        var (scene, gizmo, cube) = Setup(GizmoMode.Translate);
+
+        cube.Position = new Vector3(0.37f, 0f, 0f);
+
+        gizmo.Snap.Enabled = true;
+        gizmo.Snap.TranslateStep = 1f;
+
+        var (x, y) = HandleTip(scene, gizmo, GizmoAxis.X);
+
+        gizmo.Begin(scene, x, y);
+        gizmo.Drag(scene, x + 40, y);
+        gizmo.End();
+
+        Assert.Equal(cube.Position.X, MathF.Round(cube.Position.X), 4);
+    }
+
+    [Fact]
+    public void Drag_WithRotationSnapping_LandsOnAMultipleOfTheAngle()
+    {
+        var (scene, gizmo, cube) = Setup(GizmoMode.Rotate);
+
+        var step = 15f * MathF.PI / 180f;
+
+        gizmo.Snap.Enabled = true;
+        gizmo.Snap.RotateStep = step;
+
+        var (x, y) = HandleTip(scene, gizmo, GizmoAxis.X, along: 1f);
+
+        gizmo.Begin(scene, x, y);
+        gizmo.Drag(scene, x, y - 30);
+        gizmo.End();
+
+        Assert.Equal(cube.Rotation.ZRoll, MathF.Round(cube.Rotation.ZRoll / step) * step, 4);
+    }
+
+    /// <summary>
+    /// Snapping must not reach the zero the un-snapped path already refuses: a scale rounded
+    /// down to nothing is a matrix that cannot be inverted.
+    /// </summary>
+    [Fact]
+    public void Drag_WithScaleSnapping_FarInward_NeverReachesZero()
+    {
+        var (scene, gizmo, cube) = Setup(GizmoMode.Scale);
+
+        gizmo.Snap.Enabled = true;
+        gizmo.Snap.ScaleStep = 0.5f;
+
+        var (x, y) = HandleTip(scene, gizmo, GizmoAxis.Y);
+
+        gizmo.Begin(scene, x, y);
+        gizmo.Drag(scene, x, y + 4000);
+        gizmo.End();
+
+        Assert.True(cube.Scale.Y > 0f, $"scale collapsed to {cube.Scale.Y}");
+    }
+
+    /// <summary>
+    /// With snapping off the arithmetic must be exactly what it was before snapping existed —
+    /// not merely close. Rounding through a step and subtracting the origin back out would
+    /// perturb the last bits of every drag in the application for a feature nobody turned on.
+    /// </summary>
+    [Fact]
+    public void Drag_WithSnappingOff_IsUnchangedByTheSnapSettings()
+    {
+        var (sceneA, gizmoA, cubeA) = Setup(GizmoMode.Translate);
+        var (sceneB, gizmoB, cubeB) = Setup(GizmoMode.Translate);
+
+        gizmoB.Snap.TranslateStep = 0.25f;
+        gizmoB.Snap.Enabled = false;
+
+        var (x, y) = HandleTip(sceneA, gizmoA, GizmoAxis.X);
+
+        gizmoA.Begin(sceneA, x, y);
+        gizmoA.Drag(sceneA, x + 33, y);
+        gizmoA.End();
+
+        gizmoB.Begin(sceneB, x, y);
+        gizmoB.Drag(sceneB, x + 33, y);
+        gizmoB.End();
+
+        Assert.Equal(cubeA.Position.X, cubeB.Position.X);
+    }
+
+    [Fact]
+    public void End_AfterADragThatMoved_ReturnsAnUndoableEdit()
+    {
+        var (scene, gizmo, cube) = Setup(GizmoMode.Translate);
+
+        var (x, y) = HandleTip(scene, gizmo, GizmoAxis.X);
+
+        gizmo.Begin(scene, x, y);
+        gizmo.Drag(scene, x + 40, y);
+
+        var edit = gizmo.End();
+
+        Assert.NotNull(edit);
+        Assert.NotEqual(0f, cube.Position.X);
+
+        edit.Revert();
+
+        Assert.Equal(Vector3.Zero, cube.Position);
+    }
+
+    /// <summary>
+    /// A handle grabbed and released without moving is still a drag as far as the gizmo is
+    /// concerned. Recording it would put an entry on the undo stack that undoes nothing, so the
+    /// first Ctrl+Z after a misclick would appear dead and the user would press it again.
+    /// </summary>
+    [Fact]
+    public void End_AfterADragThatMovedNothing_ReturnsNull()
+    {
+        var (scene, gizmo, _) = Setup(GizmoMode.Translate);
+
+        var (x, y) = HandleTip(scene, gizmo, GizmoAxis.X);
+
+        gizmo.Begin(scene, x, y);
+
+        Assert.Null(gizmo.End());
+    }
+
     [Fact]
     public void Cancel_MidDrag_PutsTheMeshBack()
     {

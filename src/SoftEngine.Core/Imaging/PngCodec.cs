@@ -2,27 +2,29 @@ using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
 
-namespace SoftEngine.Core.Tests.Golden;
+namespace SoftEngine.Core.Imaging;
 
 /// <summary>
-/// Reads and writes the 8-bit RGBA PNGs the golden-image baselines are stored as.
+/// Reads and writes 8-bit RGBA PNGs of the engine's own frames.
 ///
 /// <para>
-/// It lives in the test project rather than in the Core deliberately. The Core resolves an
-/// image down to bytes and hands the decoding to whoever hosts it — the same stance the OBJ
-/// and glTF readers take — and a regression harness is not a reason to move that line. The
-/// front-end's own <c>PngWriter</c> is not reused for the opposite reason: it is internal to
-/// the WinForms app, writes uncompressed DEFLATE blocks (fine for a screenshot, wasteful for
-/// a file committed to the repository), and has no read path at all.
+/// This is not a retreat from the line the importers hold. An OBJ or glTF reader still resolves
+/// an image down to bytes and hands the <em>decoding</em> to whoever hosts it, because a texture
+/// arrives in whatever format an artist saved it in and supporting that is an application's
+/// problem. This codec answers a different question: how the engine writes out the frame it just
+/// produced, which is its own <c>int[]</c> in its own layout, and how it reads one back to
+/// compare against. Three consumers wanted exactly that — the golden-image harness, the viewer's
+/// screenshot key and the headless renderer — and three copies of a PNG encoder is not a line
+/// being held, it is a line being paid for repeatedly.
 /// </para>
 ///
 /// <para>
-/// Pixels are exchanged in the packed ARGB the <c>FrameBuffer</c>'s <c>Screen</c> holds —
-/// alpha in the top byte, then red, green, blue — and the byte order on disk is PNG's RGBA.
-/// The two disagree, which is exactly why the swizzle happens in one place.
+/// Pixels are exchanged in the packed ARGB <see cref="Buffers.FrameBuffer.Screen"/> holds —
+/// alpha in the top byte, then red, green, blue — and the byte order on disk is PNG's RGBA. The
+/// two disagree, which is exactly why the swizzle happens in one place.
 /// </para>
 /// </summary>
-internal static class PngCodec
+public static class PngCodec
 {
     private static readonly byte[] Signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
@@ -40,9 +42,9 @@ internal static class PngCodec
             throw new ArgumentException($"Need {width * height} pixels; got {pixels.Length}.", nameof(pixels));
         }
 
-        // PNG prefixes every scanline with a filter-type byte. Baselines are written once and
-        // read on every test run, so filter 0 (None) keeps decoding a straight copy and lets
-        // DEFLATE do the compressing.
+        // PNG prefixes every scanline with a filter-type byte. Filter 0 (None) keeps decoding a
+        // straight copy and lets DEFLATE do the compressing, which is the right trade for images
+        // written once and read many times.
         var stride = width * 4 + 1;
         var raw = new byte[stride * height];
 
@@ -88,8 +90,8 @@ internal static class PngCodec
     /// <summary>Decodes a PNG written by <see cref="Save"/> back into packed ARGB.</summary>
     /// <remarks>
     /// Only the subset <see cref="Save"/> produces is supported — 8-bit RGBA, non-interlaced —
-    /// but all five scanline filters are handled, because the baselines are files a person may
-    /// well have re-saved from an image editor along the way.
+    /// but all five scanline filters are handled, because a file that comes back is one a person
+    /// may well have re-saved from an image editor along the way, and those filter properly.
     /// </remarks>
     public static (int[] Pixels, int Width, int Height) Load(string path)
     {

@@ -1,5 +1,6 @@
 ﻿using SoftEngine.Core.Animation;
 using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Editing;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Gltf;
 using SoftEngine.Core.Geometry.Primitives;
@@ -14,12 +15,14 @@ using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Graph;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
+using SoftEngine.Core.Scenes.Serialization;
 using SoftEngine.WinForms.Cameras;
 using SoftEngine.WinForms.Controls;
 using SoftEngine.WinForms.Debugging;
 using SoftEngine.WinForms.Dialogs;
 using SoftEngine.WinForms.Interop;
 using System.Numerics;
+using System.Text.Json;
 
 namespace SoftEngine.WinForms;
 
@@ -82,6 +85,9 @@ public sealed partial class MainScreen : Form
 
     /// <summary>Id of the bundled world on screen, so the picker reopens on it.</summary>
     private string _currentDemoId = "skull";
+
+    /// <summary>Path of the model file on screen, when the world came from one rather than from a demo.</summary>
+    private string? _modelPath;
 
     public MainScreen()
     {
@@ -316,6 +322,8 @@ public sealed partial class MainScreen : Form
 
         mnuLoadModel.Click += async (s, e) => await ShowModelPickerAsync();
         mnuOpenModel.Click += async (s, e) => await OpenModelAsync();
+        mnuOpenScene.Click += async (s, e) => await OpenSceneAsync();
+        mnuSaveScene.Click += (s, e) => SaveScene();
         mnuScreenshot.Click += (s, e) => SaveScreenshot();
         lblScreenshotHint.Click += (s, e) => SaveScreenshot();
         mnuExit.Click += (s, e) => Close();
@@ -353,12 +361,17 @@ public sealed partial class MainScreen : Form
         mnuZoomActual.Click += (s, e) => panel3D1.ZoomActualSize();
         mnuClearPixel.Click += (s, e) => panel3D1.ClearSelectedPixel();
 
+        InitializeFrameHistory();
+
         UpdateStatus();
     }
 
     /// <summary>Pulls the last frame's capture into the three panels — at most once per timer tick.</summary>
     private void RefreshDebugPanels()
     {
+        // A pinned frame is not going to change, so there is nothing to pull until the pin moves
+        // — but the panels still have to be filled the first time it is set, which is what the
+        // dirty flag is raised for there too.
         if (!_frameDirty)
         {
             return;
@@ -375,18 +388,195 @@ public sealed partial class MainScreen : Form
             objectTablePanel.SetCatalog(_catalog);
         }
 
+        var pinned = PinnedFrame();
+
         if (!splitRight.Panel2Collapsed)
         {
-            eventListPanel.SetEvents(panel3D1.Diagnostics.Events);
+            if (pinned is { } capture)
+            {
+                eventListPanel.SetEvents(capture.Events);
+            }
+            else
+            {
+                eventListPanel.SetEvents(panel3D1.Diagnostics.Events);
+            }
         }
 
         if (!splitLeft.Panel2Collapsed)
         {
-            pixelHistoryPanel.SetHistory(panel3D1.Diagnostics.PixelHistory, _catalog);
+            pixelHistoryPanel.SetHistory(pinned?.PixelHistory ?? panel3D1.Diagnostics.PixelHistory, _catalog);
         }
+
+        // The kept-frame count climbs as frames arrive, and the step items become reachable the
+        // moment there is a first one — both belong on the timer rather than on every frame.
+        UpdateFrameHistoryMenu();
 
         UpdateStatus();
     }
+
+    #region Frame history
+
+    /// <summary>How many finished frames are kept when the history is switched on.</summary>
+    private const int FrameHistoryDepth = 60;
+
+    /// <summary>
+    /// Which frame the panels are showing, by its own number, or -1 to follow whatever was
+    /// rendered last.
+    ///
+    /// <para>
+    /// The number rather than a position in the kept list, because the list is a window that
+    /// slides: the viewport goes on rendering while a frame is pinned, and every new capture
+    /// drops the oldest. An index would quietly come to mean a different frame each time that
+    /// happened — the panels would creep forward through history while claiming to stand still,
+    /// which is worse than either following or stopping.
+    /// </para>
+    /// </summary>
+    private long _pinnedFrameNumber = -1;
+
+    /// <summary>
+    /// Where the pinned frame sits in the kept list, or -1 when the panels are following the
+    /// renderer.
+    /// </summary>
+    /// <remarks>
+    /// A pinned frame can age out of the window while it is being looked at. The oldest frame
+    /// still kept is the closest thing to what was asked for, and the status bar names whichever
+    /// frame is actually on screen — so the slip is visible rather than silent.
+    /// </remarks>
+    private int PinnedIndex()
+    {
+        if (_pinnedFrameNumber < 0)
+        {
+            return -1;
+        }
+
+        var frames = panel3D1.Diagnostics.Frames;
+
+        if (frames.Count == 0)
+        {
+            return -1;
+        }
+
+        for (var i = frames.Count - 1; i >= 0; i--)
+        {
+            if (frames[i].FrameNumber == _pinnedFrameNumber)
+            {
+                return i;
+            }
+        }
+
+        return 0;
+    }
+
+    private FrameCapture? PinnedFrame()
+    {
+        var index = PinnedIndex();
+
+        return index >= 0 ? panel3D1.Diagnostics.Frames[index] : null;
+    }
+
+    private void InitializeFrameHistory()
+    {
+        mnuKeepFrames.CheckedChanged += (s, e) =>
+        {
+            panel3D1.Diagnostics.HistoryCapacity = mnuKeepFrames.Checked ? FrameHistoryDepth : 0;
+
+            if (!mnuKeepFrames.Checked)
+            {
+                panel3D1.Diagnostics.ClearHistory();
+                GoLive();
+            }
+
+            UpdateFrameHistoryMenu();
+        };
+
+        mnuPreviousFrame.Click += (s, e) => StepFrame(-1);
+        mnuNextFrame.Click += (s, e) => StepFrame(+1);
+        mnuLatestFrame.Click += (s, e) => GoLive();
+
+        UpdateFrameHistoryMenu();
+    }
+
+    /// <summary>
+    /// Moves the pin one frame. Stepping back from live starts at the newest kept frame, and
+    /// stepping forward past it returns to following the renderer — so the two ends of the
+    /// history behave the way a person expects rather than stopping dead.
+    /// </summary>
+    private void StepFrame(int direction)
+    {
+        var frames = panel3D1.Diagnostics.Frames;
+
+        if (frames.Count == 0)
+        {
+            return;
+        }
+
+        var index = PinnedIndex();
+
+        if (index < 0)
+        {
+            // Following the renderer. Back pins the newest frame captured; forward has nowhere
+            // to go, since the newest frame is the one already on screen.
+            if (direction < 0)
+            {
+                PinFrame(frames[^1].FrameNumber);
+            }
+
+            return;
+        }
+
+        var next = index + direction;
+
+        if (next >= frames.Count)
+        {
+            GoLive();
+            return;
+        }
+
+        PinFrame(frames[Math.Max(next, 0)].FrameNumber);
+    }
+
+    private void PinFrame(long frameNumber)
+    {
+        _pinnedFrameNumber = frameNumber;
+
+        // The panels read the pin on their next tick, and there may not be another rendered
+        // frame to raise the flag — a still camera repaints nothing.
+        _frameDirty = true;
+
+        UpdateFrameHistoryMenu();
+        RefreshDebugPanels();
+    }
+
+    private void GoLive()
+    {
+        if (_pinnedFrameNumber < 0)
+        {
+            return;
+        }
+
+        _pinnedFrameNumber = -1;
+        _frameDirty = true;
+
+        UpdateFrameHistoryMenu();
+        RefreshDebugPanels();
+    }
+
+    private void UpdateFrameHistoryMenu()
+    {
+        var keeping = mnuKeepFrames.Checked;
+        var frames = panel3D1.Diagnostics.Frames.Count;
+        var index = PinnedIndex();
+
+        mnuPreviousFrame.Enabled = keeping && frames > 0 && index != 0;
+        mnuNextFrame.Enabled = keeping && index >= 0;
+        mnuLatestFrame.Enabled = _pinnedFrameNumber >= 0;
+
+        mnuKeepFrames.Text = keeping
+            ? $"&Keep recent frames ({frames}/{FrameHistoryDepth})"
+            : "&Keep recent frames";
+    }
+
+    #endregion
 
     private void UpdateStatus()
     {
@@ -427,6 +617,20 @@ public sealed partial class MainScreen : Form
             };
 
             lblPixelStatus.Text += $"  ·  {what}";
+
+            // The increment has to be visible, or a drag that lands on a round number reads as
+            // the renderer having quietly rounded it.
+            if (_gizmo.Snap.Enabled)
+            {
+                var step = _gizmo.Mode switch
+                {
+                    GizmoMode.Rotate => Degrees(_gizmo.Snap.RotateStep),
+                    GizmoMode.Scale => $"{_gizmo.Snap.ScaleStep:0.###}×",
+                    _ => $"{_gizmo.Snap.TranslateStep:0.###}",
+                };
+
+                lblPixelStatus.Text += $"  ·  snap {step}";
+            }
         }
 
         if (panel3D1.Scene?.Camera is { } camera)
@@ -441,8 +645,19 @@ public sealed partial class MainScreen : Form
             lblCameraStatus.Text = $"Camera: ({position.X:0.##}, {position.Y:0.##}, {position.Z:0.##}){view}";
         }
 
-        var stats = panel3D1.Stats;
-        lblFrameStatus.Text = $"Frame #{panel3D1.Diagnostics.FrameNumber} · {stats.CalculationTimeMs + stats.PainterTimeMs} ms";
+        // A pinned frame reports its own numbers. Showing the live ones beside a pinned event
+        // list would put two different frames on the same status bar, which is the one thing a
+        // history must not do.
+        if (PinnedFrame() is { } pinned)
+        {
+            lblFrameStatus.Text =
+                $"Frame #{pinned.FrameNumber} · {pinned.Stats.TotalTimeMs} ms · pinned (live is #{panel3D1.Diagnostics.FrameNumber})";
+        }
+        else
+        {
+            var stats = panel3D1.Stats;
+            lblFrameStatus.Text = $"Frame #{panel3D1.Diagnostics.FrameNumber} · {stats.CalculationTimeMs + stats.PainterTimeMs} ms";
+        }
     }
 
     /// <summary>A mesh's Euler angles are stored in radians; nobody reads a pose in radians.</summary>
@@ -519,6 +734,304 @@ public sealed partial class MainScreen : Form
         }
     }
 
+    #region Scenes
+
+    private const string SceneFilter = "SoftEngine scene (*.scene.json)|*.scene.json|JSON (*.json)|*.json|All files (*.*)|*.*";
+
+    /// <summary>
+    /// True while a document is being written onto the viewport. The handlers that <em>derive</em>
+    /// state from the world — fog distances from the framing, the SSAO radius from the world's
+    /// scale — sit out that window: the document carries the numbers those would recompute, and
+    /// having them fire as each control is synchronised would overwrite what was just loaded with
+    /// what the world would have defaulted to.
+    /// </summary>
+    private bool _applyingScene;
+
+    /// <summary>Where the current scene was last saved or opened, so a re-save offers the same name.</summary>
+    private string? _scenePath;
+
+    private void SaveScene()
+    {
+        if (panel3D1.Scene is not { } scene)
+        {
+            return;
+        }
+
+        using var dialog = new SaveFileDialog
+        {
+            Title = "Save scene",
+            Filter = SceneFilter,
+            DefaultExt = "scene.json",
+            FileName = Path.GetFileName(_scenePath) ?? $"{(_currentDemoId is { Length: > 0 } id ? id : "scene")}.scene.json",
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        try
+        {
+            var document = SceneSerializer.Capture(scene, panel3D1.RendererSettings, panel3D1.PostProcess);
+
+            DescribeFrontEnd(document);
+
+            SceneSerializer.Save(dialog.FileName, document);
+
+            _scenePath = dialog.FileName;
+            lblCurrentModel.Text = Path.GetFileName(dialog.FileName);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            MessageBox.Show(this, $"Failed to save the scene:\n{exception.Message}", "Save scene",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    /// <summary>
+    /// Fills in the parts of a document only the application can know: which world this was built
+    /// on, which painter is drawing it, and how the camera is oriented. The engine has no
+    /// vocabulary for any of the three — a demo id is a name the front-end assigns, and
+    /// <see cref="Core.Scenes.Cameras.ICamera"/> promises a view matrix rather than a rotation.
+    /// </summary>
+    private void DescribeFrontEnd(SceneDocument document)
+    {
+        document.World = _currentDemoId is { Length: > 0 } demo
+            ? new WorldSource { Demo = demo }
+            : new WorldSource { File = _modelPath };
+
+        if (document.Camera is { } camera)
+        {
+            camera.ReferenceDistance = panel3D1.ReferenceDistance;
+
+            if (panel3D1.Scene?.Camera is ArcBallCamera arcBall)
+            {
+                camera.Orientation = arcBall.Rotation;
+            }
+        }
+
+        document.Rendering ??= new RenderState();
+        document.Rendering.Painter = PainterName(panel3D1.Painter);
+        document.Rendering.SuperSampling = chkSuperSampling.Checked ? 2 : 1;
+        document.Rendering.TextureFiltering = chkTextureFiltering.Checked;
+        document.Rendering.Animate = chkAnimate.Checked;
+
+        document.Environment ??= new EnvironmentState();
+        document.Environment.ShowSky = chkSky.Checked;
+    }
+
+    private async Task OpenSceneAsync()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "Open scene",
+            Filter = SceneFilter,
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        SceneDocument document;
+
+        try
+        {
+            document = SceneSerializer.Load(dialog.FileName);
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, $"Failed to read the scene:\n{exception.Message}", "Open scene",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        // The geometry first, then everything the document says about it. The order is forced: a
+        // mesh transform is addressed by its position in the world's mesh list, so there has to
+        // be a world for it to address.
+        if (document.World is { Demo: { Length: > 0 } demo })
+        {
+            await PrepareWorldAsync(demo);
+        }
+        else if (document.World is { File: { Length: > 0 } file })
+        {
+            if (!File.Exists(file))
+            {
+                MessageBox.Show(this,
+                    $"The scene refers to a model that is not there:\n{file}\n\nEverything else in it will still be applied.",
+                    "Open scene", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            else
+            {
+                await PrepareWorldFromFileAsync(file);
+            }
+        }
+
+        ApplyScene(document);
+
+        _scenePath = dialog.FileName;
+        lblCurrentModel.Text = Path.GetFileName(dialog.FileName);
+    }
+
+    /// <summary>
+    /// Writes a document onto the viewport and brings the sidebar into agreement with it. Both
+    /// halves are needed: a checkbox left saying "off" over a setting the document turned on is
+    /// worse than not loading the setting at all, because the next click on it toggles to the
+    /// value it already has and appears to do nothing.
+    /// </summary>
+    private void ApplyScene(SceneDocument document)
+    {
+        if (panel3D1.Scene is not { } scene)
+        {
+            return;
+        }
+
+        _applyingScene = true;
+
+        try
+        {
+            // The controls go first and the document second, so where the two disagree — a
+            // checkbox handler that recomputes a derived value, say — the document wins.
+            SyncControlsToScene(document);
+
+            SceneSerializer.Apply(document, scene, panel3D1.RendererSettings, panel3D1.PostProcess);
+
+            if (document.Camera is { } camera)
+            {
+                if (camera.ReferenceDistance is { } reference and > 0f)
+                {
+                    panel3D1.ReferenceDistance = reference;
+                }
+
+                if (camera.Orientation is { } orientation && scene.Camera is ArcBallCamera arcBall)
+                {
+                    arcBall.Rotation = orientation;
+                }
+            }
+
+            // The sky is a cube map rather than a flag, so it has to be rebuilt here — Apply can
+            // only set whether one is shown, not generate one.
+            ApplySky(scene.World);
+        }
+        finally
+        {
+            _applyingScene = false;
+        }
+
+        // The meshes have moved, so anything holding one is stale.
+        _history.Clear();
+        panel3D1.ClearPick();
+        panel3D1.ClearSelectedPixel();
+
+        panel3D1.SyncAnimationTimer();
+        panel3D1.Invalidate();
+
+        UpdateStatus();
+    }
+
+    /// <summary>Points every sidebar control at what the document says, without firing derived recomputation.</summary>
+    private void SyncControlsToScene(SceneDocument document)
+    {
+        if (document.Rendering is { } rendering)
+        {
+            SelectPainter(rendering.Painter);
+
+            chkShowTriangles.Checked = rendering.ShowTriangles;
+            chkShowBackFacesCulling.Checked = rendering.BackFaceCulling;
+            chkShowXZGrid.Checked = rendering.ShowXZGrid;
+            chkShowAxes.Checked = rendering.ShowAxes;
+            chkShowSkeleton.Checked = rendering.ShowSkeleton;
+            chkGammaCorrect.Checked = rendering.GammaCorrect;
+            chkHighDynamicRange.Checked = rendering.HighDynamicRange;
+            chkTextureFiltering.Checked = rendering.TextureFiltering;
+            chkSuperSampling.Checked = rendering.SuperSampling > 1;
+            chkAnimate.Checked = rendering.Animate;
+
+            SelectItem(cboBufferView, choice =>
+                choice is BufferViewChoice view &&
+                string.Equals(view.View.ToString(), rendering.DebugView, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (document.Fog is { } fog)
+        {
+            chkFog.Checked = fog.Enabled;
+        }
+
+        if (document.Shadows is { } shadows)
+        {
+            chkShadows.Checked = shadows.Enabled;
+
+            SelectItem(cboCascades, choice => choice is CascadeChoice cascade && cascade.Count == shadows.CascadeCount);
+        }
+
+        if (document.Environment is { } environment)
+        {
+            chkSky.Checked = environment.ShowSky;
+        }
+
+        if (document.Post is { } post)
+        {
+            chkSsao.Checked = post.Ssao?.Enabled ?? chkSsao.Checked;
+            chkBloom.Checked = post.Bloom?.Enabled ?? chkBloom.Checked;
+            chkToneMap.Checked = post.ToneMap?.Enabled ?? chkToneMap.Checked;
+            chkFxaa.Checked = post.Fxaa?.Enabled ?? chkFxaa.Checked;
+            chkVignette.Checked = post.Vignette?.Enabled ?? chkVignette.Checked;
+        }
+    }
+
+    /// <summary>Selects the first item a predicate accepts, leaving the box alone when none does.</summary>
+    private static void SelectItem(ComboBox box, Func<object?, bool> matches)
+    {
+        for (var i = 0; i < box.Items.Count; i++)
+        {
+            if (matches(box.Items[i]))
+            {
+                box.SelectedIndex = i;
+                return;
+            }
+        }
+    }
+
+    /// <summary>The name a painter is written to a scene file under.</summary>
+    private static string PainterName(IPainter? painter) => painter switch
+    {
+        ClassicPainter => "Classic",
+        FlatPainter => "Flat",
+        GouraudPainter => "Gouraud",
+        PhongPainter => "Phong",
+        PbrPainter => "Pbr",
+        MaterialPainter => "Material",
+        TexturedPainter => "Textured",
+        null => "None",
+        _ => "Gouraud",
+    };
+
+    /// <summary>
+    /// Checks the shading radio a name refers to, which is what actually constructs the painter.
+    /// Going through the radio rather than assigning the painter directly keeps the one path that
+    /// applies the texture-filtering settings to it.
+    /// </summary>
+    private void SelectPainter(string? name)
+    {
+        // An unrecognised name falls back to Gouraud rather than throwing: a scene written by a
+        // build with a painter this one does not have should still open.
+        var radio = name?.ToLowerInvariant() switch
+        {
+            "none" => rdbNoneShading,
+            "classic" => rdbClassicShading,
+            "flat" => rdbFlatShading,
+            "phong" => rdbPhongShading,
+            "textured" => rdbTexturedShading,
+            "material" => rdbMaterialShading,
+            "pbr" or "physicallybased" => rdbPbrShading,
+            _ => rdbGouraudShading,
+        };
+
+        radio.Checked = true;
+    }
+
+    #endregion
+
     /// <summary>A textured painter configured from the "Texture filtering" checkbox.</summary>
     private TexturedPainter CreateTexturedPainter()
     {
@@ -586,6 +1099,7 @@ public sealed partial class MainScreen : Form
             new BufferViewChoice("Normals", DebugView.Normals),
             new BufferViewChoice("Overdraw", DebugView.Overdraw),
             new BufferViewChoice("Shadow map", DebugView.ShadowMap),
+            new BufferViewChoice("Occlusion buffer", DebugView.OcclusionBuffer),
         ]);
 
         cboBufferView.SelectedIndex = 0;
@@ -628,6 +1142,9 @@ public sealed partial class MainScreen : Form
     /// <summary>The gizmo the viewport draws and drags. One object, so what is drawn is what is grabbed.</summary>
     private readonly TransformGizmo _gizmo = new();
 
+    /// <summary>Completed drags, so they can be taken back. Cleared whenever a world is replaced.</summary>
+    private readonly EditHistory _history = new();
+
     /// <summary>
     /// Fills the transform-gizmo selector and attaches the gizmo to whatever is picked.
     ///
@@ -665,6 +1182,110 @@ public sealed partial class MainScreen : Form
         };
 
         panel3D1.GizmoChanged += (s, e) => UpdateStatus();
+
+        InitializeEditing();
+    }
+
+    /// <summary>
+    /// Wires the edit history and the snapping toggle.
+    ///
+    /// <para>
+    /// The two belong together: snapping is what makes a drag land on a number worth keeping,
+    /// and undo is what makes trying one cheap. A gizmo without either is a control you can only
+    /// commit with.
+    /// </para>
+    /// </summary>
+    private void InitializeEditing()
+    {
+        panel3D1.History = _history;
+
+        _history.Changed += (s, e) => UpdateEditMenu();
+
+        mnuUndo.Click += (s, e) => StepHistory(_history.Undo());
+        mnuRedo.Click += (s, e) => StepHistory(_history.Redo());
+
+        // Two controls for one setting, because they answer different questions: the sidebar
+        // checkbox is next to the gizmo selector and so is where you look for it, and the menu
+        // item is where the keyboard shortcut can live.
+        chkSnap.CheckedChanged += (s, e) => ApplySnapping(chkSnap.Checked);
+        mnuSnap.CheckedChanged += (s, e) => ApplySnapping(mnuSnap.Checked);
+
+        UpdateEditMenu();
+    }
+
+    /// <summary>
+    /// Turns snapping on or off, keeping the two controls that say so in agreement. Each one
+    /// writes through the other, so the guard is what stops the pair ringing.
+    /// </summary>
+    private void ApplySnapping(bool enabled)
+    {
+        if (_gizmo.Snap.Enabled == enabled && chkSnap.Checked == enabled && mnuSnap.Checked == enabled)
+        {
+            return;
+        }
+
+        _gizmo.Snap.Enabled = enabled;
+        chkSnap.Checked = enabled;
+        mnuSnap.Checked = enabled;
+
+        UpdateStatus();
+    }
+
+    /// <summary>
+    /// Follows an undo or a redo: the mesh it moved becomes the selection, so the handles are on
+    /// the thing that just changed rather than wherever they were left. Nothing happens when the
+    /// stack was empty, which is the case the menu items are greyed out for anyway.
+    /// </summary>
+    private void StepHistory(IEditCommand? command)
+    {
+        if (command is null)
+        {
+            return;
+        }
+
+        if (command is TransformEdit edit)
+        {
+            _gizmo.Target = edit.Mesh;
+        }
+
+        UpdateStatus();
+        panel3D1.Invalidate();
+    }
+
+    /// <summary>
+    /// Re-labels the two menu items from the stacks. Naming the edit — "Undo Move Cube" — is
+    /// what tells you whether the next Ctrl+Z is the one you meant before you press it.
+    /// </summary>
+    private void UpdateEditMenu()
+    {
+        mnuUndo.Enabled = _history.CanUndo;
+        mnuRedo.Enabled = _history.CanRedo;
+
+        mnuUndo.Text = _history.NextUndo is { } undo ? $"&Undo {undo}" : "&Undo";
+        mnuRedo.Text = _history.NextRedo is { } redo ? $"&Redo {redo}" : "&Redo";
+    }
+
+    /// <summary>
+    /// Scales the snap increments to the world just loaded. A grid step is a world distance and
+    /// the demos span three orders of magnitude of them: one unit is a sensible grid on a 2-unit
+    /// skull and a meaningless one on a 1500-unit elephant, where a drag would snap to the same
+    /// place it started from every time. The rotation step is an angle and needs no such help.
+    /// </summary>
+    private void ApplySnapScale()
+    {
+        var reference = panel3D1.ReferenceDistance;
+
+        if (reference <= 0f)
+        {
+            return;
+        }
+
+        // A round number near a fiftieth of the framing distance, so the step is always
+        // something a person would have typed: 0.1, 1, 10, 100.
+        var rough = reference * 0.02f;
+        var magnitude = MathF.Pow(10f, MathF.Round(MathF.Log10(rough)));
+
+        _gizmo.Snap.TranslateStep = MathF.Max(magnitude, 0.001f);
     }
 
     private sealed record GizmoChoice(string Label, GizmoMode Mode)
@@ -704,7 +1325,9 @@ public sealed partial class MainScreen : Form
     /// </summary>
     private void ApplyShadows()
     {
-        if (panel3D1.Scene is not { } scene)
+        // A scene file carries the resolution and the cascade count it was saved with, and this
+        // would derive both from the viewport instead.
+        if (_applyingScene || panel3D1.Scene is not { } scene)
         {
             return;
         }
@@ -726,7 +1349,9 @@ public sealed partial class MainScreen : Form
     /// </summary>
     private void ApplyFog()
     {
-        if (panel3D1.Scene is not { } scene)
+        // The document's fog distances were chosen against the scene it was saved from; deriving
+        // them again from the framing would throw that away.
+        if (_applyingScene || panel3D1.Scene is not { } scene)
         {
             return;
         }
@@ -813,6 +1438,8 @@ public sealed partial class MainScreen : Form
     private Task PrepareWorldAsync(string id)
     {
         _currentDemoId = id;
+        _modelPath = null;
+
         string label = Demos.FirstOrDefault(demo => demo.Id == id)?.Display ?? id;
 
         return PrepareWorldCoreAsync(progress => BuildWorld(id, progress), label);
@@ -821,6 +1448,7 @@ public sealed partial class MainScreen : Form
     private Task PrepareWorldFromFileAsync(string path)
     {
         _currentDemoId = string.Empty;
+        _modelPath = path;
 
         return PrepareWorldCoreAsync(progress => BuildWorldFromFile(path, progress), Path.GetFileName(path));
     }
@@ -859,7 +1487,9 @@ public sealed partial class MainScreen : Form
     /// </summary>
     private void ApplyAmbientOcclusion()
     {
-        if (panel3D1.PostProcess.Find<SsaoEffect>() is not { } ssao)
+        // The radius is in the document too, for the same reason it is derived at all: it is a
+        // world-space distance, and the saved one was chosen against this world.
+        if (_applyingScene || panel3D1.PostProcess.Find<SsaoEffect>() is not { } ssao)
         {
             return;
         }
@@ -910,6 +1540,15 @@ public sealed partial class MainScreen : Form
             ApplySky(setup.World);
 
             ApplyAmbientOcclusion();
+
+            // The grid a drag snaps to is measured in the world's own units, so it is scaled to
+            // the world the same way the fog distances and the occlusion radius are.
+            ApplySnapScale();
+
+            // The edits on the stack move meshes that are about to leave the scene. Undoing one
+            // then would quietly transform an object nothing draws — a change with no visible
+            // effect, which is the worst kind for a history to offer.
+            _history.Clear();
 
             // Every load sets a projection: either the demo's own, or one whose far plane
             // is derived from the world's extent — a far plane closer than the world's

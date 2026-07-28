@@ -1,3 +1,4 @@
+using SoftEngine.Core.Editing;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Math;
 using SoftEngine.Core.Picking;
@@ -61,11 +62,17 @@ public sealed class TransformGizmo
     private Vector3 _grabOrigin;
     private float _grabScale = 1f;
 
-    private Vector3 _startPosition;
-    private Vector3 _startScale;
-    private Rotation3D _startRotation = new(0, 0, 0);
+    // The target's whole transform as the drag found it. A value copy rather than the mesh's own
+    // Rotation3D, which is a mutable class and would be edited out from under the snapshot.
+    private TransformState _startState;
 
     public GizmoMode Mode { get; set; } = GizmoMode.Off;
+
+    /// <summary>
+    /// The increments drags are quantized to. Off by default, so the gizmo behaves exactly as it
+    /// did before there was such a thing.
+    /// </summary>
+    public GizmoSnap Snap { get; } = new();
 
     /// <summary>The mesh the handles are attached to, or null when nothing is selected.</summary>
     public IMesh? Target { get; set; }
@@ -150,9 +157,7 @@ public sealed class TransformGizmo
         _grabOrigin = Origin;
         _grabScale = HandleScale(scene, _grabOrigin);
 
-        _startPosition = target.Position;
-        _startScale = target.Scale;
-        _startRotation = new Rotation3D(target.Rotation.XPitch, target.Rotation.YYaw, target.Rotation.ZRoll);
+        _startState = TransformState.Of(target);
 
         return true;
     }
@@ -185,10 +190,23 @@ public sealed class TransformGizmo
                     return;
                 }
 
+                var offset = parameter - _grabParameter;
+
+                if (Snap.Enabled)
+                {
+                    // Snapped in *world* space, before the offset is carried into the mesh's own
+                    // space. The grid the drawn XZ gizmo shows is a world grid, and a parented
+                    // mesh's local axes are not it — snapping after the change of basis would put
+                    // the mesh on a grid nothing else in the scene shares.
+                    var axisOrigin = Vector3.Dot(origin, direction);
+
+                    offset = Snap.Round(axisOrigin + offset, Snap.TranslateStep) - axisOrigin;
+                }
+
                 // The handles point along the world axes, but a parented mesh's Position is an
                 // offset in its node's space — so the world-space delta is carried back through
                 // the parent before it is applied.
-                target.Position = _startPosition + ToLocal(target, direction * (parameter - _grabParameter));
+                target.Position = _startState.Position + ToLocal(target, direction * offset);
                 break;
             }
 
@@ -204,11 +222,13 @@ public sealed class TransformGizmo
                 // inverted and a mesh that can never be grabbed again.
                 var factor = MathF.Max(1f + (parameter - _grabParameter) / scale, 0.01f);
 
+                var start = _startState.Scale;
+
                 target.Scale = ActiveAxis switch
                 {
-                    GizmoAxis.X => new Vector3(_startScale.X * factor, _startScale.Y, _startScale.Z),
-                    GizmoAxis.Y => new Vector3(_startScale.X, _startScale.Y * factor, _startScale.Z),
-                    _ => new Vector3(_startScale.X, _startScale.Y, _startScale.Z * factor),
+                    GizmoAxis.X => new Vector3(Stretch(start.X, factor), start.Y, start.Z),
+                    GizmoAxis.Y => new Vector3(start.X, Stretch(start.Y, factor), start.Z),
+                    _ => new Vector3(start.X, start.Y, Stretch(start.Z, factor)),
                 };
                 break;
             }
@@ -226,9 +246,9 @@ public sealed class TransformGizmo
 
                 target.Rotation = ActiveAxis switch
                 {
-                    GizmoAxis.X => new Rotation3D(_startRotation.XPitch + delta, _startRotation.YYaw, _startRotation.ZRoll),
-                    GizmoAxis.Y => new Rotation3D(_startRotation.XPitch, _startRotation.YYaw + delta, _startRotation.ZRoll),
-                    _ => new Rotation3D(_startRotation.XPitch, _startRotation.YYaw, _startRotation.ZRoll + delta),
+                    GizmoAxis.X => new Rotation3D(Turn(_startState.Pitch, delta), _startState.Yaw, _startState.Roll),
+                    GizmoAxis.Y => new Rotation3D(_startState.Pitch, Turn(_startState.Yaw, delta), _startState.Roll),
+                    _ => new Rotation3D(_startState.Pitch, _startState.Yaw, Turn(_startState.Roll, delta)),
                 };
                 break;
             }
@@ -238,21 +258,75 @@ public sealed class TransformGizmo
         }
     }
 
-    /// <summary>Releases the handle. The target keeps whatever the drag left it at.</summary>
-    public void End() => ActiveAxis = GizmoAxis.None;
+    /// <summary>
+    /// Releases the handle. The target keeps whatever the drag left it at, and the change is
+    /// handed back as an undoable edit — or null when the drag moved nothing, which is what a
+    /// click that grabs a handle and lets go again amounts to.
+    ///
+    /// <para>
+    /// The gizmo produces the command rather than pushing it, because it has no opinion about
+    /// whether the application keeps a history. What it does have, and nothing downstream does,
+    /// is the transform from before the drag: by the time a caller sees the mouse-up, the mesh
+    /// has already been moved a hundred times.
+    /// </para>
+    /// </summary>
+    public IEditCommand? End()
+    {
+        if (!IsDragging || Target is not { } target)
+        {
+            ActiveAxis = GizmoAxis.None;
+            return null;
+        }
+
+        var verb = Mode switch
+        {
+            GizmoMode.Rotate => "Rotate",
+            GizmoMode.Scale => "Scale",
+            _ => "Move",
+        };
+
+        var edit = TransformEdit.Between(target, _startState, verb);
+
+        ActiveAxis = GizmoAxis.None;
+
+        return edit;
+    }
 
     /// <summary>Puts the target back where the drag found it, for a cancelled drag.</summary>
     public void Cancel()
     {
         if (IsDragging && Target is { } target)
         {
-            target.Position = _startPosition;
-            target.Scale = _startScale;
-            target.Rotation = _startRotation;
+            _startState.ApplyTo(target);
         }
 
         ActiveAxis = GizmoAxis.None;
     }
+
+    /// <summary>
+    /// One axis of a scale, snapped. Rounding toward zero is the one result that cannot be
+    /// allowed through: a zero scale is a matrix that cannot be inverted and a mesh that can
+    /// never be grabbed again, which is the same thing the un-snapped path clamps against.
+    /// </summary>
+    private float Stretch(float start, float factor)
+    {
+        var scaled = start * factor;
+        var snapped = Snap.Round(scaled, Snap.ScaleStep);
+
+        if (snapped != 0f)
+        {
+            return snapped;
+        }
+
+        return scaled < 0f ? -Snap.ScaleStep : Snap.ScaleStep;
+    }
+
+    /// <summary>
+    /// One axis of a rotation, snapped. The <em>resulting</em> angle is rounded rather than the
+    /// angle dragged through, so a 15° step means 15° from zero — which is what makes two meshes
+    /// snapped to the same increment actually parallel.
+    /// </summary>
+    private float Turn(float start, float delta) => Snap.Round(start + delta, Snap.RotateStep);
 
     /// <summary>The world direction of one handle.</summary>
     public static Vector3 Direction(GizmoAxis axis) => axis switch

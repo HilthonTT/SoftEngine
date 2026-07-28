@@ -1,4 +1,5 @@
 using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Pipeline.Culling;
 using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.Core.Shading;
 using System.Numerics;
@@ -36,7 +37,12 @@ public sealed class BufferVisualizer
     /// projection, the shadow map of a scene that casts none — in which case the shaded
     /// image is left exactly as it was.
     /// </summary>
-    public bool Render(FrameBuffer surface, IProjection? projection, ShadowMap? shadowMap, DebugView view)
+    public bool Render(
+        FrameBuffer surface,
+        IProjection? projection,
+        ShadowMap? shadowMap,
+        DebugView view,
+        OcclusionBuffer? occlusion = null)
     {
         ArgumentNullException.ThrowIfNull(surface, nameof(surface));
 
@@ -51,6 +57,7 @@ public sealed class BufferVisualizer
             DebugView.Normals => RenderNormals(surface, projection),
             DebugView.Overdraw => RenderOverdraw(surface),
             DebugView.ShadowMap => RenderShadowMap(surface, shadowMap),
+            DebugView.OcclusionBuffer => RenderOcclusion(surface, occlusion),
             _ => false,
         };
     }
@@ -294,6 +301,131 @@ public sealed class BufferVisualizer
                 var tint = CascadeTint(cascade);
 
                 screen[i] = Pack(Byte(level * tint.R), Byte(level * tint.G), Byte(level * tint.B));
+            }
+        });
+
+        return true;
+    }
+
+    /// <summary>
+    /// The occlusion pyramid, stretched over the frame it was rasterized from.
+    ///
+    /// <para>
+    /// <b>The level shown is the finest one a query is allowed to read</b>
+    /// (<see cref="OcclusionBuffer.MinimumQueryLevel"/>), not the level that was rasterized. That
+    /// is deliberate, and it is the whole reason the view is worth having. Level 0 is
+    /// centre-sampled, so a texel there is written wherever a triangle reached its middle —
+    /// which is not the same as covering it. Coverage only appears one level up, where a texel
+    /// carries a real depth exactly where all four of its children were sampled inside geometry.
+    /// Showing level 0 would therefore paint a confident picture of occlusion the culler cannot
+    /// actually use, and the gap between the two is precisely what you are looking at this view
+    /// to find.
+    /// </para>
+    ///
+    /// <para>
+    /// Filled texels ramp bright-to-dark with distance, auto-ranged over the depths actually in
+    /// the buffer — the same treatment, and for the same reason, as the depth view. A perspective
+    /// depth buffer spends nearly all of its range in the first few percent of the scene, so
+    /// everything an occluder pass ever rasterizes sits within a hair of 1. Presented literally
+    /// that is a black rectangle; ranged over what is there, it is the near wall against the far
+    /// one, which is the comparison you came for.
+    /// </para>
+    ///
+    /// <para>
+    /// Texels nothing covered are drawn in a cold blue-grey rather than in black: "nothing here"
+    /// and "something at the far plane" are different answers, and a greyscale ramp gives them
+    /// the same colour — which would make an empty buffer look like a fully occluding one.
+    /// </para>
+    /// </summary>
+    private static bool RenderOcclusion(FrameBuffer surface, OcclusionBuffer? occlusion)
+    {
+        // Nothing to show is the honest answer in three cases the caller cannot tell apart:
+        // the pass is switched off, the frame was probed (which switches it off), or it declined
+        // this world for having too little to occlude with.
+        if (occlusion is null || !occlusion.HasOccluders)
+        {
+            return false;
+        }
+
+        var level = OcclusionBuffer.MinimumQueryLevel;
+
+        if (occlusion.LevelCount <= level)
+        {
+            return false;
+        }
+
+        var (levelWidth, levelHeight) = occlusion.SizeOf(level);
+
+        if (levelWidth <= 0 || levelHeight <= 0)
+        {
+            return false;
+        }
+
+        // The range the filled texels actually span. The cleared value is the far plane, where a
+        // texel can hide nothing, so anything at or past it was never covered and takes no part
+        // in the ramp.
+        var near = float.PositiveInfinity;
+        var far = float.NegativeInfinity;
+
+        for (var y = 0; y < levelHeight; y++)
+        {
+            for (var x = 0; x < levelWidth; x++)
+            {
+                var depth = occlusion.DepthAt(level, x, y);
+
+                if (depth >= 1f || !float.IsFinite(depth))
+                {
+                    continue;
+                }
+
+                near = MathF.Min(near, depth);
+                far = MathF.Max(far, depth);
+            }
+        }
+
+        if (!float.IsFinite(near))
+        {
+            // Coverage was claimed but no texel carries a real depth — nothing to draw a ramp
+            // over, and a blank frame would be a worse answer than leaving the image alone.
+            return false;
+        }
+
+        var span = far - near;
+        var scale = span > 1e-7f ? 1f / span : 0f;
+
+        var width = surface.Width;
+        var height = surface.Height;
+        var screen = surface.Screen;
+
+        // The buffer covers the same view as the frame, so it is stretched across it rather than
+        // letterboxed the way the shadow map is: the point of this view is which part of the
+        // *frame* is covered, and a texel that does not line up with the pixels it is a claim
+        // about answers a different question.
+        var toTexelX = levelWidth / (float)width;
+        var toTexelY = levelHeight / (float)height;
+
+        Parallel.For(0, height, y =>
+        {
+            var texelY = System.Math.Min((int)(y * toTexelY), levelHeight - 1);
+            var i = y * width;
+
+            for (var x = 0; x < width; x++, i++)
+            {
+                var texelX = System.Math.Min((int)(x * toTexelX), levelWidth - 1);
+                var depth = occlusion.DepthAt(level, texelX, texelY);
+
+                if (depth >= 1f || !float.IsFinite(depth))
+                {
+                    screen[i] = Pack(28, 34, 46);
+                    continue;
+                }
+
+                // Nearest is brightest. The floor keeps the farthest occluder well clear of the
+                // surround's own darkness, so "covered, but a long way off" never reads as
+                // "not covered".
+                var shade = Byte(1f - (depth - near) * scale * 0.75f);
+
+                screen[i] = Pack(shade, shade, (byte)System.Math.Min(shade + 18, 255));
             }
         });
 

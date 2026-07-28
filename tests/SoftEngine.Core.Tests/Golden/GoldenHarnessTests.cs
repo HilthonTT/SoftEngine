@@ -1,3 +1,4 @@
+using SoftEngine.Core.Imaging;
 using SoftEngine.Core.Tests.Golden;
 
 namespace SoftEngine.Core.Tests;

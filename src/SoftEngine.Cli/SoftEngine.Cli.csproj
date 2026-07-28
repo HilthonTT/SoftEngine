@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>SoftEngine.Cli</RootNamespace>
+    <AssemblyName>softengine</AssemblyName>
+
+    <!-- The renderer is the whole program here, so a Debug build measures and renders the
+         debugger rather than the engine — exactly as the benchmark harness warns. -->
+    <Optimize Condition="'$(Configuration)' == 'Release'">true</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SoftEngine.Core\SoftEngine.Core.csproj" />
+  </ItemGroup>
+
+</Project>

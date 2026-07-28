@@ -1,4 +1,5 @@
 using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Imaging;
 using System.Runtime.CompilerServices;
 
 namespace SoftEngine.Core.Tests.Golden;

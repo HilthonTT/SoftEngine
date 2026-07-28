@@ -1,6 +1,8 @@
 using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Editing;
 using SoftEngine.Core.Gizmos;
+using SoftEngine.Core.Imaging;
 using SoftEngine.Core.Picking;
 using SoftEngine.Core.Pipeline;
 using SoftEngine.Core.Pipeline.PostProcess;
@@ -9,7 +11,6 @@ using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
 using SoftEngine.WinForms.Cameras;
 using SoftEngine.WinForms.Interop;
-using SoftEngine.WinForms.Utilities;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
@@ -355,6 +356,15 @@ public partial class Panel3D : UserControl
     /// <summary>Raised while a gizmo drag moves the mesh, so a status bar can follow it.</summary>
     public event EventHandler? GizmoChanged;
 
+    /// <summary>
+    /// Where completed gizmo drags are recorded so they can be undone, or null to leave them
+    /// unrecorded. The viewport reports edits rather than owning the history: undo is an
+    /// application-wide gesture with a menu item and a shortcut attached to it, and this control
+    /// is only one of the things that can produce an edit.
+    /// </summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public EditHistory? History { get; set; }
+
     /// <summary>The selected pixel as a 0..1 fraction of the render target, as the status bar shows it.</summary>
     public PointF? SelectedPixelNormalized =>
         _selectedPixel is { } pixel && _bufferSize.Width > 0 && _bufferSize.Height > 0
@@ -598,7 +608,10 @@ public partial class Panel3D : UserControl
 
         if (e.Button == MouseButtons.Left && Gizmo is { IsDragging: true } gizmo)
         {
-            gizmo.End();
+            // Null when the drag moved nothing, and Push ignores it — a handle grabbed and
+            // released in place must not put an entry on the stack that undoes nothing.
+            History?.Push(gizmo.End());
+
             SuspendCameraGestures(false);
 
             GizmoChanged?.Invoke(this, EventArgs.Empty);
@@ -856,21 +869,17 @@ public partial class Panel3D : UserControl
         var height = _bufferSize.Height;
 
         var screen = PresentablePixels();
-        var pixels = new uint[width * height];
+        var pixels = new int[width * height];
 
-        // The framebuffer is packed ARGB (blue in the low byte); PngWriter wants packed
-        // RGBA (red in the low byte). Swap R and B, and force alpha opaque — cleared
-        // background pixels are 0x00000000, which would otherwise save as transparent.
+        // The codec takes the framebuffer's own packed ARGB and does the swizzle to PNG's byte
+        // order itself, so all that is left here is forcing alpha opaque: cleared background
+        // pixels are 0x00000000, which would otherwise save as transparent.
         for (var i = 0; i < pixels.Length; i++)
         {
-            var argb = (uint)screen[i];
-            pixels[i] = 0xFF000000u
-                | ((argb & 0x00FF0000) >> 16)  // R: bits 16-23 -> 0-7
-                | (argb & 0x0000FF00)          // G stays in bits 8-15
-                | ((argb & 0x000000FF) << 16); // B: bits 0-7 -> 16-23
+            pixels[i] = screen[i] | unchecked((int)0xFF000000);
         }
 
-        PngWriter.Save(path, pixels, width, height);
+        PngCodec.Save(path, pixels, width, height);
         return true;
     }
 

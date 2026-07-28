@@ -499,10 +499,12 @@ public sealed class Renderer : IRenderer
 
         ResolveFrame(surface, projection, events);
 
-        // Last of all: swap the finished image for one of the buffers that produced it.
+        // Last of all: swap the finished image for one of the buffers that produced it. The
+        // occlusion buffer is passed only when the pass actually ran, so the view says "nothing
+        // to show" rather than presenting last frame's pyramid.
         if (rendererSettings.DebugView != DebugView.Off)
         {
-            RenderDebugView(surface, scene, projection, events, rendererSettings.DebugView);
+            RenderDebugView(surface, scene, projection, events, rendererSettings.DebugView, occlusion?.Buffer);
         }
 
         Stats.StopTime();
@@ -515,6 +517,10 @@ public sealed class Renderer : IRenderer
             history.FinalDepth = surface.GetDepth(history.X, history.Y);
             surface.EndProbe();
         }
+
+        // Last of all, after the event list is complete and the clocks have stopped: file the
+        // frame, if anyone asked for a history. Does nothing when nobody did.
+        diagnostics.CaptureFrame(Stats);
     }
 
     /// <summary>
@@ -584,7 +590,8 @@ public sealed class Renderer : IRenderer
         Scene scene,
         IProjection projection,
         GraphicsEventLog events,
-        DebugView view)
+        DebugView view,
+        OcclusionBuffer? occlusion)
     {
         _visualizer ??= new BufferVisualizer();
 
@@ -593,7 +600,7 @@ public sealed class Renderer : IRenderer
         // The event is logged after the fact, carrying whether the buffer could actually be
         // shown: a view the frame has nothing for leaves the image alone, and a log claiming
         // it redrew the frame would send you looking for a pass that never ran.
-        var drawn = _visualizer.Render(surface, projection, scene.ShadowMap, view);
+        var drawn = _visualizer.Render(surface, projection, scene.ShadowMap, view, occlusion);
 
         var eventIndex = events.Add(
             GraphicsEventKind.DebugViewRender, SceneObjectIds.RenderTarget, (int)view, drawn ? 1f : 0f);

@@ -1,0 +1,392 @@
+using System.Globalization;
+using System.Numerics;
+
+namespace SoftEngine.Cli;
+
+/// <summary>Everything the command line can say about one render.</summary>
+internal sealed class RenderOptions
+{
+    /// <summary>The model or scene file to render. Required unless <see cref="ShowHelp"/>.</summary>
+    public string? Input { get; set; }
+
+    /// <summary>Where the PNG goes. Defaults to the input's name with a .png extension.</summary>
+    public string? Output { get; set; }
+
+    /// <summary>A scene document applied over the loaded model, when one was named separately.</summary>
+    public string? ScenePath { get; set; }
+
+    public int Width { get; set; } = 1920;
+
+    public int Height { get; set; } = 1080;
+
+    public string Painter { get; set; } = "gouraud";
+
+    public int SuperSampling { get; set; } = 1;
+
+    public bool BackFaceCulling { get; set; } = true;
+
+    public bool Wireframe { get; set; }
+
+    public bool Grid { get; set; }
+
+    public bool Axes { get; set; }
+
+    public bool Sky { get; set; } = true;
+
+    public bool Shadows { get; set; }
+
+    public int Cascades { get; set; } = 1;
+
+    public string? DebugView { get; set; }
+
+    /// <summary>Post effects named on the command line, lower-cased.</summary>
+    public HashSet<string> Post { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>An explicit camera position, or null to frame the model automatically.</summary>
+    public Vector3? Camera { get; set; }
+
+    public float Yaw { get; set; }
+
+    public float Pitch { get; set; } = 15f * MathF.PI / 180f;
+
+    /// <summary>Multiplies the automatically framed distance. Ignored when <see cref="Camera"/> is set.</summary>
+    public float Zoom { get; set; } = 1f;
+
+    /// <summary>
+    /// How far into the model's animation to render, in seconds.
+    ///
+    /// A single number rather than a frame index, because a clip's own time is in seconds and a
+    /// "frame" would need a rate this program has no reason to invent. Zero renders the rest pose,
+    /// which is what a static model has anyway.
+    /// </summary>
+    public float Time { get; set; }
+
+    public bool Stats { get; set; }
+
+    public bool ShowHelp { get; set; }
+
+    /// <summary>Anything the parser could not make sense of, reported all at once.</summary>
+    public List<string> Errors { get; } = [];
+
+    public static RenderOptions Parse(string[] args)
+    {
+        var options = new RenderOptions();
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+
+            switch (arg)
+            {
+                case "--output" or "-o":
+                    options.Output = Next(args, ref i, options, arg);
+                    break;
+
+                case "--scene":
+                    options.ScenePath = Next(args, ref i, options, arg);
+                    break;
+
+                case "--width" or "-w":
+                    options.Width = Int(args, ref i, options, arg, options.Width);
+                    break;
+
+                case "--height" or "-h":
+                    options.Height = Int(args, ref i, options, arg, options.Height);
+                    break;
+
+                case "--painter" or "-p":
+                    options.Painter = Next(args, ref i, options, arg) ?? options.Painter;
+                    break;
+
+                case "--ss" or "--supersample":
+                    options.SuperSampling = Int(args, ref i, options, arg, options.SuperSampling);
+                    break;
+
+                case "--no-cull":
+                    options.BackFaceCulling = false;
+                    break;
+
+                case "--wireframe":
+                    options.Wireframe = true;
+                    break;
+
+                case "--grid":
+                    options.Grid = true;
+                    break;
+
+                case "--axes":
+                    options.Axes = true;
+                    break;
+
+                case "--no-sky":
+                    options.Sky = false;
+                    break;
+
+                case "--shadows":
+                    options.Shadows = true;
+                    break;
+
+                case "--cascades":
+                    options.Cascades = Int(args, ref i, options, arg, options.Cascades);
+                    options.Shadows = true;
+                    break;
+
+                case "--view":
+                    options.DebugView = Next(args, ref i, options, arg);
+                    break;
+
+                case "--post":
+                    foreach (var effect in (Next(args, ref i, options, arg) ?? string.Empty)
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    {
+                        options.Post.Add(effect);
+                    }
+
+                    break;
+
+                case "--camera":
+                    options.Camera = Vector(args, ref i, options, arg);
+                    break;
+
+                case "--yaw":
+                    options.Yaw = Degrees(args, ref i, options, arg, options.Yaw);
+                    break;
+
+                case "--pitch":
+                    options.Pitch = Degrees(args, ref i, options, arg, options.Pitch);
+                    break;
+
+                case "--zoom":
+                    options.Zoom = Float(args, ref i, options, arg, options.Zoom);
+                    break;
+
+                case "--time" or "-t":
+                    options.Time = Float(args, ref i, options, arg, options.Time);
+                    break;
+
+                case "--stats":
+                    options.Stats = true;
+                    break;
+
+                case "--help" or "-?":
+                    options.ShowHelp = true;
+                    break;
+
+                default:
+                    if (arg.StartsWith('-'))
+                    {
+                        options.Errors.Add($"unknown option '{arg}'");
+                    }
+                    else if (options.Input is null)
+                    {
+                        options.Input = arg;
+                    }
+                    else
+                    {
+                        options.Errors.Add($"unexpected argument '{arg}' — only one input file is taken");
+                    }
+
+                    break;
+            }
+        }
+
+        Validate(options);
+
+        return options;
+    }
+
+    private static void Validate(RenderOptions options)
+    {
+        if (options.ShowHelp)
+        {
+            return;
+        }
+
+        if (options.Input is null)
+        {
+            options.Errors.Add("no input file — name a model (.obj, .dae, .gltf, .glb) or a scene (.json)");
+        }
+        else if (!File.Exists(options.Input))
+        {
+            options.Errors.Add($"'{options.Input}' does not exist");
+        }
+
+        if (options.ScenePath is { } scene && !File.Exists(scene))
+        {
+            options.Errors.Add($"'{scene}' does not exist");
+        }
+
+        if (options.Width is < 1 or > 16384 || options.Height is < 1 or > 16384)
+        {
+            options.Errors.Add("width and height must be between 1 and 16384");
+        }
+
+        // Supersampling multiplies both dimensions, so an unclamped factor turns a modest request
+        // into an allocation nothing can serve. The engine clamps it too; saying so here is what
+        // stops the file being silently smaller than the flag asked for.
+        if (options.SuperSampling is < 1 or > 4)
+        {
+            options.Errors.Add("--ss must be between 1 and 4");
+        }
+
+        if (options.Cascades is < 1 or > 4)
+        {
+            options.Errors.Add("--cascades must be between 1 and 4");
+        }
+
+        foreach (var effect in options.Post)
+        {
+            if (effect is not ("ssao" or "bloom" or "tonemap" or "fxaa" or "vignette"))
+            {
+                options.Errors.Add($"unknown post effect '{effect}'");
+            }
+        }
+    }
+
+    /// <summary>The output path, derived from the input when none was given.</summary>
+    public string ResolveOutput()
+    {
+        if (Output is { Length: > 0 } output)
+        {
+            return output;
+        }
+
+        var name = Path.GetFileNameWithoutExtension(Input ?? "frame");
+
+        // ".scene.json" leaves ".scene" behind, which would make every scene render into a file
+        // whose name still claims to be one.
+        if (name.EndsWith(".scene", StringComparison.OrdinalIgnoreCase))
+        {
+            name = name[..^".scene".Length];
+        }
+
+        return $"{name}.png";
+    }
+
+    #region Argument reading
+
+    private static string? Next(string[] args, ref int i, RenderOptions options, string flag)
+    {
+        if (i + 1 >= args.Length)
+        {
+            options.Errors.Add($"{flag} needs a value");
+            return null;
+        }
+
+        return args[++i];
+    }
+
+    private static int Int(string[] args, ref int i, RenderOptions options, string flag, int fallback)
+    {
+        var text = Next(args, ref i, options, flag);
+
+        if (text is null)
+        {
+            return fallback;
+        }
+
+        if (!int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+        {
+            options.Errors.Add($"{flag} expects a whole number, got '{text}'");
+            return fallback;
+        }
+
+        return value;
+    }
+
+    private static float Float(string[] args, ref int i, RenderOptions options, string flag, float fallback)
+    {
+        var text = Next(args, ref i, options, flag);
+
+        if (text is null)
+        {
+            return fallback;
+        }
+
+        if (!float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+        {
+            options.Errors.Add($"{flag} expects a number, got '{text}'");
+            return fallback;
+        }
+
+        return value;
+    }
+
+    /// <summary>An angle typed in degrees, which is the only unit anybody types one in.</summary>
+    private static float Degrees(string[] args, ref int i, RenderOptions options, string flag, float fallback) =>
+        Float(args, ref i, options, flag, fallback * 180f / MathF.PI) * MathF.PI / 180f;
+
+    private static Vector3? Vector(string[] args, ref int i, RenderOptions options, string flag)
+    {
+        var text = Next(args, ref i, options, flag);
+
+        if (text is null)
+        {
+            return null;
+        }
+
+        var parts = text.Split(',', StringSplitOptions.TrimEntries);
+
+        if (parts.Length != 3 ||
+            !float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var x) ||
+            !float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var y) ||
+            !float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var z))
+        {
+            options.Errors.Add($"{flag} expects three numbers like 0,2,-8; got '{text}'");
+            return null;
+        }
+
+        return new Vector3(x, y, z);
+    }
+
+    #endregion
+
+    public static void PrintUsage()
+    {
+        Console.WriteLine("""
+            SoftEngine headless renderer — renders a model or a saved scene to a PNG.
+
+              softengine <input> [options]
+
+            The input is a model (.obj, .dae, .gltf, .glb) or a scene document (.json) written
+            by the viewer's "Save scene as…".
+
+            Output
+              -o, --output <path>   PNG to write (default: the input's name with .png)
+              -w, --width <px>      render width  (default 1920)
+              -h, --height <px>     render height (default 1080)
+                  --ss <n>          supersample n× and average down, 1-4 (default 1)
+                  --stats           print triangle, pixel and timing counts
+
+            Shading
+              -p, --painter <name>  none, classic, flat, gouraud, phong, textured, material, pbr
+                                    (default gouraud)
+                  --post <list>     comma-separated: ssao, bloom, tonemap, fxaa, vignette
+                  --shadows         render a shadow map from the scene's first light
+                  --cascades <n>    shadows fitted to n slices of the view distance, 1-4
+                  --no-sky          leave the background cleared instead of drawing a sky
+                  --view <name>     present a buffer instead of the shaded image:
+                                    depth, normals, overdraw, shadowmap, occlusion
+
+            Camera
+                  --camera x,y,z    an explicit camera position
+                  --yaw <deg>       bearing around the model  (default 0)
+                  --pitch <deg>     elevation above it        (default 15)
+                  --zoom <factor>   multiplies the framed distance; below 1 moves closer
+              -t, --time <seconds>  how far into the model's animation to render
+
+            Overlays
+                  --wireframe       draw triangle edges over the shading
+                  --grid            draw the ground grid
+                  --axes            draw the world axes
+                  --no-cull         draw back faces too
+
+            A scene document may also be applied over a model with --scene <path>, which is how
+            you render the same saved setup against a re-exported version of its model.
+
+            Textures decode from PNG only: this front-end supplies the engine's own codec rather
+            than a platform image library, so a model with JPEG maps renders untextured and says
+            how many it skipped.
+            """);
+    }
+}
