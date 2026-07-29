@@ -131,6 +131,51 @@ public class GltfImporterTests
     }
 
     /// <summary>
+    /// A node list whose children close a loop — 0 owns 1, 1 owns 2, and 2 claims 0 back.
+    ///
+    /// Nothing in the format forbids writing it. Building the loop used to leave the whole
+    /// chain hanging off nothing — every node in a cycle has a parent inside it, so none of
+    /// them is ever adopted by the scene root — and the model simply disappeared, with its
+    /// world matrices frozen at the identity. Dropping the edge that would close the loop
+    /// leaves the chain the file otherwise describes, and keeps the hierarchy a tree, which is
+    /// what <see cref="Core.Scenes.Graph.SceneNode.UpdateWorldMatrices()"/> and
+    /// <see cref="Core.Scenes.Graph.SceneNode.SelfAndDescendants"/> both recurse on the
+    /// assumption of.
+    /// </summary>
+    [Fact]
+    public void Import_CyclicNodeChildren_BreaksTheLoopAndKeepsTheChain()
+    {
+        var scene = Import(Triangle().Gltf("""
+            {
+              "asset": {"version": "2.0"},
+              "scene": 0,
+              "scenes": [{"nodes": [0]}],
+              "nodes": [
+                {"children": [1], "translation": [0, 1, 0]},
+                {"children": [2], "translation": [0, 1, 0]},
+                {"children": [0], "translation": [0, 1, 0], "mesh": 0}
+              ],
+              "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1}]}],
+              "accessors": [
+                {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+                {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}
+              ],
+              "bufferViews": [
+                {"buffer": 0, "byteOffset": @pos@, "byteLength": @posLength@},
+                {"buffer": 0, "byteOffset": @idx@, "byteLength": @idxLength@}
+              ],
+              "buffers": [{"uri": "@BUFFER@", "byteLength": @LENGTH@}]
+            }
+            """));
+
+        // Three nodes of one unit each, composed: the deepest one sits three up.
+        Approx.Equal(new Vector3(0, 3, 0), Assert.Single(scene.Meshes).WorldMatrix.Translation);
+
+        // And the tree really is a tree — walking it terminates, and visits each node once.
+        Assert.Equal(4, scene.Root.SelfAndDescendants().Count());
+    }
+
+    /// <summary>
     /// An interleaved buffer view: position and normal alternating in one array, with the
     /// stride naming the gap. Reading the stride as a gap between <em>components</em> rather
     /// than between elements produces geometry that is wrong but not obviously so.

@@ -197,7 +197,12 @@ public static class GltfImporter
             {
                 foreach (var child in root.Nodes[i].Children)
                 {
-                    if (Node(child) is { } node && !parented[child] && child != i)
+                    // The ancestry check is the one that matters: `parented` stops a node being
+                    // claimed twice, but a file whose node list runs 0→1→2→0 claims each of them
+                    // exactly once and still closes a loop. A cycle makes UpdateWorldMatrices
+                    // recurse for ever, so the edge that would close it is dropped and the node
+                    // is left for the orphan pass below.
+                    if (Node(child) is { } node && !parented[child] && child != i && !node.IsAncestorOf(_nodes[i]))
                     {
                         _nodes[i]!.Add(node);
                         parented[child] = true;
@@ -550,12 +555,17 @@ public static class GltfImporter
                     weights,
                     primitive.Normals,
                     bindShapeMatrix: null,
-                    primitive.Colors)
+                    (ColorRGB[])primitive.Colors.Clone())
                 {
                     Material = primitive.Material,
                     Opacity = primitive.Opacity,
                     TexCoords = primitive.TexCoords,
-                    Tangents = primitive.Tangents,
+
+                    // Cloned, unlike the non-skinned path's: SkinnedMesh.ApplyPose rewrites the
+                    // tangent array in place every frame, so two nodes instancing one primitive
+                    // would deform the same array into two different poses and each would see
+                    // the other's.
+                    Tangents = (Vector4[]?)primitive.Tangents?.Clone(),
                 };
 
                 _skinned.Add(skinnedMesh);

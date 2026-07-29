@@ -82,6 +82,16 @@ public sealed class SceneNode
         return true;
     }
 
+    /// <summary>
+    /// Hangs <paramref name="child"/> off this node, detaching it from wherever it was.
+    /// </summary>
+    /// <remarks>
+    /// A node that is already an ancestor of this one is refused. The check is not fussiness:
+    /// a cycle in the tree makes <see cref="UpdateWorldMatrices()"/> and
+    /// <see cref="SelfAndDescendants"/> recurse for ever, and a stack overflow is the one
+    /// failure a caller cannot catch — the process simply dies. An importer reading a file
+    /// whose node list names a parent as its own child is all it takes.
+    /// </remarks>
     public SceneNode Add(SceneNode child)
     {
         ArgumentNullException.ThrowIfNull(child, nameof(child));
@@ -91,12 +101,37 @@ public sealed class SceneNode
             throw new ArgumentException("A node cannot parent itself.", nameof(child));
         }
 
+        if (child.IsAncestorOf(this))
+        {
+            throw new ArgumentException(
+                $"'{child.Name}' is already an ancestor of '{Name}'; adding it here would make the hierarchy a cycle.",
+                nameof(child));
+        }
+
         child.Parent?._children.Remove(child);
 
         child.Parent = this;
         _children.Add(child);
 
         return child;
+    }
+
+    /// <summary>
+    /// Whether this node is <paramref name="node"/> or sits above it in the chain. What
+    /// <see cref="Add"/> refuses on, and what an importer can ask before offering a parenting
+    /// its own source data may have got wrong.
+    /// </summary>
+    public bool IsAncestorOf(SceneNode? node)
+    {
+        for (var ancestor = node; ancestor is not null; ancestor = ancestor.Parent)
+        {
+            if (ReferenceEquals(ancestor, this))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public void Remove(SceneNode child)

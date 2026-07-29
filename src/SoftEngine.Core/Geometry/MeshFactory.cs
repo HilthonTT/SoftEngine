@@ -221,7 +221,10 @@ public static partial class MeshFactory
         }
         else
         {
-            for (var i = 0; i < floats.Count; i += 3)
+            // A trailing partial triple is dropped rather than read past the end of the list:
+            // a float_array whose count does not divide by three is a malformed source, and
+            // losing its last incomplete vector beats failing to open the file at all.
+            for (var i = 0; i + 2 < floats.Count; i += 3)
             {
                 vectors.Add(new Vector3(floats[i], floats[i + 1], floats[i + 2]));
             }

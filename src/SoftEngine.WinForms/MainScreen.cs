@@ -1606,11 +1606,33 @@ public sealed partial class MainScreen : Form
         ssao.Bias = ssao.Radius * 0.04f;
     }
 
+    /// <summary>
+    /// True from the moment a load is asked for until its world is in the scene.
+    ///
+    /// <para>
+    /// The load itself is awaited, so the message loop keeps running while the importer works on
+    /// its own thread — and every menu item that can start another one is still live during that
+    /// window. Two loads in flight interleave: each posts a camera, a framing, a projection and a
+    /// world back to the UI thread independently, so the frame ends up assembled out of both, and
+    /// whichever finishes first re-enables the controls for a load that is still running.
+    /// Disabling the entries is what a user sees; this is what actually holds.
+    /// </para>
+    /// </summary>
+    private bool _loading;
+
     private async Task PrepareWorldCoreAsync(Func<IProgress<float>?, WorldSetup> build, string label)
     {
+        if (_loading)
+        {
+            return;
+        }
+
+        _loading = true;
+
         btnLoadModel.Enabled = false;
         mnuLoadModel.Enabled = false;
         mnuOpenModel.Enabled = false;
+        mnuOpenScene.Enabled = false;
         prgLoading.Value = 0;
         lblLoading.Visible = true;
         lblLoading.BringToFront();
@@ -1688,6 +1710,9 @@ public sealed partial class MainScreen : Form
             btnLoadModel.Enabled = true;
             mnuLoadModel.Enabled = true;
             mnuOpenModel.Enabled = true;
+            mnuOpenScene.Enabled = true;
+
+            _loading = false;
 
             // The world changed under any selected pixel, and its history with it.
             panel3D1.ClearSelectedPixel();

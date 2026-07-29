@@ -4,9 +4,14 @@ namespace SoftEngine.Core.Geometry;
 
 public static class MeshExtensions
 {
+    /// <summary>
+    /// Reads a flat float array as X, Y, Z triples. A trailing partial triple — which is what a
+    /// truncated or malformed source array leaves behind — is dropped rather than read past the
+    /// end of the array.
+    /// </summary>
     public static IEnumerable<Vector3> BuildVector3s(this float[] vertices)
     {
-        for (int i = 0; i < vertices.Length; i += 3)
+        for (int i = 0; i + 2 < vertices.Length; i += 3)
         {
             yield return new Vector3(vertices[i], vertices[i + 1], vertices[i + 2]);
         }
@@ -83,10 +88,16 @@ public static class MeshExtensions
         return MathF.Max(x, MathF.Max(y, z));
     }
 
+    /// <summary>
+    /// Groups a flat index stream into triangles. A trailing one or two indices are dropped
+    /// rather than read past the end of the array: an index count that is not a multiple of
+    /// three is what a truncated <c>&lt;p&gt;</c> stream or a malformed face list produces, and
+    /// an importer that throws there fails to open the whole model over its last corner.
+    /// </summary>
     public static Triangle[] BuildTriangleIndices(this int[] indices)
     {
-        var triangles = new List<Triangle>();
-        for (var i = 0; i < indices.Length; i += 3)
+        var triangles = new List<Triangle>(indices.Length / 3);
+        for (var i = 0; i + 2 < indices.Length; i += 3)
         {
             triangles.Add(new Triangle(indices[i], indices[i + 1], indices[i + 2]));
         }

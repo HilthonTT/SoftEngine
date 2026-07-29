@@ -82,6 +82,41 @@ public class SceneGraphTests
             node.Add(node);
         });
 
+    /// <summary>
+    /// A cycle is the one malformed hierarchy that cannot be survived: both
+    /// <see cref="SceneNode.UpdateWorldMatrices()"/> and
+    /// <see cref="SceneNode.SelfAndDescendants"/> recurse down the child list, so a loop is an
+    /// unbounded recursion and a stack overflow — which no caller can catch.
+    /// </summary>
+    [Fact]
+    public void Add_Ancestor_Throws()
+    {
+        var root = new SceneNode("root");
+        var branch = root.Add(new SceneNode("branch"));
+        var leaf = branch.Add(new SceneNode("leaf"));
+
+        Assert.Throws<ArgumentException>(() => leaf.Add(root));
+        Assert.Throws<ArgumentException>(() => leaf.Add(branch));
+
+        // Refused, not half-applied: the tree the caller had is the tree it still has.
+        Assert.Same(branch, leaf.Parent);
+        Assert.Null(root.Parent);
+        Assert.Empty(leaf.Children);
+    }
+
+    [Fact]
+    public void IsAncestorOf_HoldsForItselfAndEveryNodeBelow()
+    {
+        var root = new SceneNode("root");
+        var branch = root.Add(new SceneNode("branch"));
+        var leaf = branch.Add(new SceneNode("leaf"));
+
+        Assert.True(root.IsAncestorOf(leaf));
+        Assert.True(root.IsAncestorOf(root));
+        Assert.False(leaf.IsAncestorOf(root));
+        Assert.False(root.IsAncestorOf(null));
+    }
+
     [Fact]
     public void Remove_Child_ClearsItsParent()
     {
