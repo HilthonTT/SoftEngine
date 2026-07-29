@@ -545,14 +545,27 @@ public sealed class FrameBuffer(int width, int height)
     public bool DepthTest(int x, int y, int z) => z <= _zBuffer[x + y * Width];
 
     /// <summary>
-    /// Whether not one of the <see cref="Vector{T}.Count"/> pixels starting at (x, y) can
-    /// pass the depth test against <paramref name="depths"/>. A run that is entirely behind
-    /// what is already drawn can be skipped whole, without interpolating or shading any of
-    /// it. The caller must keep the run inside one row: <c>x + Vector&lt;int&gt;.Count ≤ Width</c>.
+    /// Which of the <see cref="Vector{T}.Count"/> pixels starting at (x, y) would pass the
+    /// depth test against <paramref name="depths"/> — all bits set in a lane that passes,
+    /// zero in one that does not. The caller must keep the run inside one row:
+    /// <c>x + Vector&lt;int&gt;.Count ≤ Width</c>.
+    ///
+    /// <para>
+    /// One load answers two questions the rasterizer asks together. A mask of all zeros means
+    /// the whole run is behind what is already drawn, and it can be skipped without
+    /// interpolating or shading any of it — the case that pays for itself in a scene with
+    /// depth complexity. A mask with bits in it says which lanes are worth shading, which
+    /// spares each of them the separate scalar load and compare that asking per pixel would
+    /// cost.
+    /// </para>
+    ///
+    /// Advisory, exactly as the scalar <see cref="DepthTest"/> is: <see cref="PutPixel"/>
+    /// re-runs the test on the pixel it is given. Lanes are distinct pixels, so no write made
+    /// from this mask can invalidate another lane of it.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal bool NoDepthPasses(int x, int y, in Vector<int> depths) =>
-        Vector.GreaterThanAll(depths, new Vector<int>(_zBuffer.AsSpan(x + y * Width, Vector<int>.Count)));
+    internal Vector<int> DepthPassMask(int x, int y, in Vector<int> depths) =>
+        Vector.LessThanOrEqual(depths, new Vector<int>(_zBuffer.AsSpan(x + y * Width, Vector<int>.Count)));
 
     /// <summary>
     /// The farthest depth currently stored anywhere in the given rectangle. Nothing behind

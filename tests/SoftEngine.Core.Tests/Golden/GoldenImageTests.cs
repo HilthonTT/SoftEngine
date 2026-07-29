@@ -1,3 +1,4 @@
+using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Tests.Golden;
 
 namespace SoftEngine.Core.Tests;
@@ -70,6 +71,46 @@ public class GoldenImageTests
         var (whole, _, _) = scene.Render(occlusionCulling: false);
 
         GoldenImage.VerifyIdentical($"{name} occlusion culling", whole, culled, width, height);
+    }
+
+    /// <summary>
+    /// Filling a span a vector of pixels at a time is an optimization, so the statement that
+    /// makes it correct is the same one the occlusion pass has to satisfy: the image does not
+    /// change. Not "does not change much" — the two frames come out of one process on one
+    /// machine, so every value that could legitimately drift between hosts is fixed here, and
+    /// a single differing pixel is a real difference.
+    ///
+    /// <para>
+    /// Run over every baseline scene rather than one built for it, because the block path is
+    /// under every painter at once and the ways it could go wrong are per-painter: it carries
+    /// the interpolation parameter and the recovered w across a lane boundary, and each
+    /// varying spends them differently. It also puts the scalar tail — the pixels left when a
+    /// span is not a whole number of vectors long — on every triangle edge in every scene,
+    /// which is the seam most likely to be off by a pixel.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(SceneNames))]
+    public void Scene_RendersIdenticallyWithScalarSpans(string name)
+    {
+        var scene = GoldenScene.All.Single(s => s.Name == name);
+
+        var restore = ScanlineRasterizer.VectorizedSpans;
+
+        try
+        {
+            ScanlineRasterizer.VectorizedSpans = true;
+            var (vectorized, width, height) = scene.Render();
+
+            ScanlineRasterizer.VectorizedSpans = false;
+            var (scalar, _, _) = scene.Render();
+
+            GoldenImage.VerifyIdentical($"{name} vectorized spans", scalar, vectorized, width, height);
+        }
+        finally
+        {
+            ScanlineRasterizer.VectorizedSpans = restore;
+        }
     }
 
     /// <summary>

@@ -118,6 +118,20 @@ public static class ScanlineRasterizer
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int FirstCenterAtOrAfter(float coordinate) => (int)MathF.Ceiling(coordinate - 0.5f);
 
+    /// <summary>
+    /// Whether spans are filled a vector of pixels at a time (see <see cref="Scanline"/>).
+    /// On by default wherever the hardware has vectors to do it with.
+    ///
+    /// <para>
+    /// It is settable because the claim the block path makes is that it draws the same image
+    /// the scalar one does, and a claim like that is worth testing rather than asserting: the
+    /// test renders a scene both ways in one process and compares the frames pixel for pixel.
+    /// A diagnostic seam, not a rendering option — nothing in the pipeline reads it, and the
+    /// front-end offers no way to change it.
+    /// </para>
+    /// </summary>
+    public static bool VectorizedSpans { get; set; } = Vector.IsHardwareAccelerated;
+
     // Lane offsets 0, 1, 2, … so one vector can hold a run of consecutive pixels.
     private static readonly Vector<float> _laneOffsets = CreateLaneOffsets();
 
@@ -234,19 +248,39 @@ public static class ScanlineRasterizer
 
         // While probing, every rejected write must still be shaded so the pixel history
         // can show the colour the depth test discarded; otherwise pixels that fail the
-        // depth test skip interpolation and shading entirely.
+        // depth test skip interpolation and shading entirely. The block path below rejects
+        // without shading by design, so probing stays on the scalar one.
         var probing = surface.IsProbing;
 
-        // Runs of pixels that are entirely behind the z-buffer — the common case in a scene
-        // with depth complexity — are rejected a vector at a time and never shaded. The
-        // block test only runs where a whole vector fits inside the span.
+        var x = xStart;
+
+        // A span shorter than one vector cannot fill a block, and asking costs a call and a
+        // frame's worth of stack. Worth guarding rather than letting the loop decline to run:
+        // a dense model is mostly triangles a few pixels across, so this is the common span,
+        // not the edge case.
+        if (VectorizedSpans && Vector.IsHardwareAccelerated && !probing &&
+            xEnd - xStart >= Vector<float>.Count)
+        {
+            x = VectorSpan(
+                surface, y, xStart, xEnd, sx, sw, ew, sv, ev, invSpan, dz, zBase,
+                shader, state, ref drawn, ref behindZ);
+        }
+
+        // Runs entirely behind the z-buffer are rejected a vector at a time here too, so that
+        // turning the block path off leaves the fill exactly as it was before there was one —
+        // scalar interpolation over a vectorized rejection — rather than something slower than
+        // either. That is what makes `--compare spans` a measurement of this change and not of
+        // an optimization it removed. With the block path on, the tail is shorter than a vector
+        // by construction and this never fires.
         var blockEnd = Vector.IsHardwareAccelerated && !probing
             ? xEnd - Vector<int>.Count
             : int.MinValue;
 
-        for (var x = xStart; x < xEnd; x++)
+        // The tail — the pixels left over once no whole vector fits — and the whole span
+        // when the block path is off or a probe is recording.
+        for (; x < xEnd; x++)
         {
-            if (x <= blockEnd && surface.NoDepthPasses(x, y, BlockDepths(zBase, dz, x)))
+            if (x <= blockEnd && surface.DepthPassMask(x, y, BlockDepths(zBase, dz, x)) == Vector<int>.Zero)
             {
                 behindZ += Vector<int>.Count;
                 x += Vector<int>.Count - 1;
@@ -265,14 +299,18 @@ public static class ScanlineRasterizer
 
             // Recover the perspective-correct varying: (varying/w) / (1/w).
             var oneOverW = float.Lerp(sw, ew, t);
-            var varying = TVarying.Scale(TVarying.Lerp(sv, ev, t), 1f / oneOverW);
+            var w = 1f / oneOverW;
 
+            // Written out here rather than called, and the duplication is deliberate. This is
+            // the loop every triangle too small to fill a vector spends its whole life in —
+            // most of them, in a dense model — and behind a call it measured about a tenth
+            // slower than it does inline.
+            var varying = TVarying.Scale(TVarying.Lerp(sv, ev, t), w);
             var color = shader.Shade(varying);
 
-            // 1/w is already at hand, and w is the view-space depth fog runs on.
             if (state.HasFog)
             {
-                color = state.ApplyFog(color, 1f / oneOverW);
+                color = state.ApplyFog(color, w);
             }
 
             var written = state.IsOpaque
@@ -290,6 +328,128 @@ public static class ScanlineRasterizer
         }
 
         surface.Stats?.AddPixelCounts(drawn, behindZ);
+    }
+
+    /// <summary>
+    /// Fills as much of a span as whole vectors of pixels cover, and returns the x the tail
+    /// resumes at.
+    ///
+    /// <para>
+    /// Three things happen per block that the scalar loop pays for per pixel. Depth is
+    /// computed for the whole run at once, as an affine function of x rather than a running
+    /// sum, so a lane's value does not depend on how many pixels preceded it. One load of the
+    /// z-buffer answers the depth test for every lane: a run entirely behind what is already
+    /// drawn — the common case wherever a scene has depth complexity — is dropped without
+    /// shading a pixel of it, and a run with survivors tells each of them it passed instead of
+    /// making it ask. And the perspective divide, the one genuinely expensive arithmetic
+    /// operation in the loop, is done for eight pixels in the time one costs.
+    /// </para>
+    ///
+    /// <para>
+    /// What is <em>not</em> vectorized is the interpolation either side of that divide.
+    /// <see cref="float.Lerp"/> contracts its multiply and add into an FMA, and no arrangement
+    /// of vector multiplies and adds reproduces its result bit for bit — measurably so, on a
+    /// seventh of random inputs. Since the varyings must be interpolated per lane anyway, the
+    /// two stay together on the scalar path, where they produce exactly the value they always
+    /// did. Vector division carries no such caveat: IEEE-754 division is correctly rounded, so
+    /// the packed and scalar forms agree exactly, which is why this is the operation worth
+    /// lifting out.
+    /// </para>
+    /// </summary>
+    private static int VectorSpan<TVarying, TShader>(
+        FrameBuffer surface, int y, int xStart, int xEnd,
+        float sx, float sw, float ew,
+        in TVarying sv, in TVarying ev,
+        float invSpan, float dz, float zBase,
+        in TShader shader,
+        in RasterState state,
+        ref int drawn,
+        ref int behindZ)
+        where TVarying : struct, IVarying<TVarying>
+        where TShader : struct, IPixelShader<TVarying>
+    {
+        var lanes = Vector<float>.Count;
+
+        Span<float> parameters = stackalloc float[lanes];
+        Span<float> oneOverW = stackalloc float[lanes];
+        Span<float> w = stackalloc float[lanes];
+
+        var x = xStart;
+
+        for (; x <= xEnd - lanes; x += lanes)
+        {
+            var depths = BlockDepths(zBase, dz, x);
+            var passes = surface.DepthPassMask(x, y, depths);
+
+            if (passes == Vector<int>.Zero)
+            {
+                behindZ += lanes;
+                continue;
+            }
+
+            for (var lane = 0; lane < lanes; lane++)
+            {
+                if (passes[lane] == 0)
+                {
+                    // Nothing will read this lane's result. It is set to a harmless value
+                    // rather than left alone because the divide below takes the whole vector,
+                    // and a stale 1/w from an earlier block could be a zero or a denormal —
+                    // arithmetic nobody wants to pay for on a result nobody wants.
+                    oneOverW[lane] = 1f;
+                    continue;
+                }
+
+                // (x + lane) is exact in a float at any screen coordinate, so this is the
+                // same parameter the scalar loop computes at the same pixel.
+                var t = (x + lane + 0.5f - sx) * invSpan;
+
+                parameters[lane] = t;
+                oneOverW[lane] = float.Lerp(sw, ew, t);
+            }
+
+            // One divide for the block however many lanes survived. It is the whole reason
+            // the lanes are gathered up like this: a packed divide costs about what a scalar
+            // one does, so a block with eight survivors pays for one where it used to pay
+            // for eight, and a block with one survivor pays no more than it did before.
+            (Vector<float>.One / new Vector<float>(oneOverW)).CopyTo(w);
+
+            for (var lane = 0; lane < lanes; lane++)
+            {
+                if (passes[lane] == 0)
+                {
+                    behindZ++;
+                    continue;
+                }
+
+                var lanePosition = w[lane];
+
+                // The same body the tail loop runs, for the same reason it is written out
+                // there: behind a call, the shader stops being inlined into the loop that
+                // drives it and the whole fill pays for it.
+                var varying = TVarying.Scale(TVarying.Lerp(sv, ev, parameters[lane]), lanePosition);
+                var color = shader.Shade(varying);
+
+                if (state.HasFog)
+                {
+                    color = state.ApplyFog(color, lanePosition);
+                }
+
+                var written = state.IsOpaque
+                    ? surface.PutPixel(x + lane, y, depths[lane], color)
+                    : surface.PutPixelBlend(x + lane, y, depths[lane], color, state.Alpha);
+
+                if (written)
+                {
+                    drawn++;
+                }
+                else
+                {
+                    behindZ++;
+                }
+            }
+        }
+
+        return x;
     }
 
     /// <summary>Signed area of the triangle in screen space; the sign gives the winding.</summary>

@@ -1,18 +1,7 @@
+using SoftEngine.Core.Rasterization;
 using System.Diagnostics;
 
 namespace SoftEngine.Benchmarks;
-
-/// <summary>What one scene measured to.</summary>
-internal readonly record struct BenchmarkResult(
-    string Scene,
-    double MedianMs,
-    double MinMs,
-    double P95Ms,
-    int Triangles,
-    int DrawnTriangles,
-    int Pixels,
-    int Occluders,
-    int HiddenMeshes);
 
 internal static class BenchmarkRunner
 {
@@ -33,24 +22,39 @@ internal static class BenchmarkRunner
         int frames,
         int warmup,
         bool hierarchicalZ = true,
-        bool occlusionCulling = true)
+        bool occlusionCulling = true,
+        bool vectorizedSpans = true)
     {
         var (renderer, built, painter) = scene.Build(width, height);
         renderer.Settings.HierarchicalZ = hierarchicalZ;
         renderer.Settings.OcclusionCulling = occlusionCulling;
 
-        for (var i = 0; i < warmup; i++)
+        // A static rather than a renderer setting, so it is set around the run and put back
+        // afterwards. Nothing else is rendering — the harness measures one scene at a time.
+        var restoreSpans = ScanlineRasterizer.VectorizedSpans;
+        ScanlineRasterizer.VectorizedSpans = vectorizedSpans;
+
+        double[] samples;
+
+        try
         {
-            renderer.Render(built, painter);
+            for (var i = 0; i < warmup; i++)
+            {
+                renderer.Render(built, painter);
+            }
+
+            samples = new double[frames];
+
+            for (var i = 0; i < frames; i++)
+            {
+                var start = Stopwatch.GetTimestamp();
+                renderer.Render(built, painter);
+                samples[i] = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+            }
         }
-
-        var samples = new double[frames];
-
-        for (var i = 0; i < frames; i++)
+        finally
         {
-            var start = Stopwatch.GetTimestamp();
-            renderer.Render(built, painter);
-            samples[i] = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+            ScanlineRasterizer.VectorizedSpans = restoreSpans;
         }
 
         Array.Sort(samples);

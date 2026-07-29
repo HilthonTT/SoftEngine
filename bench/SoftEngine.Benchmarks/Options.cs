@@ -2,18 +2,6 @@ using System.Globalization;
 
 namespace SoftEngine.Benchmarks;
 
-/// <summary>The optimization a <c>--compare</c> run switches off to measure what it is worth.</summary>
-internal enum ComparedFeature
-{
-    None,
-
-    /// <summary>The tile's coarse depth bound, which drops a binned triangle before its pixels.</summary>
-    HierarchicalZ,
-
-    /// <summary>The occlusion pass, which drops a hidden mesh before its vertices.</summary>
-    Occlusion,
-}
-
 internal sealed record Options(
     int Width,
     int Height,
@@ -28,6 +16,7 @@ internal sealed record Options(
     public string ComparisonLabel => Compare switch
     {
         ComparedFeature.Occlusion => "no cull",
+        ComparedFeature.VectorizedSpans => "scalar",
         _ => "no hi-z",
     };
 
@@ -76,6 +65,7 @@ internal sealed record Options(
                     compare = NextText(args, ref i) switch
                     {
                         "occlusion" or "cull" or "culling" => ComparedFeature.Occlusion,
+                        "spans" or "simd" or "vector" => ComparedFeature.VectorizedSpans,
                         _ => ComparedFeature.HierarchicalZ,
                     };
                     break;
@@ -100,7 +90,7 @@ internal sealed record Options(
               --warmup <n>     discarded frames before measuring (default 10)
               --scene  <name>  run only scenes whose name contains this
               --compare [what] also measure with an optimization off, and report the ratio:
-                               "hi-z" (the default) or "occlusion"
+                               "hi-z" (the default), "occlusion" or "spans"
               --csv    <path>  write the results as CSV as well
             """);
 

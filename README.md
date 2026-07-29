@@ -681,10 +681,14 @@ Three things fall out of owning a rectangle of pixels:
   the triangle is dropped whole — no rows walked, no pixels tested. The bound is re-read every
   few triangles, and a scan that buys no rejection doubles the interval to the next one, so a
   scene with no depth complexity stops paying for it. `Settings.HierarchicalZ` turns it off.
-- **Vectorized depth tests.** Runs of `Vector<int>.Count` pixels are depth-tested at once, and
-  a run entirely behind the z-buffer is skipped without interpolating or shading any of it.
-  Depth is evaluated as an affine function of x rather than a running sum, so the vector test
-  and the scalar loop agree exactly.
+- **Vectorized spans.** A span is filled a vector of pixels at a time. One load of the z-buffer
+  depth-tests the whole run: a run entirely behind it is skipped without interpolating or
+  shading any of it, and a run with survivors tells each of them it passed rather than making
+  it ask. The perspective divide — the one genuinely expensive arithmetic operation per pixel —
+  is then done for the whole block at once. Depth is evaluated as an affine function of x
+  rather than a running sum, so the vector path and the scalar one agree exactly.
+  `ScanlineRasterizer.VectorizedSpans` turns it off, which is how the suite renders a scene
+  both ways and compares the frames.
 - **Contiguous memory.** A tile walks the framebuffer the way it is laid out, rather than
   every n-th row.
 
@@ -1124,6 +1128,26 @@ its own slot and writes its own — so a dense model's, which is tens of thousan
 split across the cores. The cull phase around it stays sequential: it appends to the frame's draw
 list, whose order the transparent sort and the pixel probe both depend on.
 *`dense-model` 9.2 ms → 7.9 ms.*
+
+**The perspective divide was one pixel at a time.** Recovering a perspective-correct varying costs
+a division per pixel, and division is the slowest arithmetic on the chip — a packed divide of
+eight floats costs about what one scalar divide does. Filling a span a vector at a time makes that
+trade available, and the same block gets its depth test from a single load of the z-buffer instead
+of one per pixel. Measured as the median of paired runs — both arms in one process, so neither
+gets a quieter machine than the other — it is worth **1.16× on `big-triangles` and 1.08× on
+`shadows`**, and within noise of parity on everything else. That distribution is the honest shape
+of the result rather than a disappointment in it: the win is in *long* spans, and a scene of
+81,920 triangles at 720p is mostly spans a few pixels wide, which cannot fill a block at all.
+`--compare spans` reports it per scene.
+
+What is deliberately *not* vectorized is the interpolation either side of that divide. `float.Lerp`
+contracts its multiply and add into an FMA, and no arrangement of vector multiplies and adds
+reproduces its result bit for bit — on a seventh of random inputs, measured. Vectorizing it would
+mean re-recording every golden image to absorb an ulp of drift, which is a large price for the
+one operation that was already cheap. Vector division carries no such caveat: IEEE-754 division is
+correctly rounded, so packed and scalar agree exactly, which is why it is the operation worth
+lifting out. Taking the rest would mean vectorizing the varyings and the shaders themselves —
+a wider change, across every painter, and one that trades the exactness the tests currently prove.
 
 ## Testing
 

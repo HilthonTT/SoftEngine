@@ -7,9 +7,6 @@ using System.Numerics;
 
 namespace SoftEngine.Cli;
 
-/// <summary>What loading a model produced, and how big it turned out to be.</summary>
-internal sealed record LoadedWorld(SimpleWorld World, Vector3 Center, float Radius, int SkippedTextures);
-
 /// <summary>
 /// Reads a model file into a world, and measures it.
 ///
