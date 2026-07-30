@@ -66,12 +66,12 @@ public readonly struct AmbientCube
         ArgumentNullException.ThrowIfNull(environment, nameof(environment));
 
         return new AmbientCube(
-            Average(environment[CubeFace.PositiveX], intensity),
-            Average(environment[CubeFace.NegativeX], intensity),
-            Average(environment[CubeFace.PositiveY], intensity),
-            Average(environment[CubeFace.NegativeY], intensity),
-            Average(environment[CubeFace.PositiveZ], intensity),
-            Average(environment[CubeFace.NegativeZ], intensity));
+            Average(environment, CubeFace.PositiveX, intensity),
+            Average(environment, CubeFace.NegativeX, intensity),
+            Average(environment, CubeFace.PositiveY, intensity),
+            Average(environment, CubeFace.NegativeY, intensity),
+            Average(environment, CubeFace.PositiveZ, intensity),
+            Average(environment, CubeFace.NegativeZ, intensity));
     }
 
     /// <summary>
@@ -111,23 +111,42 @@ public readonly struct AmbientCube
         return x * alongX + y * alongY + z * alongZ;
     }
 
-    private static LinearColor Average(Texture face, float intensity)
+    private static LinearColor Average(CubeMap environment, CubeFace face, float intensity)
     {
-        var pixels = face.Pixels;
-
         float r = 0f, g = 0f, b = 0f;
+        int count;
 
-        foreach (var packed in pixels)
+        // The float faces when the environment has them: a sun occupying a handful of texels
+        // contributes most of the light a surface facing it receives, and it is exactly the
+        // part an 8-bit face clipped to white.
+        if (environment.Radiance(face) is { } radiance)
         {
-            // Averaged in linear light: this is a sum of light, not of encoded bytes.
-            LinearColor texel = Diagnostics.ColorRGB.FromPacked(packed);
+            count = radiance.Length / 3;
 
-            r += texel.R;
-            g += texel.G;
-            b += texel.B;
+            for (var i = 0; i < radiance.Length; i += 3)
+            {
+                r += radiance[i];
+                g += radiance[i + 1];
+                b += radiance[i + 2];
+            }
+        }
+        else
+        {
+            var pixels = environment[face].Pixels;
+            count = pixels.Length;
+
+            foreach (var packed in pixels)
+            {
+                // Averaged in linear light: this is a sum of light, not of encoded bytes.
+                LinearColor texel = Diagnostics.ColorRGB.FromPacked(packed);
+
+                r += texel.R;
+                g += texel.G;
+                b += texel.B;
+            }
         }
 
-        var scale = intensity / pixels.Length;
+        var scale = intensity / count;
 
         return new LinearColor(r * scale, g * scale, b * scale);
     }

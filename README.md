@@ -120,6 +120,53 @@ so a normal map shapes the ambient the same way it shapes the lights.
 horizon, ground and a sun disc — so a scene can have a sky, and therefore directional ambient,
 with no asset to load.
 
+### Environments that keep their range
+
+A cube map's faces are 8-bit, and a sky is the one image where that is not enough. A real sun is
+some four orders of magnitude brighter than the cloud beside it; clipped to white it is a disc
+that *looks* like the sun and *behaves* like a sheet of paper — it blooms no harder than a
+highlight, it contributes its own area and no more to the ambient term, and a mirror reflecting it
+comes back the same white as a mirror reflecting the cloud.
+
+So a `CubeMap` can carry a second copy of its six faces in linear floats, and
+`CubeMap.SampleRadiance` returns those when they are there. Every consumer that treats the
+environment as *light* rather than as a picture reads through it — the skybox pass, `AmbientCube`,
+and the prefilter behind `PrefilteredEnvironment` — while the byte faces stay for the things that
+can only be bytes: a thumbnail, a texture uploaded to a graphics adapter. With no float faces
+loaded, `SampleRadiance` filters the bytes and decodes the blend, which is exactly the order those
+three consumers already used, so an environment that never had a range renders the frame it always
+did.
+
+Two ways to get one:
+
+- [`RadianceHdrCodec`](src/SoftEngine.Core/Imaging/RadianceHdrCodec.cs) reads Radiance `.hdr` — the
+  format every HDR panorama is distributed in — into an
+  [`HdrImage`](src/SoftEngine.Core/Imaging/HdrImage.cs), and
+  [`Equirectangular.ToCubeMap`](src/SoftEngine.Core/Geometry/Equirectangular.cs) projects the
+  latitude–longitude panorama onto the cube the renderer samples by direction. Both the adaptive
+  (per-component run-length) and flat scanline encodings are handled, `EXPOSURE` is divided back
+  out, and `+Y` files are turned over. The projection supersamples each face texel, because a
+  panorama's rows crowd together at the poles and point-sampling them crawls.
+- [`SkyBox.HighDynamicRangeGradient`](src/SoftEngine.Core/Geometry/SkyBox.cs) is the procedural
+  sky in linear light, with a sun a few hundred times paper white instead of a white disc.
+
+Longitude is measured from −Z increasing toward +X, so U = 0.5 is dead ahead of an unrotated
+camera and the panorama's own seam lands behind it; latitude runs from +Y downward, which is both
+the order Radiance writes scanlines and the order a cube face's V already runs, so nothing gets
+flipped in between.
+
+The viewer's **Load panorama…** opens `.hdr` through the engine's codec and everything else
+through GDI+ (which reads every 8-bit format Windows knows and no HDR one); a scene document
+records the *path*, like it records the model's. The headless renderer takes `--env <path>`, with
+`--environment-size` to override the face resolution and `--hdr-sky` for the procedural version.
+An 8-bit panorama is projected without float faces on purpose — the source clipped its highlights
+before this renderer saw the file, and claiming a range that is not there would only make the flat
+reflections harder to explain.
+
+The GPU backend uploads the byte faces, so a `.hdr` environment lights the hardware path as though
+it had been clipped to white. That is the one place the two backends currently disagree about an
+environment.
+
 ## Shadow mapping
 
 Shadows come from a second, depth-only render of the world from where the light stands
@@ -462,8 +509,34 @@ runtime — which is what makes it usable from a build, a script or a batch of a
 | `-w`, `-h`, `--ss` | resolution, and supersampling to average down from |
 | `-p`, `--post`, `--view` | painter, post-process effects, and which buffer to present instead of the shaded image |
 | `--yaw`, `--pitch`, `--zoom`, `--camera` | where to stand; `-t` says how far into the model's animation |
+| `--env`, `--environment-size`, `--hdr-sky` | light the scene with a panorama, or with the linear-light procedural sky |
+| `--trace`, `--samples`, `--bounces` | path-trace the frame instead of rasterizing it |
+| `--frames`, `--fps`, `--turntable`, `--shutter` | render a numbered sequence instead of one frame |
 | `--scene` | apply a saved scene document over the model named on the command line |
 | `--stats` | triangle, pixel and timing counts |
+
+### Sequences
+
+`--frames <n>` writes `frame.0000.png`, `frame.0001.png`, … instead of one image, advancing the
+model's animation by `1 / --fps` between them and sweeping the camera `--turntable` degrees of yaw
+across the whole run. Four digits, zero-padded, because every tool that reads a sequence sorts the
+names as text and `frame.10.png` sorts before `frame.2.png`.
+
+```bash
+# a one-second turntable of an animated model, motion-blurred
+dotnet run -c Release --project src/SoftEngine.Cli -- parrot.dae     --frames 30 --fps 30 --turntable 360 --shutter 0.5 -o turntable.png
+
+# and into a video, which is ffmpeg's job rather than this program's
+ffmpeg -framerate 30 -i turntable.0000.png -pix_fmt yuv420p turntable.mp4
+```
+
+The camera walks the arc rather than the model turning inside it: a scene has lights and a sky in
+it, and spinning the geometry within them looks like the lighting is spinning too. The last frame
+stops one step short of the first, so a loop does not stutter on a repeated frame.
+
+`--shutter` is the one flag that only exists here. Motion blur needs a previous frame to have moved
+from, which a sequence has and a single render does not — so the renderer is kept across frames and
+the velocities are measured between consecutive ones, exactly as they are in the viewport.
 
 Three things it does differently from the viewer, because one shot is all it gets:
 
@@ -765,6 +838,82 @@ writes the depth test rejects, and a mesh dropped here never attempts them.
 The **occlusion buffer** view presents the pyramid itself, which is the quickest way to see why a
 scene culls less than it should — see [Buffer views](#buffer-views).
 
+## Motion, in the buffer and out of it
+
+A colour buffer says what is at a pixel and a depth buffer says how far away it is. Neither says
+whether it is the *same thing* that was there last frame — which has to be known before last
+frame's answer can be reused for anything.
+[`VelocityBuffer`](src/SoftEngine.Core/Buffers/VelocityBuffer.cs) answers it: how far the surface at
+each pixel moved across the screen, in pixels, pointing *backwards* so that subtracting it from a
+pixel's position gives the pixel to read the history from.
+
+[`VelocityPass`](src/SoftEngine.Core/Pipeline/Temporal/VelocityPass.cs) fills it by projecting every
+vertex twice — once with this frame's transforms and once with the previous frame's, which
+[`MotionState`](src/SoftEngine.Core/Pipeline/Temporal/MotionState.cs) keeps, one matrix per mesh
+keyed by reference rather than by index (a world whose list is reordered would otherwise hand every
+mesh its neighbour's history and appear to move as a whole).
+
+It is a second pass rather than a varying on the main one, deliberately. A varying would avoid the
+second traversal and would have to be threaded through every `IVarying`, every painter and every
+shader whether or not anything temporal is switched on — nine painters paying for a feature two of
+them can use. The previous clip position *is* interpolated perspective-correctly inside the pass,
+because it is an attribute of the surface being rasterized now, and interpolating it linearly across
+the screen would bend the motion of anything at an angle to the camera, which is most of a floor.
+
+### Temporal antialiasing
+
+Blending consecutive frames on its own only steadies an image. Every frame samples the scene at the
+same point in every pixel, so an edge two-thirds of the way across one is resolved as covering all
+of it or none, over and over, and averaging that with itself changes nothing. The antialiasing comes
+from [`TemporalJitter`](src/SoftEngine.Core/Pipeline/Temporal/TemporalJitter.cs): a sub-pixel offset,
+Halton in bases 2 and 3 over eight phases, folded into the projection matrix's third row so it
+shifts clip x and y by a constant fraction of w — a fixed number of *pixels* at every depth, which
+is what jittering a sample grid means and is not what moving the camera sideways would do. A
+parallel projection has no w to scale, so its offset goes into the translation row instead.
+
+Then [`TemporalResolver`](src/SoftEngine.Core/Pipeline/Temporal/TemporalResolver.cs) blends 10% of
+the new frame into a reprojected history, having first clamped that history into the colour range of
+the 3×3 neighbourhood around the pixel. The clamp is what handles disocclusion: a surface that has
+just emerged from behind another one has a history belonging to whatever was in front of it, and no
+reprojection can fix that because the information was never rendered — but a colour that appears
+nowhere near the pixel in *this* frame is provably not this surface's, and pulling it back to the
+edge of what is there costs a ghost its trail.
+
+It runs after shading and before the post stack, on the render target as the rasterizer left it. The
+history has to be of the shaded frame rather than of a bloomed and tone-mapped one, or every effect
+in the chain would be applied again to its own output on the next frame.
+
+Against `SuperSampler`, the trade is: eight samples per pixel for the cost of one, if the pixel has
+been looking at the same surface for eight frames — and one sample plus a little softness if it has
+not. There is a test that renders a still scene both ways and a third time at 4× supersampling, and
+asserts the temporal frame is *closer to the supersampled one* than the single-sample frame is,
+which is the only form of the claim worth making.
+
+### Motion blur
+
+[`MotionBlur`](src/SoftEngine.Core/Pipeline/Temporal/MotionBlur.cs) averages the frame along each
+pixel's velocity, scaled by a shutter fraction (0.5 — film's 180° shutter — by default). A rendered
+frame is a shutter open for no time at all, which is why fast motion in one strobes instead of
+blurring.
+
+It is screen-space, and it shows in one specific way: the samples come from the frame as it is, so a
+fast object gathers the *background* into itself where it has come from, because nothing ever
+rendered what was behind it a fraction of a frame ago. Sampling only where the velocity buffer says
+a surface is covered keeps that from bleeding the other way across silhouettes, which is the
+artefact people notice.
+
+Neither of these is an `IPostEffect`, though both belong in that part of the frame: the stack's
+effects are handed the image and a depth buffer, and these need the velocity buffer. Adding it to
+that interface for two effects would make the other five carry the parameter.
+
+**Velocity** joins the buffer views — direction as hue, speed as brightness, grey where nothing
+moves. It is the view whose errors are otherwise invisible: a velocity pointing the wrong way shows
+up as a faint smear or a slow ghost, which reads as the technique being imperfect rather than as a
+buffer being wrong.
+
+Both are off by default and both are viewer-side: a one-shot headless render has no previous frame,
+so `--taa` would be a flag that does nothing. The GPU backend ignores them.
+
 ## Supersampling
 
 [`SuperSampler`](src/SoftEngine.Core/Pipeline/SuperSampler.cs) resolves a render target drawn
@@ -1013,11 +1162,90 @@ PCIe and averaging them on the CPU is most of the frame. Downsampling on the ada
 back only the display-resolution image would fix it, and is not done: the viewport sizes the render
 target itself and resolves afterwards, so the renderer is never told what the factor is.
 
+## Path-traced reference
+
+Everything the rasterizer does about light that does not arrive straight from a lamp is an
+approximation standing in for something. Ambient light is a constant, or six of them. Occlusion is
+a screen-space guess made from a depth buffer. A reflection is a prefiltered cube sampled along one
+direction. A shadow is a depth map with a bias that has to be tuned per scene. Each is defensible
+on its own, and none of them can be checked against anything.
+
+[`PathTracer`](src/SoftEngine.Core/Tracing/PathTracer.cs) is the thing to check them against. It is
+an `IRenderer` like the other two, so it takes the same scene, the same `FrameBuffer` and the same
+post-process stack — and it ignores the painter it is handed, because choosing a shading model per
+mesh is exactly what it exists not to do. Render a frame both ways and subtract: the difference is
+the error, rather than an opinion about it.
+
+```bash
+dotnet run -c Release --project src/SoftEngine.Cli -- model.gltf --trace --samples 256 --bounces 4
+```
+
+What it computes that nothing else here can: **interreflection** (a red wall tints the white floor
+beside it), **true ambient occlusion** (a crevice is dark because light does not reach it, not
+because a depth buffer suggests it might not), and **shadows with no bias to tune** — a shadow ray
+either hits something or it does not, so there is no acne, no peter-panning and no cascade to fit.
+
+What it is not is a production renderer. No bidirectional tracing, no multiple importance sampling
+and no light hierarchy, so a room lit through a keyhole stays noise for a long time. Lights are the
+engine's own delta lights, sampled explicitly at every surface, so they cast hard shadows and no
+caustics.
+
+### The acceleration structure
+
+A ray has no idea what it is about to hit, which is why the rasterizer's approach does not transfer:
+it walks meshes one at a time, and a mesh's own space is where its vertices already are.
+[`SceneGeometry`](src/SoftEngine.Core/Acceleration/SceneGeometry.cs) flattens the world into one
+array of triangles in world space, and [`Bvh`](src/SoftEngine.Core/Acceleration/Bvh.cs) is a
+bounding volume hierarchy over it — a ray that misses a node's box misses everything inside it, so
+one test discards half the scene and the same argument applies to what is left.
+
+Splits are chosen by the **surface area heuristic**, binned twelve ways per axis: the chance a
+random ray hits a box is proportional to its area, so the expected cost of a split is each side's
+area times how many triangles it holds. Children are allocated in adjacent pairs, so a node names
+only the left one; traversal pushes the far child first and the near child second, which is what
+lets a hit found early reject the far box outright.
+
+It is built once and read by every ray — the opposite of the trade the rest of the renderer makes,
+where culling is rebuilt per frame because it is asked one question per frame. `SceneGeometry.Stamp`
+is the cheap check that the world has not moved under it: every mesh's world matrix and the ends of
+its vertex array, which catches a drag, a reparent and a skin being deformed, and does not catch a
+deformation that leaves both end vertices exactly where they were.
+
+`ScenePicker.Pick` has an overload that takes a tree, for a caller that has one anyway. It is *not*
+the default: the ordinary pick rejects whole meshes against their bounding spheres first, so a
+single click already tests a handful of meshes, and building a tree costs far more than that.
+
+### Exposure, and one π
+
+The PBR painter multiplies its direct term by π, as an exposure correction so that switching
+painters does not change how bright a scene looks — while its ambient term is the physically
+correct one. The two cannot both be matched. `TraceSettings.DirectLightScale` defaults to π, which
+matches the painter and makes the two images comparable; setting it to 1 (`--physical`) gives an
+image that is internally consistent instead, and about three times darker wherever a light is doing
+the work.
+
+The environment lights the trace at `Scene.SkyIntensity`, and `AmbientIntensity` is ignored — it is
+a knob for scaling a fudge the tracer does not make. A traced frame under a sky is normally brighter
+than a rasterized one for that reason, and that is the finding, not a bug.
+
+### In the viewport
+
+**Rendered by → Path tracer** switches the viewer over. It traces two paths per pixel per paint and
+averages them into what is already there, repainting until it reaches 512 samples or something
+moves — so the image arrives as noise and resolves over a few seconds, and the status bar counts the
+samples. Moving anything throws the accumulation away, because an average of samples taken against
+different geometry is not a picture of anything.
+
+Being stochastic, it is also seeded per pixel rather than from a shared generator: two runs of the
+same scene produce the same image down to the last bit, which is what makes a renderer like this
+testable at all.
+
 ## Project layout
 
 ```
 src/
 ├── SoftEngine.Core/        # engine, no UI dependency (net10.0 class library)
+│   ├── Acceleration/       # world triangles flattened to one array, and the SAH BVH over them
 │   ├── Animation/          # keyframe tracks, interpolation modes, node channels, clips, playback
 │   ├── Buffers/            # FrameBuffer (color + z-buffer + pixel probe), pooled Vertex/World buffers
 │   ├── Diagnostics/        # render stats, graphics event log, pixel history, frame captures
@@ -1026,19 +1254,21 @@ src/
 │   │   ├── Gltf/           # glTF 2.0 / GLB reader: schema, accessor decoding, scene building
 │   │   └── Skinning/       # skeleton, skin weights, linear blend skinning, generated bone chain
 │   ├── Gizmos/             # grid, world axes, skeleton, the draggable transform handles, snapping
-│   ├── Imaging/            # PNG codec for the engine's own frames
+│   ├── Imaging/            # PNG codec for the engine's own frames, Radiance .hdr reader, HdrImage
 │   ├── Picking/            # ray, ray-triangle intersection, scene picker
 │   ├── Pipeline/           # Renderer, settings, homogeneous clipping, sky pass
 │   │   ├── Culling/        # frustum planes, occluder selection, occlusion depth pyramid
 │   │   ├── Debugging/      # buffer views: depth, normals, overdraw, cascades, occlusion
 │   │   ├── PostProcess/    # effect stack: SSAO, bloom, tone map, FXAA, vignette
-│   │   └── Shadows/        # depth-only shadow-map pass, cascade fitting
+│   │   ├── Shadows/        # depth-only shadow-map pass, cascade fitting
+│   │   └── Temporal/       # velocity pass, motion state, TAA jitter and resolve, motion blur
 │   ├── Rasterization/      # scanline filler, painters, shaders, varyings, texture sampling
 │   ├── Scenes/             # world, camera, projections, lights, fog and shadow settings
 │   │   ├── Graph/          # SceneNode transform hierarchy
 │   │   └── Serialization/  # the JSON scene document, and moving it on and off a live Scene
-│   └── Shading/            # linear colour, light sets, ambient cube, sRGB conversion, shadow map,
-│                           #   GGX, BRDF table, prefiltered environment
+│   ├── Shading/            # linear colour, light sets, ambient cube, sRGB conversion, shadow map,
+│   │                       #   GGX, BRDF table, prefiltered environment
+│   └── Tracing/            # the path tracer, its settings and its per-pixel sampler
 ├── SoftEngine.Gpu/         # OpenGL backend via Silk.NET: same IRenderer, fill on the adapter
 │   └── Shaders/            # GLSL — the CPU shaders ported, plus the depth, sky and overlay passes
 ├── SoftEngine.Cli/         # headless renderer: model or scene in, PNG out (net10.0 console)

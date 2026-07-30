@@ -42,7 +42,8 @@ public sealed class BufferVisualizer
         IProjection? projection,
         ShadowMap? shadowMap,
         DebugView view,
-        OcclusionBuffer? occlusion = null)
+        OcclusionBuffer? occlusion = null,
+        VelocityBuffer? velocity = null)
     {
         ArgumentNullException.ThrowIfNull(surface, nameof(surface));
 
@@ -58,7 +59,89 @@ public sealed class BufferVisualizer
             DebugView.Overdraw => RenderOverdraw(surface),
             DebugView.ShadowMap => RenderShadowMap(surface, shadowMap),
             DebugView.OcclusionBuffer => RenderOcclusion(surface, occlusion),
+            DebugView.Velocity => RenderVelocity(surface, velocity),
             _ => false,
+        };
+    }
+
+    /// <summary>
+    /// Per-pixel motion: the direction as a hue around the colour wheel, the speed as how far from
+    /// grey it is. A still frame is flat grey, which is the reading that matters — anything that is
+    /// not grey while nothing is moving is a velocity that should not be there.
+    ///
+    /// Speed is scaled against the frame's own fastest pixel rather than a fixed ceiling, because a
+    /// velocity in pixels means something different at every resolution and frame rate, and the
+    /// question being asked of this view is almost always "which way" rather than "how much".
+    /// </summary>
+    private static bool RenderVelocity(FrameBuffer surface, VelocityBuffer? velocity)
+    {
+        if (velocity is null ||
+            !velocity.IsFilled ||
+            velocity.Width != surface.Width ||
+            velocity.Height != surface.Height)
+        {
+            return false;
+        }
+
+        var fastest = velocity.MaxSpeed();
+        var scale = fastest > 1e-4f ? 1f / fastest : 0f;
+
+        var screen = surface.Screen;
+        var width = surface.Width;
+
+        Parallel.For(0, surface.Height, y =>
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var i = x + y * width;
+
+                if (!velocity.IsCovered(x, y))
+                {
+                    screen[i] = Pack(0, 0, 0);
+                    continue;
+                }
+
+                var motion = velocity.At(x, y);
+                var speed = motion.Length() * scale;
+
+                if (speed < 1e-4f)
+                {
+                    screen[i] = Pack(128, 128, 128);
+                    continue;
+                }
+
+                // Angle to hue, with grey at the centre so a slow pixel is a pale version of the
+                // direction it is going rather than a saturated version of a random one.
+                var angle = MathF.Atan2(motion.Y, motion.X) / MathF.Tau + 0.5f;
+
+                var (r, g, b) = Hue(angle);
+                var t = System.Math.Clamp(speed, 0f, 1f);
+
+                screen[i] = Pack(
+                    Byte(0.5f + (r - 0.5f) * t),
+                    Byte(0.5f + (g - 0.5f) * t),
+                    Byte(0.5f + (b - 0.5f) * t));
+            }
+        });
+
+        return true;
+    }
+
+    /// <summary>A fully saturated colour at a position around the wheel, in [0, 1).</summary>
+    private static (float R, float G, float B) Hue(float position)
+    {
+        var h = (position - MathF.Floor(position)) * 6f;
+
+        var x = 1f - MathF.Abs(h % 2f - 1f);
+
+        return (int)h switch
+        {
+            0 => (1f, x, 0f),
+            1 => (x, 1f, 0f),
+            2 => (0f, 1f, x),
+            3 => (0f, x, 1f),
+            4 => (x, 0f, 1f),
+            _ => (1f, 0f, x),
         };
     }
 

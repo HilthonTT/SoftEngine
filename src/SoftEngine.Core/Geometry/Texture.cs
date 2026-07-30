@@ -2,15 +2,6 @@ using SoftEngine.Core.Diagnostics;
 
 namespace SoftEngine.Core.Geometry;
 
-public enum TextureFiltering
-{
-    /// <summary>One texel per pixel — fast, blocky up close and shimmery at a distance.</summary>
-    Nearest,
-
-    /// <summary>Weighted average of the four surrounding texels.</summary>
-    Bilinear,
-}
-
 /// <summary>One level of a texture's mip chain: packed ARGB texels and their dimensions.</summary>
 public readonly struct TextureMip(int[] pixels, int width, int height)
 {

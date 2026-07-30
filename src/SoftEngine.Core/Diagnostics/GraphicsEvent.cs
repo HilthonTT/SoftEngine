@@ -45,6 +45,8 @@ public readonly record struct GraphicsEvent(GraphicsEventKind Kind, int ObjectId
                 string.Create(c, $"obj:{ObjectId}"),
             GraphicsEventKind.OcclusionBufferRender =>
                 string.Create(c, $"{(int)A} × {(int)B} depth from {(int)C} occluder(s)"),
+            GraphicsEventKind.VelocityBufferRender =>
+                string.Create(c, $"{(int)A} × {(int)B} motion vectors, {(C > 0f ? "against the previous frame" : "no previous frame")}"),
             GraphicsEventKind.MeshSkipInactive =>
                 string.Create(c, $"obj:{ObjectId} — {(int)A} triangles skipped"),
             GraphicsEventKind.MeshCullBoundingSphere =>

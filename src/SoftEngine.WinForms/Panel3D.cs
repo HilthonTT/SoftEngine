@@ -9,6 +9,7 @@ using SoftEngine.Core.Pipeline.PostProcess;
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
+using SoftEngine.Core.Tracing;
 using SoftEngine.WinForms.Cameras;
 using SoftEngine.WinForms.Interop;
 using SoftEngine.Gpu;
@@ -141,9 +142,24 @@ public partial class Panel3D : UserControl
     public string? BackendFallback { get; private set; }
 
     /// <summary>One line naming what the viewport is being drawn by.</summary>
-    public string BackendDescription => _backend == RenderBackend.Gpu && Adapter is { } adapter
-        ? $"GPU · {adapter.Describe()}"
-        : "CPU · software rasterizer";
+    public string BackendDescription => _backend switch
+    {
+        RenderBackend.Gpu when Adapter is { } adapter => $"GPU · {adapter.Describe()}",
+        RenderBackend.Trace when Renderer is PathTracer tracer =>
+            $"CPU · path tracer · {tracer.AccumulatedSamples} spp",
+        _ => "CPU · software rasterizer",
+    };
+
+    /// <summary>
+    /// Paths per pixel the viewport refines to before it stops redrawing itself.
+    ///
+    /// A path-traced viewport cannot produce a finished frame in the time a paint has, so it
+    /// produces a noisy one and then keeps averaging more samples into it for as long as nothing
+    /// moves — which is what makes an unusably slow renderer usable to look at. This is where it
+    /// gives up and leaves the image alone.
+    /// </summary>
+    [DefaultValue(512)]
+    public int TraceSampleTarget { get; set; } = 512;
 
     /// <summary>Raised after <see cref="Backend"/> settles, whether or not it is what was asked for.</summary>
     public event EventHandler? BackendChanged;
@@ -156,6 +172,16 @@ public partial class Panel3D : UserControl
         }
 
         var result = RenderBackends.Create(requested);
+
+        if (result.Renderer is PathTracer tracer)
+        {
+            // A handful of paths per paint, averaged into what is already there. Enough to see the
+            // frame take shape immediately, and small enough that dragging the camera stays
+            // responsive — every drag throws the accumulation away anyway.
+            tracer.Trace.SamplesPerPixel = 2;
+            tracer.Trace.MaxBounces = 2;
+            tracer.Trace.Accumulate = true;
+        }
 
         var previous = Renderer;
 
@@ -996,6 +1022,9 @@ public partial class Panel3D : UserControl
 
             _bufferSize = bufferSize;
 
+            // A history buffer of a different size is not a history of this frame.
+            ResetTemporalHistory();
+
             // The selection is in render-target space, which just changed under it.
             if (_selectedPixel is { } pixel &&
                 (pixel.X >= bufferSize.Width || pixel.Y >= bufferSize.Height))
@@ -1024,6 +1053,42 @@ public partial class Panel3D : UserControl
         }
 
         FrameRendered?.Invoke(this, EventArgs.Empty);
+
+        KeepRefining();
+    }
+
+    /// <summary>
+    /// Forgets what the previous frame looked like, for the renderers that remember one.
+    ///
+    /// Anything that changes the picture without moving the camera or the geometry — a new world, a
+    /// change of shading, a setting toggled — leaves a history that is of a different image, and a
+    /// temporal pass would spend the next few frames blending it in.
+    /// </summary>
+    public void ResetTemporalHistory()
+    {
+        (Renderer as Renderer)?.ResetHistory();
+        (Renderer as PathTracer)?.Reset();
+    }
+
+    /// <summary>
+    /// Asks for another paint while the path tracer still has samples worth adding.
+    ///
+    /// Posted rather than called: invalidating from inside a paint handler would recurse, and the
+    /// point is to let the message loop run — so a click, a drag or a resize is handled between two
+    /// passes instead of after all of them.
+    /// </summary>
+    private void KeepRefining()
+    {
+        if (Renderer is not PathTracer tracer ||
+            !tracer.Trace.Accumulate ||
+            tracer.AccumulatedSamples >= TraceSampleTarget ||
+            !IsHandleCreated ||
+            IsDisposed)
+        {
+            return;
+        }
+
+        BeginInvoke(Invalidate);
     }
 
     /// <summary>

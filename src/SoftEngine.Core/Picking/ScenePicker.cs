@@ -164,6 +164,50 @@ public static class ScenePicker
     }
 
     /// <summary>
+    /// The same answer, found through a prebuilt <see cref="Acceleration.Bvh"/> instead of by
+    /// walking the world.
+    ///
+    /// <para>
+    /// Worth it only when the tree already exists, or when a great many rays are about to be cast
+    /// against geometry that is not moving. Building one costs far more than a single pick: the
+    /// walk above rejects whole meshes against their bounding spheres first, so one click already
+    /// tests a handful of the world's meshes rather than all of them. What this is for is the
+    /// caller that has a tree anyway — the path tracer keeps one — and would rather ask it than
+    /// answer the same question a second way and risk disagreeing with the picture on screen.
+    /// </para>
+    ///
+    /// <para>
+    /// The tree is a snapshot. Anything that has moved since it was built is picked where it was,
+    /// which is why this is a separate overload rather than the implementation of the other one.
+    /// </para>
+    /// </summary>
+    public static PickHit? Pick(Acceleration.Bvh accelerator, in Ray ray)
+    {
+        ArgumentNullException.ThrowIfNull(accelerator, nameof(accelerator));
+
+        if (!accelerator.Intersect(ray, out var hit))
+        {
+            return null;
+        }
+
+        var geometry = accelerator.Geometry;
+
+        var (a, b, c) = geometry.Corners(hit.Triangle);
+
+        // The geometric normal, from the triangle's own corners in world space — no inverse
+        // transpose, because the geometry is already there.
+        var normal = Vector3.Cross(b - a, c - a);
+
+        return new PickHit(
+            geometry.Mesh(hit.Triangle),
+            geometry.MeshIndex(hit.Triangle),
+            geometry.SourceTriangle(hit.Triangle),
+            hit.Distance,
+            ray.At(hit.Distance),
+            normal.LengthSquared() > 1e-20f ? Vector3.Normalize(normal) : Vector3.UnitY);
+    }
+
+    /// <summary>
     /// The nearest triangle of one mesh the ray runs into, closer than
     /// <paramref name="limit"/>. The ray is expected in the mesh's own space.
     /// </summary>

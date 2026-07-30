@@ -1,4 +1,4 @@
-using SoftEngine.Core.Buffers;
+﻿using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Gizmos;
@@ -7,6 +7,7 @@ using SoftEngine.Core.Pipeline.Culling;
 using SoftEngine.Core.Pipeline.Debugging;
 using SoftEngine.Core.Pipeline.PostProcess;
 using SoftEngine.Core.Pipeline.Shadows;
+using SoftEngine.Core.Pipeline.Temporal;
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
@@ -76,7 +77,45 @@ public sealed class Renderer : IRenderer
     // pays for one empty object.
     private readonly OcclusionCuller _occlusion = new();
 
+    // Where everything was last frame, and the buffer of per-pixel motion derived from it. Both
+    // stay empty until a frame asks for something temporal.
+    private readonly MotionState _motion = new();
+    private readonly VelocityPass _velocityPass = new();
+    private readonly VelocityBuffer _velocity = new();
+
+    private TemporalResolver? _temporal;
+
     public RendererSettings Settings { get; set; } = new();
+
+    /// <summary>
+    /// Per-pixel motion since the previous frame, as the last frame that needed one left it. Empty
+    /// — <see cref="VelocityBuffer.IsFilled"/> false — on any frame that asked for neither temporal
+    /// antialiasing nor motion blur.
+    /// </summary>
+    public VelocityBuffer Velocity => _velocity;
+
+    /// <summary>
+    /// The history buffer and blend weights behind <see cref="RendererSettings.TemporalAntiAliasing"/>.
+    /// Created on the first frame that switches it on.
+    /// </summary>
+    public TemporalResolver Temporal => _temporal ??= new TemporalResolver();
+
+    /// <summary>The shutter and sample count behind <see cref="RendererSettings.MotionBlur"/>.</summary>
+    public MotionBlur MotionBlur { get; } = new();
+
+    /// <summary>
+    /// Forgets what the previous frame looked like and where everything was in it.
+    ///
+    /// A caller that has changed the scene out from under the renderer — loaded a world, resized the
+    /// target, jumped the camera — should say so: temporal techniques will otherwise spend a few
+    /// frames blending a picture of somewhere else into this one.
+    /// </summary>
+    public void ResetHistory()
+    {
+        _motion.Reset();
+        _velocityPass.Reset();
+        _temporal?.Reset();
+    }
 
     /// <summary>
     /// The pass that rejects meshes hidden behind other meshes, and the knobs that decide what
@@ -162,6 +201,39 @@ public sealed class Renderer : IRenderer
 
         var viewMatrix = camera.ViewMatrix;
         var projectionMatrix = projection.ProjectionMatrix(surface.Width, surface.Height);
+
+        // Anything temporal needs to know where every surface was last frame, and the velocity pass
+        // has to measure that against the *unjittered* projection — a jitter is a change to where the
+        // frame is sampled, not to where anything is, and folding it into a velocity would send every
+        // pixel to read its history a third of a pixel away.
+        var temporal = rendererSettings.TemporalAntiAliasing;
+        var motionBlur = rendererSettings.MotionBlur;
+        var needsVelocity = temporal || motionBlur || rendererSettings.DebugView == DebugView.Velocity;
+
+        if (needsVelocity)
+        {
+            _velocity.Resize(surface.Width, surface.Height);
+            _velocityPass.Render(world, _velocity, viewMatrix * projectionMatrix, _motion);
+
+            events.Add(GraphicsEventKind.VelocityBufferRender, SceneObjectIds.DepthBuffer,
+                _velocity.Width, _velocity.Height, _velocity.IsFilled ? 1f : 0f);
+        }
+        else
+        {
+            _velocity.Clear();
+        }
+
+        if (temporal)
+        {
+            // The jitter goes in after the velocities are measured and before anything is projected,
+            // so every stage of this frame — culling, binning, the fill, the gizmos — agrees on where
+            // the samples are.
+            projectionMatrix = TemporalJitter.Apply(
+                projectionMatrix,
+                TemporalJitter.Offset(diagnostics.FrameNumber),
+                surface.Width,
+                surface.Height);
+        }
 
         var eye = camera.Position;
         events.Add(GraphicsEventKind.CameraSetViewMatrix, SceneObjectIds.Camera, eye.X, eye.Y, eye.Z);
@@ -491,9 +563,25 @@ public sealed class Renderer : IRenderer
         // it lives in the image rather than on top of it — the same choice the wireframe
         // overlay makes, and the reason a highlighted edge blooms and tone-maps with the
         // frame instead of floating above it.
-        if (rendererSettings.HighlightedMesh >= 0)
+        foreach (var highlighted in rendererSettings.HighlightedMeshes)
         {
-            DrawHighlight(surface, worldBuffer, events, rendererSettings.HighlightedMesh, drawEvents, meshIdBase);
+            if (highlighted >= 0)
+            {
+                DrawHighlight(surface, worldBuffer, events, highlighted, drawEvents, meshIdBase);
+            }
+        }
+
+        // The lights, drawn into the frame like the grid and for the same reason: they describe where
+        // something is, so being hidden behind the geometry they are lighting is correct.
+        if (rendererSettings.ShowLights && world.Lights.Count > 0)
+        {
+            events.Add(GraphicsEventKind.GizmoDrawAxes, -1, world.Lights.Count);
+
+            LightGizmo.Draw(
+                surface,
+                viewMatrix * projectionMatrix,
+                world.Lights,
+                MathF.Max(rendererSettings.SkeletonTickSize, 1e-4f) * 2f);
         }
 
         // The transform handles, last of the overlays so nothing draws over what you have to
@@ -521,6 +609,21 @@ public sealed class Renderer : IRenderer
                 gizmo.IsDragging ? gizmo.ActiveAxis : gizmo.HoveredAxis);
         }
 
+        // Temporal work goes here: after the frame is shaded and before it is tone mapped. The
+        // history has to be of the shaded image rather than of a bloomed and compressed one, or
+        // every effect in the post chain would be re-applied to its own output next frame.
+        if (temporal)
+        {
+            Temporal.Resolve(surface, _velocity);
+            events.Add(GraphicsEventKind.PostProcessApply, SceneObjectIds.PostProcess, 1, surface.Width, surface.Height);
+        }
+
+        if (motionBlur)
+        {
+            MotionBlur.Apply(surface, _velocity);
+            events.Add(GraphicsEventKind.PostProcessApply, SceneObjectIds.PostProcess, 1, surface.Width, surface.Height);
+        }
+
         ResolveFrame(surface, projection, events);
 
         // Last of all: swap the finished image for one of the buffers that produced it. The
@@ -530,6 +633,11 @@ public sealed class Renderer : IRenderer
         {
             RenderDebugView(surface, scene, projection, events, rendererSettings.DebugView, occlusion?.Buffer);
         }
+
+        // The frame becomes the one the next frame measures against — recorded even when nothing
+        // temporal is on, so switching it on mid-flight has a previous frame to work from rather
+        // than costing a frame of ghosting to acquire one.
+        _motion.Advance(world, viewMatrix * projection.ProjectionMatrix(surface.Width, surface.Height));
 
         Stats.StopTime();
 
@@ -676,7 +784,7 @@ public sealed class Renderer : IRenderer
         // The event is logged after the fact, carrying whether the buffer could actually be
         // shown: a view the frame has nothing for leaves the image alone, and a log claiming
         // it redrew the frame would send you looking for a pass that never ran.
-        var drawn = _visualizer.Render(surface, projection, scene.ShadowMap, view, occlusion);
+        var drawn = _visualizer.Render(surface, projection, scene.ShadowMap, view, occlusion, _velocity);
 
         var eventIndex = events.Add(
             GraphicsEventKind.DebugViewRender, SceneObjectIds.RenderTarget, (int)view, drawn ? 1f : 0f);

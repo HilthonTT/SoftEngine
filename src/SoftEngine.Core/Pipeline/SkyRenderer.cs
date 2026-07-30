@@ -97,7 +97,7 @@ public static class SkyRenderer
                 var viewDirection = new Vector3(ndcX * invScaleX, viewY, -1f);
                 var worldDirection = Vector3.TransformNormal(viewDirection, inverseView);
 
-                LinearColor color = environment.Sample(worldDirection);
+                var color = environment.SampleRadiance(worldDirection);
 
                 surface.PutBackground(x, y, intensity * color);
             }

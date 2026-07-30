@@ -243,6 +243,8 @@ public static class SceneSerializer
         ShowSkeleton = settings?.ShowSkeleton ?? false,
         HierarchicalZ = settings?.HierarchicalZ ?? true,
         OcclusionCulling = settings?.OcclusionCulling ?? true,
+        TemporalAntiAliasing = settings?.TemporalAntiAliasing ?? false,
+        MotionBlur = settings?.MotionBlur ?? false,
         DebugView = (settings?.DebugView ?? DebugView.Off).ToString(),
     };
 
@@ -376,6 +378,8 @@ public static class SceneSerializer
                 settings.ShowSkeleton = rendering.ShowSkeleton;
                 settings.HierarchicalZ = rendering.HierarchicalZ;
                 settings.OcclusionCulling = rendering.OcclusionCulling;
+                settings.TemporalAntiAliasing = rendering.TemporalAntiAliasing;
+                settings.MotionBlur = rendering.MotionBlur;
                 settings.DebugView = ParseEnum(rendering.DebugView, DebugView.Off);
             }
         }

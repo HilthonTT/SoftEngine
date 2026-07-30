@@ -111,9 +111,9 @@ public sealed class PrefilteredEnvironment
             return _levels[^1].Sample(direction);
         }
 
-        // Level 0 is the source environment, which is packed sRGB and has to be decoded.
+        // Level 0 is the source environment itself, at whatever range it was loaded with.
         var lower = index == 0
-            ? Intensity * (LinearColor)_source.Sample(direction)
+            ? Intensity * _source.SampleRadiance(direction)
             : _levels[index - 1].Sample(direction);
 
         if (blend <= 0f)
@@ -182,7 +182,7 @@ public sealed class PrefilteredEnvironment
                         // Weighting by n·l rather than taking a flat average is a well-worn
                         // fudge: it pulls the result toward the lobe's centre and visibly
                         // reduces the noise a finite sample count leaves behind.
-                        LinearColor texel = environment.Sample(light);
+                        var texel = environment.SampleRadiance(light);
 
                         r += texel.R * nDotL;
                         g += texel.G * nDotL;

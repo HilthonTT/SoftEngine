@@ -168,6 +168,13 @@ public sealed class EnvironmentState
     /// <summary>Whether the environment is drawn behind the scene.</summary>
     public bool ShowSky { get; set; } = true;
 
+    /// <summary>
+    /// Path to a panorama that surrounds and lights the scene, when one was loaded instead of the
+    /// procedural sky. Resolved by the application, not by the engine — an asset on disk, for the
+    /// same reason <see cref="WorldSource.File"/> is.
+    /// </summary>
+    public string? Panorama { get; set; }
+
     public float SkyIntensity { get; set; } = 1f;
 
     public bool AmbientFromEnvironment { get; set; } = true;
@@ -241,6 +248,15 @@ public sealed class RenderState
     public bool HierarchicalZ { get; set; } = true;
 
     public bool OcclusionCulling { get; set; } = true;
+
+    /// <summary>
+    /// Whether the frame is jittered and averaged with the previous ones. Off by default, since it
+    /// only means anything to a front-end that renders repeatedly — a one-shot render has no
+    /// previous frames to average.
+    /// </summary>
+    public bool TemporalAntiAliasing { get; set; }
+
+    public bool MotionBlur { get; set; }
 
     /// <summary>The buffer view presented instead of the shaded image, by enum name.</summary>
     public string DebugView { get; set; } = "Off";

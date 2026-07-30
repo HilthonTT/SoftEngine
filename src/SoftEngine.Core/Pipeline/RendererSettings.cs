@@ -30,6 +30,26 @@ public sealed class RendererSettings
     /// </summary>
     public bool OcclusionCulling { get; set; } = true;
 
+    /// <summary>
+    /// Whether the frame is jittered by a fraction of a pixel and averaged with the previous ones —
+    /// supersampling spread over time instead of over area.
+    ///
+    /// <para>
+    /// It needs the velocity buffer, so turning it on adds a second pass over the frame's geometry
+    /// (<see cref="Temporal.VelocityPass"/>). That is still a fraction of what
+    /// <see cref="SuperSampler"/> costs for the same number of samples, and unlike supersampling it
+    /// only converges while the camera is still — a scene in constant motion gets one sample per
+    /// pixel and a slight softness for its trouble.
+    /// </para>
+    /// </summary>
+    public bool TemporalAntiAliasing { get; set; }
+
+    /// <summary>
+    /// Whether moving surfaces are smeared along their motion. Also needs the velocity buffer, and
+    /// shares the pass with <see cref="TemporalAntiAliasing"/> when both are on.
+    /// </summary>
+    public bool MotionBlur { get; set; }
+
     public bool ShowTriangles { get; set; }
 
     public bool ShowXZGrid { get; set; }
@@ -57,10 +77,46 @@ public sealed class RendererSettings
     public DebugView DebugView { get; set; } = DebugView.Off;
 
     /// <summary>
-    /// Index of a mesh to outline over the finished image, or -1 for none. Set by picking:
-    /// a click has to answer "which of these is it" visibly, not only in a table.
+    /// Draws a wireframe marker for every light in the world — where it is, which way it faces and
+    /// how far it reaches.
+    ///
+    /// A light is the one thing in a scene with no geometry, so it is the one thing that cannot be
+    /// seen; "is the spot pointing where I think it is" otherwise has no answer except moving it and
+    /// watching what changes.
     /// </summary>
-    public int HighlightedMesh { get; set; } = -1;
+    public bool ShowLights { get; set; }
+
+    /// <summary>
+    /// Indices of the meshes outlined over the finished image. Set by picking: a click has to answer
+    /// "which of these is it" visibly, not only in a table.
+    /// </summary>
+    public List<int> HighlightedMeshes { get; } = [];
+
+    /// <summary>
+    /// The first highlighted mesh, or -1 when nothing is. Setting it replaces the whole selection with
+    /// that one mesh.
+    ///
+    /// <para>
+    /// Kept as the single-valued face of <see cref="HighlightedMeshes"/> because most callers only
+    /// ever mean one — a click, a row in the object table, the mesh a gizmo is attached to — and
+    /// because a backend that can only outline one (the GPU's) has something to read that is right
+    /// rather than something that is arbitrary.
+    /// </para>
+    /// </summary>
+    public int HighlightedMesh
+    {
+        get => HighlightedMeshes.Count > 0 ? HighlightedMeshes[0] : -1;
+
+        set
+        {
+            HighlightedMeshes.Clear();
+
+            if (value >= 0)
+            {
+                HighlightedMeshes.Add(value);
+            }
+        }
+    }
 
     /// <summary>
     /// The transform handles drawn over the finished image, or null for none. The renderer

@@ -94,6 +94,47 @@ public static class MeshExtensions
     /// three is what a truncated <c>&lt;p&gt;</c> stream or a malformed face list produces, and
     /// an importer that throws there fails to open the whole model over its last corner.
     /// </summary>
+    /// <summary>
+    /// A copy of a mesh that shares its geometry and carries its own transform.
+    ///
+    /// <para>
+    /// The vertex, index and UV arrays are <em>shared</em>, not copied: a duplicate is another
+    /// instance of the same shape, and copying a hundred thousand vertices to place a second one is
+    /// paying for a difference that does not exist. What is copied is everything a duplicate has to
+    /// be able to change on its own — the transform, the visibility, the opacity — plus the
+    /// per-triangle colours, which are shared by the primitives and would otherwise mean recolouring
+    /// one cube recolours every copy of it.
+    /// </para>
+    ///
+    /// <para>
+    /// The result is a plain <see cref="Mesh"/> whatever it was made from, and the shared arrays are
+    /// the reason: a <see cref="Skinning.SkinnedMesh"/> deforms its vertex array in place, so a
+    /// duplicate of one would follow the original's pose exactly rather than being posed on its own,
+    /// and calling it a SkinnedMesh would promise otherwise.
+    /// </para>
+    /// </summary>
+    public static Mesh Duplicate(this IMesh mesh)
+    {
+        ArgumentNullException.ThrowIfNull(mesh, nameof(mesh));
+
+        return new Mesh(mesh.Vertices, mesh.Triangles, mesh.NormVertices, [.. mesh.TriangleColors])
+        {
+            Position = mesh.Position,
+            Rotation = new Math.Rotation3D(mesh.Rotation.XPitch, mesh.Rotation.YYaw, mesh.Rotation.ZRoll),
+            Scale = mesh.Scale,
+            Visible = mesh.Visible,
+            Opacity = mesh.Opacity,
+            TexCoords = mesh.TexCoords,
+            Tangents = mesh.Tangents,
+            Parent = mesh.Parent,
+
+            // The same material instance, so a duplicate reflects a change to the original's
+            // shininess or maps. Materials are shared by every mesh an importer split off one of
+            // them, so this is the behaviour the rest of the engine already has.
+            Material = mesh.Material ?? new Material(),
+        };
+    }
+
     public static Triangle[] BuildTriangleIndices(this int[] indices)
     {
         var triangles = new List<Triangle>(indices.Length / 3);

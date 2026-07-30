@@ -1,4 +1,5 @@
 using SoftEngine.Core.Pipeline;
+using SoftEngine.Core.Tracing;
 
 namespace SoftEngine.Gpu;
 
@@ -21,8 +22,8 @@ public static class RenderBackends
     /// </summary>
     /// <param name="Renderer">The renderer to draw with. Never null.</param>
     /// <param name="Backend">
-    /// <see cref="RenderBackend.Cpu"/> or <see cref="RenderBackend.Gpu"/> — never
-    /// <see cref="RenderBackend.Automatic"/>, which is a request rather than an outcome.
+    /// What was actually created — never <see cref="RenderBackend.Automatic"/>, which is a request
+    /// rather than an outcome.
     /// </param>
     /// <param name="Adapter">The device a GPU render is running on, or null on the CPU.</param>
     /// <param name="Fallback">
@@ -36,9 +37,12 @@ public static class RenderBackends
         string? Fallback)
     {
         /// <summary>One line naming what a frame will be drawn by, for a status bar or a log.</summary>
-        public string Describe() => Backend == RenderBackend.Gpu && Adapter is { } adapter
-            ? $"GPU — {adapter.Describe()}"
-            : "CPU — software rasterizer";
+        public string Describe() => Backend switch
+        {
+            RenderBackend.Gpu when Adapter is { } adapter => $"GPU — {adapter.Describe()}",
+            RenderBackend.Trace => "CPU — path tracer",
+            _ => "CPU — software rasterizer",
+        };
     }
 
     /// <summary>
@@ -51,6 +55,11 @@ public static class RenderBackends
         if (backend == RenderBackend.Cpu)
         {
             return new Result(new Renderer(), RenderBackend.Cpu, null, null);
+        }
+
+        if (backend == RenderBackend.Trace)
+        {
+            return new Result(new PathTracer(), RenderBackend.Trace, null, null);
         }
 
         if (GpuRenderer.TryCreate(out var gpu, out var error))
@@ -83,6 +92,10 @@ public static class RenderBackends
 
             case "gpu" or "hardware" or "opengl":
                 backend = RenderBackend.Gpu;
+                return true;
+
+            case "trace" or "tracer" or "pathtrace" or "path-trace" or "reference":
+                backend = RenderBackend.Trace;
                 return true;
 
             default:

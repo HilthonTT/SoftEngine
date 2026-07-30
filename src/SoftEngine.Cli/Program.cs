@@ -11,6 +11,7 @@ using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.Core.Scenes.Serialization;
+using SoftEngine.Core.Tracing;
 using SoftEngine.Gpu;
 using System.Diagnostics;
 using System.Numerics;
@@ -125,6 +126,13 @@ static int Render(RenderOptions options)
     // pixel. A batch render should be a recording of the renderer, not of its debugger.
     renderer.Diagnostics.CaptureEvents = false;
 
+    if (renderer is PathTracer tracer)
+    {
+        tracer.Trace.SamplesPerPixel = options.Samples;
+        tracer.Trace.MaxBounces = options.Bounces;
+        tracer.Trace.DirectLightScale = options.PhysicalExposure ? 1f : MathF.PI;
+    }
+
     renderer.Settings.BackFaceCulling = options.BackFaceCulling;
     renderer.Settings.ShowTriangles = options.Wireframe;
     renderer.Settings.ShowXZGrid = options.Grid;
@@ -182,14 +190,29 @@ static int Render(RenderOptions options)
     scene.Shadows.CascadeCount = options.Cascades;
     scene.Shadows.Resolution = options.Width > 1280 ? 2048 : 1024;
 
-    if (options.Sky)
+    if (options.EnvironmentPath is { } environmentPath)
+    {
+        try
+        {
+            scene.Environment = EnvironmentLoader.Load(environmentPath, options.EnvironmentSize);
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException)
+        {
+            // A panorama that will not decode is worth saying out loud and worth continuing past:
+            // the frame is still renderable, it is just lit by nothing but its lights.
+            Console.Error.WriteLine($"softengine: could not read '{environmentPath}': {error.Message}");
+        }
+    }
+    else if (options.Sky)
     {
         // The sun goes where the world's key light points. A sky whose sun is somewhere other
         // than where the shadows come from is the one thing that reads as obviously wrong.
         var sun = loaded.World.Lights.OfType<DirectionalLight>().FirstOrDefault()?.Direction
             ?? new Vector3(-0.35f, -0.6f, -1f);
 
-        scene.Environment = SkyBox.Gradient(sun);
+        scene.Environment = options.HighDynamicRangeSky
+            ? SkyBox.HighDynamicRangeGradient(sun)
+            : SkyBox.Gradient(sun);
     }
 
     var post = PostProcessStack.CreateDefault();
@@ -241,48 +264,96 @@ static int Render(RenderOptions options)
         }
     }
 
-    // Animations are advanced before the frame rather than during it: rendering must not move
-    // time, and a batch render has exactly one moment to show. This runs even at t = 0, because
-    // the hierarchy still has to be posed once — a rig that has never been updated renders at
-    // whatever its nodes happened to be constructed with. On a static model it walks two empty
-    // lists.
-    loaded.World.Update(MathF.Max(options.Time, 0f));
+    if (options.Shutter > 0f)
+    {
+        // Motion blur needs two frames to have anything to measure, which a sequence has and a
+        // single render does not — so it is only offered alongside one, and the flag says so.
+        renderer.Settings.MotionBlur = true;
 
-    var renderStart = Stopwatch.GetTimestamp();
-    renderer.Render(scene, painter);
-    var renderTime = Stopwatch.GetElapsedTime(renderStart);
+        if (renderer is Renderer cpu)
+        {
+            cpu.MotionBlur.ShutterFraction = options.Shutter;
+        }
+    }
+
+    var frames = System.Math.Max(1, options.Frames);
+    var interval = options.Fps > 0f ? 1f / options.Fps : 0f;
+    var output = options.ResolveOutput();
+
+    var renderTime = TimeSpan.Zero;
+
+    for (var frame = 0; frame < frames; frame++)
+    {
+        // Where this frame sits in the sequence, in [0, 1). Open at the top on purpose: a turntable
+        // whose last frame repeats its first stutters when it loops.
+        var progress = frames > 1 ? frame / (float)frames : 0f;
+
+        // Animations are advanced before the frame rather than during it: rendering must not move
+        // time. This runs even at t = 0, because the hierarchy still has to be posed once — a rig
+        // that has never been updated renders at whatever its nodes happened to be constructed
+        // with. On a static model it walks two empty lists.
+        loaded.World.Update(MathF.Max(options.Time, 0f) + frame * interval);
+
+        if (options.Turntable != 0f)
+        {
+            // The camera walks the arc rather than the model turning: a scene has lights and a sky
+            // in it, and spinning the geometry inside them looks like the lighting is spinning too.
+            camera.Orbit(options.Yaw + options.Turntable * progress, options.Pitch, distance);
+        }
+
+        var renderStart = Stopwatch.GetTimestamp();
+        renderer.Render(scene, painter);
+        renderTime += Stopwatch.GetElapsedTime(renderStart);
+
+        int[] pixels;
+
+        if (factor == 1)
+        {
+            pixels = scene.Surface.Screen;
+        }
+        else
+        {
+            pixels = new int[options.Width * options.Height];
+            SuperSampler.Resolve(scene.Surface, pixels, options.Width, options.Height, factor);
+        }
+
+        // Cleared background pixels are 0x00000000, which would save as transparent — honest for a
+        // compositing workflow and surprising for everyone else, who asked for a picture.
+        var opaque = new int[options.Width * options.Height];
+
+        for (var i = 0; i < opaque.Length; i++)
+        {
+            opaque[i] = pixels[i] | unchecked((int)0xFF000000);
+        }
+
+        var path = frames > 1 ? Numbered(output, frame) : output;
+
+        PngCodec.Save(path, opaque, options.Width, options.Height);
+
+        if (frames > 1)
+        {
+            // One line per frame, overwritten: a hundred-frame render should not scroll the reason
+            // it was slow off the top of the terminal.
+            Console.Write($"\r  frame {frame + 1}/{frames} → {Path.GetFileName(path)}   ");
+        }
+    }
 
     // The GPU renderer owns a context, a window and a pile of buffers; the CPU one owns
     // nothing and does not implement IDisposable.
     (renderer as IDisposable)?.Dispose();
 
-    int[] pixels;
-
-    if (factor == 1)
+    if (frames > 1)
     {
-        pixels = scene.Surface.Screen;
+        Console.WriteLine();
+        Console.WriteLine($"{Numbered(output, 0)} … {Numbered(output, frames - 1)}  {options.Width}×{options.Height}" +
+            (factor > 1 ? $" (rendered {factor}×)" : string.Empty));
+        Console.WriteLine($"  {frames} frames at {options.Fps:0.##} fps — {frames / MathF.Max(options.Fps, 1e-3f):0.##} s of animation");
     }
     else
     {
-        pixels = new int[options.Width * options.Height];
-        SuperSampler.Resolve(scene.Surface, pixels, options.Width, options.Height, factor);
+        Console.WriteLine($"{output}  {options.Width}×{options.Height}" +
+            (factor > 1 ? $" (rendered {factor}×)" : string.Empty));
     }
-
-    // Cleared background pixels are 0x00000000, which would save as transparent — honest for a
-    // compositing workflow and surprising for everyone else, who asked for a picture.
-    var opaque = new int[options.Width * options.Height];
-
-    for (var i = 0; i < opaque.Length; i++)
-    {
-        opaque[i] = pixels[i] | unchecked((int)0xFF000000);
-    }
-
-    var output = options.ResolveOutput();
-
-    PngCodec.Save(output, opaque, options.Width, options.Height);
-
-    Console.WriteLine($"{output}  {options.Width}×{options.Height}" +
-        (factor > 1 ? $" (rendered {factor}×)" : string.Empty));
 
     if (loaded.SkippedTextures > 0)
     {
@@ -308,6 +379,24 @@ static int Render(RenderOptions options)
 
 static bool IsSceneDocument(string path) =>
     Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase);
+
+/// <summary>
+/// One frame's path: the output name with a four-digit index before its extension.
+///
+/// Zero-padded and fixed-width because every tool that reads a sequence — ffmpeg, an image viewer's
+/// "open as animation", a shell glob — sorts the names as text, and <c>frame.10.png</c> sorts before
+/// <c>frame.2.png</c>.
+/// </summary>
+static string Numbered(string output, int frame)
+{
+    var directory = Path.GetDirectoryName(output);
+    var name = Path.GetFileNameWithoutExtension(output);
+    var extension = Path.GetExtension(output);
+
+    var numbered = $"{name}.{frame:D4}{extension}";
+
+    return string.IsNullOrEmpty(directory) ? numbered : Path.Combine(directory, numbered);
+}
 
 static IPainter? BuildPainter(string name)
 {

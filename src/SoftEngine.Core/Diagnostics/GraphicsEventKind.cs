@@ -13,6 +13,7 @@ public enum GraphicsEventKind
     ShadowMapRender,
     PainterPrepare,
     OcclusionBufferRender,
+    VelocityBufferRender,
     MeshSkipInactive,
     MeshCullBoundingSphere,
     MeshCullOccluded,

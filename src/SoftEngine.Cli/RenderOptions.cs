@@ -34,6 +34,18 @@ internal sealed class RenderOptions
 
     public bool Sky { get; set; } = true;
 
+    /// <summary>A panorama to light and surround the scene with, instead of the procedural sky.</summary>
+    public string? EnvironmentPath { get; set; }
+
+    /// <summary>Cube face resolution the panorama is projected onto. Zero derives it from the source.</summary>
+    public int EnvironmentSize { get; set; }
+
+    /// <summary>
+    /// Whether the procedural sky is built in linear light with a sun some hundreds of times
+    /// brighter than paper white, rather than clipped into bytes.
+    /// </summary>
+    public bool HighDynamicRangeSky { get; set; }
+
     public bool Shadows { get; set; }
 
     public int Cascades { get; set; } = 1;
@@ -62,10 +74,43 @@ internal sealed class RenderOptions
     /// </summary>
     public float Time { get; set; }
 
+    /// <summary>
+    /// How many frames to render. Above 1 writes a numbered sequence and advances the animation by
+    /// <see cref="Fps"/> between them.
+    /// </summary>
+    public int Frames { get; set; } = 1;
+
+    /// <summary>Frames per second the sequence represents — what sets the step between them.</summary>
+    public float Fps { get; set; } = 30f;
+
+    /// <summary>
+    /// Degrees of yaw swept across the whole sequence. 360 is a turntable; 0 leaves the camera where
+    /// <see cref="Yaw"/> put it.
+    /// </summary>
+    public float Turntable { get; set; }
+
+    /// <summary>
+    /// Shutter fraction for motion blur, or 0 for none. Only means anything in a sequence: a single
+    /// frame has no previous one to have moved from.
+    /// </summary>
+    public float Shutter { get; set; }
+
     public bool Stats { get; set; }
 
     /// <summary>Which rasterizer draws the frame. Automatic takes a GPU when there is one.</summary>
     public RenderBackend Backend { get; set; } = RenderBackend.Automatic;
+
+    /// <summary>Paths per pixel, when the path tracer is drawing the frame.</summary>
+    public int Samples { get; set; } = 16;
+
+    /// <summary>Bounces of indirect light the path tracer follows. 0 is direct lighting only.</summary>
+    public int Bounces { get; set; } = 3;
+
+    /// <summary>
+    /// Whether the path tracer puts direct and bounced light on the same scale, rather than
+    /// matching the rasterizer's π exposure correction for direct light.
+    /// </summary>
+    public bool PhysicalExposure { get; set; }
 
     /// <summary>Print what graphics adapter is available and exit, rendering nothing.</summary>
     public bool ShowGpuInfo { get; set; }
@@ -129,6 +174,18 @@ internal sealed class RenderOptions
                     options.Sky = false;
                     break;
 
+                case "--environment" or "--env":
+                    options.EnvironmentPath = Next(args, ref i, options, arg);
+                    break;
+
+                case "--environment-size":
+                    options.EnvironmentSize = Int(args, ref i, options, arg, options.EnvironmentSize);
+                    break;
+
+                case "--hdr-sky":
+                    options.HighDynamicRangeSky = true;
+                    break;
+
                 case "--shadows":
                     options.Shadows = true;
                     break;
@@ -171,6 +228,24 @@ internal sealed class RenderOptions
                     options.Time = Float(args, ref i, options, arg, options.Time);
                     break;
 
+                case "--frames":
+                    options.Frames = Int(args, ref i, options, arg, options.Frames);
+                    break;
+
+                case "--fps":
+                    options.Fps = Float(args, ref i, options, arg, options.Fps);
+                    break;
+
+                case "--turntable":
+                    // Degrees here rather than radians: this one is swept across a sequence and the
+                    // number people mean by it is 360.
+                    options.Turntable = Float(args, ref i, options, arg, 360f);
+                    break;
+
+                case "--shutter":
+                    options.Shutter = Float(args, ref i, options, arg, 0.5f);
+                    break;
+
                 case "--stats":
                     options.Stats = true;
                     break;
@@ -190,7 +265,7 @@ internal sealed class RenderOptions
                         }
                         else
                         {
-                            options.Errors.Add($"unknown backend '{name}' — expected auto, cpu or gpu");
+                            options.Errors.Add($"unknown backend '{name}' — expected auto, cpu, gpu or trace");
                         }
                     }
 
@@ -202,6 +277,24 @@ internal sealed class RenderOptions
 
                 case "--cpu":
                     options.Backend = RenderBackend.Cpu;
+                    break;
+
+                case "--trace":
+                    options.Backend = RenderBackend.Trace;
+                    break;
+
+                case "--samples":
+                    options.Samples = Int(args, ref i, options, arg, options.Samples);
+                    options.Backend = RenderBackend.Trace;
+                    break;
+
+                case "--bounces":
+                    options.Bounces = Int(args, ref i, options, arg, options.Bounces);
+                    options.Backend = RenderBackend.Trace;
+                    break;
+
+                case "--physical":
+                    options.PhysicalExposure = true;
                     break;
 
                 case "--gpu-info":
@@ -272,6 +365,43 @@ internal sealed class RenderOptions
         if (options.Cascades is < 1 or > 4)
         {
             options.Errors.Add("--cascades must be between 1 and 4");
+        }
+
+        if (options.Frames is < 1 or > 100000)
+        {
+            options.Errors.Add("--frames must be between 1 and 100000");
+        }
+
+        if (options.Fps is <= 0f or > 1000f)
+        {
+            options.Errors.Add("--fps must be between 0 and 1000");
+        }
+
+        if (options.Shutter is < 0f or > 4f)
+        {
+            options.Errors.Add("--shutter must be between 0 and 4");
+        }
+
+        if (options.Samples is < 1 or > 65536)
+        {
+            options.Errors.Add("--samples must be between 1 and 65536");
+        }
+
+        if (options.Bounces is < 0 or > 64)
+        {
+            options.Errors.Add("--bounces must be between 0 and 64");
+        }
+
+        if (options.EnvironmentPath is { } environment && !File.Exists(environment))
+        {
+            options.Errors.Add($"'{environment}' does not exist");
+        }
+
+        // Zero means "derive it from the panorama". Anything above 512 costs the split-sum
+        // prefilter six faces of that size at 128 samples a texel, which is minutes, not seconds.
+        if (options.EnvironmentSize is not 0 and (< 8 or > 512))
+        {
+            options.Errors.Add("--environment-size must be between 8 and 512");
         }
 
         foreach (var effect in options.Post)
@@ -399,7 +529,7 @@ internal sealed class RenderOptions
                   --stats           print triangle, pixel and timing counts
 
             Where it renders
-                  --backend <name>  auto, cpu or gpu (default auto)
+                  --backend <name>  auto, cpu, gpu or trace (default auto)
                   --gpu             shorthand for --backend gpu
                   --cpu             shorthand for --backend cpu
                   --gpu-info        print the graphics adapter, if any, and exit
@@ -409,6 +539,17 @@ internal sealed class RenderOptions
               by a CPU implementation (llvmpipe, GDI Generic, SwiftShader) is reported as no
               adapter, since rendering through one is slower than rendering without it.
 
+            Reference rendering
+                  --trace           path-trace the frame instead of rasterizing it: real
+                                    interreflection, real ambient occlusion, ray-traced
+                                    shadows with no bias to tune — and minutes, not
+                                    milliseconds
+                  --samples <n>     paths per pixel (default 16); implies --trace
+                  --bounces <n>     bounces of indirect light (default 3, 0 for direct
+                                    lighting only); implies --trace
+                  --physical        put direct and bounced light on the same scale, instead
+                                    of matching the rasterizer's exposure for direct light
+
             Shading
               -p, --painter <name>  none, classic, flat, gouraud, phong, textured, material, pbr
                                     (default gouraud)
@@ -416,6 +557,13 @@ internal sealed class RenderOptions
                   --shadows         render a shadow map from the scene's first light
                   --cascades <n>    shadows fitted to n slices of the view distance, 1-4
                   --no-sky          leave the background cleared instead of drawing a sky
+                  --env <path>      light the scene with a panorama: .hdr keeps its full
+                                    range, .png is projected as the 8-bit image it is
+                  --environment-size <n>
+                                    cube face resolution for --env (default: derived)
+                  --hdr-sky         build the procedural sky in linear light, with a sun
+                                    hundreds of times brighter than white instead of a
+                                    white disc
                   --view <name>     present a buffer instead of the shaded image:
                                     depth, normals, overdraw, shadowmap, occlusion
 
@@ -425,6 +573,20 @@ internal sealed class RenderOptions
                   --pitch <deg>     elevation above it        (default 15)
                   --zoom <factor>   multiplies the framed distance; below 1 moves closer
               -t, --time <seconds>  how far into the model's animation to render
+
+            Sequences
+                  --frames <n>      render n frames into a numbered sequence
+                                    (frame.0000.png, frame.0001.png, …)
+                  --fps <rate>      frames per second the sequence represents (default 30),
+                                    which is how far the animation advances between frames
+                  --turntable <deg> degrees of yaw swept across the whole sequence; 360 is a
+                                    full turn
+                  --shutter <f>     motion-blur each frame by this fraction of its own motion
+                                    (0.5 is a film shutter); needs --frames to have anything
+                                    to measure
+
+              A sequence is one PNG per frame. Turning it into a video is ffmpeg's job:
+                ffmpeg -framerate 30 -i frame.%04d.png -pix_fmt yuv420p out.mp4
 
             Overlays
                   --wireframe       draw triangle edges over the shading

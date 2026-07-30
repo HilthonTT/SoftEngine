@@ -48,10 +48,15 @@ public sealed partial class MainScreen
         chkFog = new CheckBox();
         chkShadows = new CheckBox();
         chkSky = new CheckBox();
+        chkHdrSky = new CheckBox();
+        chkPanorama = new CheckBox();
+        btnPanorama = new Button();
         chkGammaCorrect = new CheckBox();
         chkHighDynamicRange = new CheckBox();
         chkTextureFiltering = new CheckBox();
         chkSuperSampling = new CheckBox();
+        chkTemporalAntiAliasing = new CheckBox();
+        chkMotionBlur = new CheckBox();
         lblShadingHeader = new Label();
         flpShading = new FlowLayoutPanel();
         rdbNoneShading = new RadioButton();
@@ -95,6 +100,7 @@ public sealed partial class MainScreen
         mnuRenderedBy = new ToolStripMenuItem();
         mnuRenderCpu = new ToolStripMenuItem();
         mnuRenderGpu = new ToolStripMenuItem();
+        mnuRenderTrace = new ToolStripMenuItem();
         mnuPixelHistory = new ToolStripMenuItem();
         mnuObjectTable = new ToolStripMenuItem();
         mnuEventList = new ToolStripMenuItem();
@@ -294,10 +300,15 @@ public sealed partial class MainScreen
         flpDisplay.Controls.Add(chkFog);
         flpDisplay.Controls.Add(chkShadows);
         flpDisplay.Controls.Add(chkSky);
+        flpDisplay.Controls.Add(chkHdrSky);
+        flpDisplay.Controls.Add(chkPanorama);
+        flpDisplay.Controls.Add(btnPanorama);
         flpDisplay.Controls.Add(chkGammaCorrect);
         flpDisplay.Controls.Add(chkHighDynamicRange);
         flpDisplay.Controls.Add(chkTextureFiltering);
         flpDisplay.Controls.Add(chkSuperSampling);
+        flpDisplay.Controls.Add(chkTemporalAntiAliasing);
+        flpDisplay.Controls.Add(chkMotionBlur);
         flpDisplay.FlowDirection = FlowDirection.TopDown;
         flpDisplay.Location = new Point(16, 204);
         flpDisplay.Margin = new Padding(0);
@@ -411,6 +422,42 @@ public sealed partial class MainScreen
         chkSky.Text = "Sky";
         toolTip1.SetToolTip(chkSky, "Draw a procedural sky behind the scene, and take the ambient light from it");
         chkSky.UseVisualStyleBackColor = true;
+        //
+        // chkHdrSky
+        //
+        chkHdrSky.AutoSize = true;
+        chkHdrSky.Margin = new Padding(18, 2, 0, 2);
+        chkHdrSky.Name = "chkHdrSky";
+        chkHdrSky.Size = new Size(116, 32);
+        chkHdrSky.TabIndex = 9;
+        chkHdrSky.Text = "HDR sun";
+        toolTip1.SetToolTip(chkHdrSky, "Build the procedural sky in linear light, with a sun hundreds of times brighter than white");
+        chkHdrSky.UseVisualStyleBackColor = true;
+        //
+        // chkPanorama
+        //
+        chkPanorama.AutoSize = true;
+        chkPanorama.Enabled = false;
+        chkPanorama.Margin = new Padding(18, 2, 0, 2);
+        chkPanorama.Name = "chkPanorama";
+        chkPanorama.Size = new Size(116, 32);
+        chkPanorama.TabIndex = 10;
+        chkPanorama.Text = "No panorama";
+        toolTip1.SetToolTip(chkPanorama, "Use the loaded panorama instead of the procedural sky");
+        chkPanorama.UseVisualStyleBackColor = true;
+        //
+        // btnPanorama
+        //
+        btnPanorama.AutoSize = true;
+        btnPanorama.FlatStyle = FlatStyle.Flat;
+        btnPanorama.Margin = new Padding(18, 2, 0, 6);
+        btnPanorama.MinimumSize = new Size(0, 32);
+        btnPanorama.Name = "btnPanorama";
+        btnPanorama.Size = new Size(160, 32);
+        btnPanorama.TabIndex = 11;
+        btnPanorama.Text = "Load panorama…";
+        toolTip1.SetToolTip(btnPanorama, "Open a Radiance .hdr or an image to surround and light the scene with");
+        btnPanorama.UseVisualStyleBackColor = false;
         // 
         // chkGammaCorrect
         // 
@@ -419,7 +466,7 @@ public sealed partial class MainScreen
         chkGammaCorrect.Margin = new Padding(2, 2, 0, 2);
         chkGammaCorrect.Name = "chkGammaCorrect";
         chkGammaCorrect.Size = new Size(220, 32);
-        chkGammaCorrect.TabIndex = 9;
+        chkGammaCorrect.TabIndex = 12;
         chkGammaCorrect.Text = "Gamma-correct light";
         toolTip1.SetToolTip(chkGammaCorrect, "Shade in linear light and encode to sRGB on output");
         chkGammaCorrect.UseVisualStyleBackColor = true;
@@ -431,7 +478,7 @@ public sealed partial class MainScreen
         chkHighDynamicRange.Margin = new Padding(2, 2, 0, 2);
         chkHighDynamicRange.Name = "chkHighDynamicRange";
         chkHighDynamicRange.Size = new Size(136, 32);
-        chkHighDynamicRange.TabIndex = 10;
+        chkHighDynamicRange.TabIndex = 13;
         chkHighDynamicRange.Text = "HDR target";
         toolTip1.SetToolTip(chkHighDynamicRange, "Keep highlights brighter than white in a linear float buffer, for bloom and tone mapping to work with");
         chkHighDynamicRange.UseVisualStyleBackColor = true;
@@ -443,7 +490,7 @@ public sealed partial class MainScreen
         chkTextureFiltering.Margin = new Padding(2, 2, 0, 2);
         chkTextureFiltering.Name = "chkTextureFiltering";
         chkTextureFiltering.Size = new Size(173, 32);
-        chkTextureFiltering.TabIndex = 11;
+        chkTextureFiltering.TabIndex = 14;
         chkTextureFiltering.Text = "Texture filtering";
         toolTip1.SetToolTip(chkTextureFiltering, "Bilinear filtering with mip-mapping (Textured shading)");
         chkTextureFiltering.UseVisualStyleBackColor = true;
@@ -455,10 +502,32 @@ public sealed partial class MainScreen
         chkSuperSampling.Margin = new Padding(2, 2, 0, 2);
         chkSuperSampling.Name = "chkSuperSampling";
         chkSuperSampling.Size = new Size(181, 32);
-        chkSuperSampling.TabIndex = 12;
+        chkSuperSampling.TabIndex = 15;
         chkSuperSampling.Text = "Supersample 2×";
         toolTip1.SetToolTip(chkSuperSampling, "Render at twice the resolution and average down — anti-aliases everything, fills four times the pixels");
         chkSuperSampling.UseVisualStyleBackColor = true;
+        //
+        // chkTemporalAntiAliasing
+        //
+        chkTemporalAntiAliasing.AutoSize = true;
+        chkTemporalAntiAliasing.Margin = new Padding(2, 2, 0, 2);
+        chkTemporalAntiAliasing.Name = "chkTemporalAntiAliasing";
+        chkTemporalAntiAliasing.Size = new Size(116, 32);
+        chkTemporalAntiAliasing.TabIndex = 16;
+        chkTemporalAntiAliasing.Text = "Temporal AA";
+        toolTip1.SetToolTip(chkTemporalAntiAliasing, "Jitter the frame by a fraction of a pixel and average it with the previous ones — supersampling spread over time. Costs a velocity pass.");
+        chkTemporalAntiAliasing.UseVisualStyleBackColor = true;
+        //
+        // chkMotionBlur
+        //
+        chkMotionBlur.AutoSize = true;
+        chkMotionBlur.Margin = new Padding(2, 2, 0, 2);
+        chkMotionBlur.Name = "chkMotionBlur";
+        chkMotionBlur.Size = new Size(116, 32);
+        chkMotionBlur.TabIndex = 17;
+        chkMotionBlur.Text = "Motion blur";
+        toolTip1.SetToolTip(chkMotionBlur, "Smear each pixel along the direction its surface is travelling. Costs a velocity pass.");
+        chkMotionBlur.UseVisualStyleBackColor = true;
         // 
         // lblShadingHeader
         // 
@@ -871,7 +940,7 @@ public sealed partial class MainScreen
         // 
         // mnuRenderedBy
         // 
-        mnuRenderedBy.DropDownItems.AddRange(new ToolStripItem[] { mnuRenderCpu, mnuRenderGpu });
+        mnuRenderedBy.DropDownItems.AddRange(new ToolStripItem[] { mnuRenderCpu, mnuRenderGpu, mnuRenderTrace });
         mnuRenderedBy.Name = "mnuRenderedBy";
         mnuRenderedBy.Size = new Size(335, 34);
         // The B rather than the R: "Record graphics events" is further down the same menu.
@@ -892,6 +961,13 @@ public sealed partial class MainScreen
         mnuRenderGpu.Size = new Size(319, 34);
         mnuRenderGpu.Text = "&GPU — graphics adapter";
         mnuRenderGpu.ToolTipText = "Fill the frame on the graphics card through OpenGL.";
+        // 
+        // mnuRenderTrace
+        // 
+        mnuRenderTrace.Name = "mnuRenderTrace";
+        mnuRenderTrace.Size = new Size(319, 34);
+        mnuRenderTrace.Text = "&Path tracer — reference";
+        mnuRenderTrace.ToolTipText = "Trace light through the scene instead of filling triangles: real interreflection and occlusion, refined for as long as nothing moves.";
         // 
         // mnuPixelHistory
         // 
@@ -1323,8 +1399,13 @@ public sealed partial class MainScreen
     private CheckBox chkGammaCorrect;
     private CheckBox chkHighDynamicRange;
     private CheckBox chkSky;
+    private CheckBox chkHdrSky;
+    private CheckBox chkPanorama;
+    private Button btnPanorama;
     private CheckBox chkTextureFiltering;
     private CheckBox chkSuperSampling;
+    private CheckBox chkTemporalAntiAliasing;
+    private CheckBox chkMotionBlur;
     private Label lblShadingHeader;
     private FlowLayoutPanel flpShading;
     private RadioButton rdbNoneShading;
@@ -1368,6 +1449,7 @@ public sealed partial class MainScreen
     private ToolStripMenuItem mnuRenderedBy;
     private ToolStripMenuItem mnuRenderCpu;
     private ToolStripMenuItem mnuRenderGpu;
+    private ToolStripMenuItem mnuRenderTrace;
     private ToolStripMenuItem mnuFrameHistory;
     private ToolStripMenuItem mnuKeepFrames;
     private ToolStripMenuItem mnuPreviousFrame;

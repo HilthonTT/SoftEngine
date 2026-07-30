@@ -7,6 +7,7 @@ using SoftEngine.Core.Geometry.Gltf;
 using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Geometry.Skinning;
 using SoftEngine.Core.Gizmos;
+using SoftEngine.Core.Imaging;
 using SoftEngine.Core.Math;
 using SoftEngine.Core.Pipeline.Debugging;
 using SoftEngine.Core.Pipeline.PostProcess;
@@ -75,9 +76,14 @@ public sealed partial class MainScreen : Form
     private readonly Label lblLoading;
     private readonly FlatProgressBar prgLoading;
 
-    /// <summary>The generated sky, and the sun direction it was generated around.</summary>
+    /// <summary>The generated sky, and the sun direction and range it was generated around.</summary>
     private CubeMap? _sky;
     private Vector3 _skySunDirection;
+    private bool _skyIsHighDynamicRange;
+
+    /// <summary>A loaded panorama and where it came from, or null until one is opened.</summary>
+    private CubeMap? _panorama;
+    private string? _panoramaPath;
 
     /// <summary>Set by every rendered frame, cleared when the debugger panels have caught up.</summary>
     private bool _frameDirty;
@@ -234,6 +240,17 @@ public sealed partial class MainScreen : Form
             ApplySky(panel3D1.Scene?.World);
             panel3D1.Invalidate();
         };
+        chkHdrSky.CheckedChanged += (s, e) =>
+        {
+            ApplySky(panel3D1.Scene?.World);
+            panel3D1.Invalidate();
+        };
+        chkPanorama.CheckedChanged += (s, e) =>
+        {
+            ApplySky(panel3D1.Scene?.World);
+            panel3D1.Invalidate();
+        };
+        btnPanorama.Click += async (s, e) => await LoadPanoramaAsync();
         chkGammaCorrect.CheckedChanged += (s, e) =>
         {
             if (panel3D1.Scene is { } scene)
@@ -256,6 +273,25 @@ public sealed partial class MainScreen : Form
             panel3D1.Invalidate();
         };
         chkSuperSampling.CheckedChanged += (s, e) => panel3D1.SuperSampling = chkSuperSampling.Checked ? 2 : 1;
+
+        chkTemporalAntiAliasing.Checked = panel3D1.RendererSettings.TemporalAntiAliasing;
+        chkMotionBlur.Checked = panel3D1.RendererSettings.MotionBlur;
+
+        chkTemporalAntiAliasing.CheckedChanged += (s, e) =>
+        {
+            panel3D1.RendererSettings.TemporalAntiAliasing = chkTemporalAntiAliasing.Checked;
+
+            // Whatever was accumulated was accumulated against different settings, and a temporal
+            // pass that starts from it spends a few frames blending in a picture of the old ones.
+            panel3D1.ResetTemporalHistory();
+            panel3D1.Invalidate();
+        };
+        chkMotionBlur.CheckedChanged += (s, e) =>
+        {
+            panel3D1.RendererSettings.MotionBlur = chkMotionBlur.Checked;
+            panel3D1.ResetTemporalHistory();
+            panel3D1.Invalidate();
+        };
 
         InitializePostProcessing();
 
@@ -308,8 +344,19 @@ public sealed partial class MainScreen : Form
     {
         mnuRenderCpu.Click += (s, e) => SelectBackend(RenderBackend.Cpu);
         mnuRenderGpu.Click += (s, e) => SelectBackend(RenderBackend.Gpu);
+        mnuRenderTrace.Click += (s, e) => SelectBackend(RenderBackend.Trace);
 
         panel3D1.BackendChanged += (s, e) => UpdateBackendMenu();
+
+        // The tracer's sample count climbs frame by frame while it refines, and the status bar is
+        // where anyone would look to see whether it is still working.
+        panel3D1.FrameRendered += (s, e) =>
+        {
+            if (panel3D1.Backend == RenderBackend.Trace)
+            {
+                lblBackendStatus.Text = panel3D1.BackendDescription;
+            }
+        };
 
         UpdateBackendMenu();
     }
@@ -343,14 +390,20 @@ public sealed partial class MainScreen : Form
 
         mnuRenderCpu.Checked = backend == RenderBackend.Cpu;
         mnuRenderGpu.Checked = backend == RenderBackend.Gpu;
+        mnuRenderTrace.Checked = backend == RenderBackend.Trace;
 
         lblBackendStatus.Text = panel3D1.BackendDescription;
 
         // The adapter's own name, which is the only way to tell an integrated part from the
         // discrete one a laptop may also have.
-        lblBackendStatus.ToolTipText = panel3D1.Adapter is { } adapter
-            ? $"{adapter.Vendor} · {adapter.Renderer}\nOpenGL {adapter.Version}"
-            : "Every triangle rasterized on the CPU by this engine's own scanline filler.";
+        lblBackendStatus.ToolTipText = backend switch
+        {
+            RenderBackend.Gpu when panel3D1.Adapter is { } adapter =>
+                $"{adapter.Vendor} · {adapter.Renderer}\nOpenGL {adapter.Version}",
+            RenderBackend.Trace =>
+                "Light traced through the scene on the CPU, refining for as long as nothing moves.",
+            _ => "Every triangle rasterized on the CPU by this engine's own scanline filler.",
+        };
     }
 
     /// <summary>An hourglass for as long as it is held. Building a GL context is not instant.</summary>
@@ -924,6 +977,10 @@ public sealed partial class MainScreen : Form
 
         document.Environment ??= new EnvironmentState();
         document.Environment.ShowSky = chkSky.Checked;
+
+        // The path, not the pixels — a panorama is an asset on disk for the same reason the model
+        // is, and inlining six cube faces of floats would dwarf the document a hundred times over.
+        document.Environment.Panorama = chkPanorama.Checked ? _panoramaPath : null;
     }
 
     private async Task OpenSceneAsync()
@@ -970,6 +1027,21 @@ public sealed partial class MainScreen : Form
             else
             {
                 await PrepareWorldFromFileAsync(file);
+            }
+        }
+
+        // Before the document is applied, so the checkbox it syncs has something to point at.
+        if (document.Environment is { Panorama: { Length: > 0 } panorama })
+        {
+            if (File.Exists(panorama))
+            {
+                await LoadPanoramaAsync(panorama, announceFailure: true);
+            }
+            else
+            {
+                MessageBox.Show(this,
+                    $"The scene refers to a panorama that is not there:\n{panorama}\n\nIt will be lit by the procedural sky instead.",
+                    "Open scene", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
@@ -1024,7 +1096,10 @@ public sealed partial class MainScreen : Form
             _applyingScene = false;
         }
 
-        // The meshes have moved, so anything holding one is stale.
+        // The meshes have moved, so anything holding one is stale — including a temporal history of
+        // where they used to be.
+        panel3D1.ResetTemporalHistory();
+
         _history.Clear();
         panel3D1.ClearPick();
         panel3D1.ClearSelectedPixel();
@@ -1052,6 +1127,8 @@ public sealed partial class MainScreen : Form
             chkTextureFiltering.Checked = rendering.TextureFiltering;
             chkSuperSampling.Checked = rendering.SuperSampling > 1;
             chkAnimate.Checked = rendering.Animate;
+            chkTemporalAntiAliasing.Checked = rendering.TemporalAntiAliasing;
+            chkMotionBlur.Checked = rendering.MotionBlur;
 
             SelectItem(cboBufferView, choice =>
                 choice is BufferViewChoice view &&
@@ -1073,6 +1150,10 @@ public sealed partial class MainScreen : Form
         if (document.Environment is { } environment)
         {
             chkSky.Checked = environment.ShowSky;
+
+            // Only if the file it named actually loaded — a scene that points at a panorama which
+            // is not there falls back to the procedural sky rather than to no environment at all.
+            chkPanorama.Checked = environment.Panorama is { Length: > 0 } && _panorama is not null;
         }
 
         if (document.Post is { } post)
@@ -1206,6 +1287,7 @@ public sealed partial class MainScreen : Form
             new BufferViewChoice("Overdraw", DebugView.Overdraw),
             new BufferViewChoice("Shadow map", DebugView.ShadowMap),
             new BufferViewChoice("Occlusion buffer", DebugView.OcclusionBuffer),
+            new BufferViewChoice("Velocity", DebugView.Velocity),
         ]);
 
         cboBufferView.SelectedIndex = 0;
@@ -1500,15 +1582,22 @@ public sealed partial class MainScreen : Form
         lblModelHeader.ForeColor = Theme.TextSecondary;
         lblCurrentModel.ForeColor = Theme.TextPrimary;
 
-        btnLoadModel.BackColor = Theme.Selection;
-        btnLoadModel.ForeColor = Theme.TextPrimary;
-        btnLoadModel.FlatAppearance.BorderColor = Theme.Accent;
-        btnLoadModel.FlatAppearance.MouseOverBackColor = Theme.Accent;
+        foreach (var button in new[] { btnLoadModel, btnPanorama })
+        {
+            button.BackColor = Theme.Selection;
+            button.ForeColor = Theme.TextPrimary;
+            button.FlatAppearance.BorderColor = Theme.Accent;
+            button.FlatAppearance.MouseOverBackColor = Theme.Accent;
+        }
 
         foreach (Control control in flpDisplay.Controls)
         {
             control.ForeColor = Theme.TextPrimary;
         }
+
+        // The button in the display panel is themed as a button, not as a label like its
+        // neighbours — the loop above them all would otherwise repaint its text over its fill.
+        btnPanorama.ForeColor = Theme.TextPrimary;
         foreach (Control control in flpShading.Controls)
         {
             control.ForeColor = Theme.TextPrimary;
@@ -1560,9 +1649,10 @@ public sealed partial class MainScreen : Form
     }
 
     /// <summary>
-    /// Gives the scene a procedural sky, with the sun placed where the world's first
-    /// directional light points — a sky whose sun is somewhere other than where the
-    /// shadows come from is the one thing that reads as obviously wrong.
+    /// Gives the scene its environment: a loaded panorama when there is one and it is selected,
+    /// and otherwise a procedural sky with the sun placed where the world's first directional
+    /// light points — a sky whose sun is somewhere other than where the shadows come from is the
+    /// one thing that reads as obviously wrong.
     /// </summary>
     private void ApplySky(IWorld? world)
     {
@@ -1571,18 +1661,138 @@ public sealed partial class MainScreen : Form
             return;
         }
 
+        if (chkPanorama.Checked && _panorama is { } panorama)
+        {
+            // A panorama stays the scene's environment whether or not it is drawn: the sky
+            // checkbox decides only whether it is *visible*, so unticking it leaves the scene lit
+            // from off screen, which is what a studio backdrop is for. The procedural path below
+            // drops the environment entirely instead, which is what it has always done.
+            scene.Environment = panorama;
+            scene.ShowSky = chkSky.Checked;
+            return;
+        }
+
+        scene.ShowSky = true;
+
         var sunDirection = world?.Lights.OfType<DirectionalLight>().FirstOrDefault()?.Direction
             ?? new Vector3(-0.35f, -0.6f, -1f);
 
-        // Generating the cube map walks six faces of texels, so it is kept until the sun
-        // it was built around moves.
-        if (_sky is null || _skySunDirection != sunDirection)
+        // Generating the cube map walks six faces of texels, so it is kept until the sun it was
+        // built around moves or the range it was built in changes.
+        if (_sky is null || _skySunDirection != sunDirection || _skyIsHighDynamicRange != chkHdrSky.Checked)
         {
-            _sky = SkyBox.Gradient(sunDirection);
+            _sky = chkHdrSky.Checked
+                ? SkyBox.HighDynamicRangeGradient(sunDirection)
+                : SkyBox.Gradient(sunDirection);
+
             _skySunDirection = sunDirection;
+            _skyIsHighDynamicRange = chkHdrSky.Checked;
         }
 
         scene.Environment = chkSky.Checked ? _sky : null;
+    }
+
+    /// <summary>
+    /// Opens a panorama and makes it the environment.
+    ///
+    /// Projecting an equirectangular image onto six cube faces walks every texel of all six and
+    /// supersamples each, and the PBR painter then convolves the result once per roughness — so
+    /// this is seconds of work on a large sky, and it runs off the UI thread with the progress bar
+    /// showing rather than freezing the window.
+    /// </summary>
+    private async Task LoadPanoramaAsync()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "Load panorama",
+            Filter = "Panoramas (*.hdr;*.pic;*.png;*.jpg;*.jpeg;*.bmp)|*.hdr;*.pic;*.png;*.jpg;*.jpeg;*.bmp" +
+                     "|Radiance HDR (*.hdr;*.pic)|*.hdr;*.pic" +
+                     "|Images (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp" +
+                     "|All files (*.*)|*.*",
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        await LoadPanoramaAsync(dialog.FileName, announceFailure: true);
+    }
+
+    private async Task LoadPanoramaAsync(string path, bool announceFailure)
+    {
+        btnPanorama.Enabled = false;
+        UseWaitCursor = true;
+
+        try
+        {
+            var loaded = await Task.Run(() => LoadPanorama(path));
+
+            if (loaded is null)
+            {
+                if (announceFailure)
+                {
+                    MessageBox.Show(this,
+                        $"Could not read a panorama from:\n{path}",
+                        "Load panorama", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+
+                return;
+            }
+
+            _panorama = loaded;
+            _panoramaPath = path;
+
+            chkPanorama.Text = Path.GetFileName(path);
+            chkPanorama.Enabled = true;
+            toolTip1.SetToolTip(chkPanorama, loaded.IsHighDynamicRange
+                ? $"{path}\nLinear floats: the range above white survived the load"
+                : $"{path}\nEight-bit source: nothing above white to reflect");
+
+            // Ticking the box is what puts it on screen, and having just been asked for it is as
+            // clear a signal as there is that it should be.
+            if (chkPanorama.Checked)
+            {
+                ApplySky(panel3D1.Scene?.World);
+                panel3D1.Invalidate();
+            }
+            else
+            {
+                chkPanorama.Checked = true;
+            }
+        }
+        finally
+        {
+            UseWaitCursor = false;
+            btnPanorama.Enabled = true;
+        }
+    }
+
+    /// <summary>
+    /// Decodes a panorama and projects it onto a cube. Radiance files go through the engine's own
+    /// codec because no platform image library has a type for what is in one; everything else goes
+    /// through GDI+, which reads every 8-bit format Windows knows and no HDR one.
+    /// </summary>
+    private static CubeMap? LoadPanorama(string path)
+    {
+        var extension = Path.GetExtension(path);
+
+        try
+        {
+            if (extension.Equals(".hdr", StringComparison.OrdinalIgnoreCase) ||
+                extension.Equals(".pic", StringComparison.OrdinalIgnoreCase))
+            {
+                return Equirectangular.ToCubeMap(RadianceHdrCodec.Load(path));
+            }
+
+            return ImageTexture.Load(path) is { } texture
+                ? Equirectangular.ToCubeMap(texture)
+                : null;
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     /// <summary>

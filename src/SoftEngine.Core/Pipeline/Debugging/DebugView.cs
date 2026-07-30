@@ -36,4 +36,15 @@ public enum DebugView
     /// merely slower.
     /// </summary>
     OcclusionBuffer,
+
+    /// <summary>
+    /// Which way each pixel's surface is moving, and how fast: direction as hue, speed as
+    /// brightness.
+    ///
+    /// The buffer temporal antialiasing and motion blur are both built on, and the one whose errors
+    /// are invisible in the picture they produce — a velocity that points the wrong way shows up as
+    /// a faint smear or a slow ghost, which looks like the technique being imperfect rather than
+    /// like a buffer being wrong.
+    /// </summary>
+    Velocity,
 }
