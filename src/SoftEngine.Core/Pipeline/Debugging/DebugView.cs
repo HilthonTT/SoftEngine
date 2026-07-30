@@ -47,4 +47,18 @@ public enum DebugView
     /// like a buffer being wrong.
     /// </summary>
     Velocity,
+
+    /// <summary>
+    /// Which mip level each textured pixel was sampled from — level 0 red, and cooler with
+    /// every halving.
+    ///
+    /// Mip selection is the one decision in the frame with no visible failure mode. Too fine a
+    /// level shimmers, which reads as the texture being noisy; too coarse is blurry, which
+    /// reads as the texture being low-resolution — and a level chosen per triangle can be
+    /// wrong for one triangle in a strip and right for the next, which reads as nothing at
+    /// all. The view makes it a picture: a floor running away from the camera should fade
+    /// evenly through the ramp, and any band that jumps two levels at a seam is a footprint
+    /// being measured wrong.
+    /// </summary>
+    MipLevel,
 }

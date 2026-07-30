@@ -36,6 +36,11 @@ public sealed class FrameBuffer(int width, int height)
     private int[] _overdraw = [];
     private bool _countOverdraw;
 
+    // The mip level the last write to each pixel sampled from, -1 where nothing textured has
+    // been drawn. Allocated only while the mip-level view is asking for it.
+    private sbyte[] _mipLevels = [];
+    private bool _recordMips;
+
     public RenderStats? Stats { get; set; }
 
     public int[] Screen { get; set; } = new int[width * height];
@@ -178,6 +183,58 @@ public sealed class FrameBuffer(int width, int height)
     }
 
     /// <summary>
+    /// Whether the mip level each drawn pixel was sampled at is recorded, for
+    /// <see cref="Pipeline.Debugging.DebugView.MipLevel"/>.
+    ///
+    /// It is the one thing the frame produces that nothing else keeps: the level is chosen per
+    /// triangle inside the painter, used for one fill, and gone. Every other buffer view reads
+    /// something the frame needed anyway.
+    /// </summary>
+    public void SetMipLevelRecording(bool enabled)
+    {
+        _recordMips = enabled;
+
+        if (!enabled)
+        {
+            return;
+        }
+
+        var count = Width * Height;
+
+        if (_mipLevels.Length < count)
+        {
+            _mipLevels = new sbyte[count];
+        }
+    }
+
+    /// <summary>Whether <see cref="MipLevels"/> holds levels for the current frame.</summary>
+    public bool IsRecordingMipLevels => _recordMips;
+
+    /// <summary>
+    /// The mip level sampled at each pixel, row-major, with -1 where nothing textured was
+    /// drawn — or an empty span when recording is off.
+    /// </summary>
+    public ReadOnlySpan<sbyte> MipLevels =>
+        _recordMips ? _mipLevels.AsSpan(0, Width * Height) : ReadOnlySpan<sbyte>.Empty;
+
+    /// <summary>
+    /// Records the level a write at (x, y) sampled. Called by the rasterizer only for writes
+    /// that landed, and only while recording — the caller hoists
+    /// <see cref="IsRecordingMipLevels"/> out of its pixel loop rather than paying a call per
+    /// pixel to be told nothing is listening.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void RecordMipLevel(int x, int y, int level)
+    {
+        if (_recordMips)
+        {
+            // Clamped rather than widened: a chain deep enough to overflow a signed byte would
+            // be a texture 2^127 texels across.
+            _mipLevels[x + y * Width] = (sbyte)System.Math.Clamp(level, -1, sbyte.MaxValue);
+        }
+    }
+
+    /// <summary>
     /// Defines the depth mapping from the active projection's clip planes. Device depth is 0 at
     /// <paramref name="zNear"/> and 1 at <paramref name="zFar"/>, and stays linear in 1/w so it
     /// interpolates correctly in screen space. Call once per frame before rasterizing.
@@ -307,6 +364,14 @@ public sealed class FrameBuffer(int width, int height)
             }
         }
 
+        if (_recordMips)
+        {
+            if (_mipLevels.Length < pixels)
+            {
+                _mipLevels = new sbyte[pixels];
+            }
+        }
+
         // Every one of these is a sweep of megabytes — at 1080p the depth buffer alone is
         // 8 MB — and a single thread clearing them cannot saturate the memory controller.
         // Splitting into bands of rows does, and the bands are disjoint, so nothing needs
@@ -366,6 +431,14 @@ public sealed class FrameBuffer(int width, int height)
         if (_countOverdraw)
         {
             _overdraw.AsSpan(from, count).Clear();
+        }
+
+        if (_recordMips)
+        {
+            // -1, not 0: "nothing textured here" and "sampled level 0" are different answers,
+            // and a cleared zero would report every background pixel as a full-resolution
+            // texture.
+            _mipLevels.AsSpan(from, count).Fill(-1);
         }
 
         _zBuffer.AsSpan(from, count).Fill(DepthResolution);
@@ -617,12 +690,6 @@ public sealed class FrameBuffer(int width, int height)
     }
 
     /// <summary>
-    /// Depth-tests and writes one pixel. Returns true when the pixel was drawn, false
-    /// when it was behind the z-buffer — callers batch these into stats themselves, so
-    /// parallel rasterization doesn't contend on shared counters per pixel.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    /// <summary>
     /// Writes a pixel over whatever is there, testing nothing and leaving the depth buffer
     /// alone.
     ///
@@ -655,6 +722,12 @@ public sealed class FrameBuffer(int width, int height)
         return true;
     }
 
+    /// <summary>
+    /// Depth-tests and writes one pixel. Returns true when the pixel was drawn, false
+    /// when it was behind the z-buffer — callers batch these into stats themselves, so
+    /// parallel rasterization doesn't contend on shared counters per pixel.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool PutPixel(int x, int y, int z, LinearColor color)
     {
 #if DEBUG

@@ -60,11 +60,13 @@ public sealed class GpuShadowPass : IDisposable
         Scene scene,
         ILight light,
         GpuProgram program,
-        Func<IMesh, GpuMesh?> geometry)
+        Func<IMesh, GpuMesh?> geometry,
+        Action<IMesh, GpuProgram> bindCutout)
     {
         ArgumentNullException.ThrowIfNull(scene, nameof(scene));
         ArgumentNullException.ThrowIfNull(program, nameof(program));
         ArgumentNullException.ThrowIfNull(geometry, nameof(geometry));
+        ArgumentNullException.ThrowIfNull(bindCutout, nameof(bindCutout));
 
         CascadeCount = 0;
         TriangleCount = 0;
@@ -116,6 +118,10 @@ public sealed class GpuShadowPass : IDisposable
 
         program.Use();
 
+        // The one sampler the depth program has, bound once for the whole pass; which texture
+        // is on the unit is the per-mesh part, and bindCutout's job.
+        program.Set("uAlphaMask", 0);
+
         for (var cascade = 0; cascade < cascades; cascade++)
         {
             var setup = _planner.SetupOf(cascade);
@@ -144,6 +150,8 @@ public sealed class GpuShadowPass : IDisposable
                 }
 
                 program.Set("uLightViewProjection", mesh.WorldMatrix * clip);
+
+                bindCutout(mesh, program);
 
                 uploaded.Bind();
                 uploaded.Draw();

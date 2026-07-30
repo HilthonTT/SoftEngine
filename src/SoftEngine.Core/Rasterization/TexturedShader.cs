@@ -19,8 +19,18 @@ public readonly struct TexturedShader : IPixelShader<TextureVarying>
     }
 
     public TexturedShader(Texture texture, int mipLevel, TextureFiltering filtering, bool gammaCorrect)
+        : this(new TextureSampler(texture, mipLevel, filtering), gammaCorrect)
     {
-        _albedo = new TextureSampler(texture, mipLevel, filtering);
+    }
+
+    /// <summary>
+    /// Shades from a sampler the caller has already bound. For a painter that needs the same
+    /// binding twice — the colour here and the alpha as a cutout mask — so the two cannot
+    /// come from different mip levels of the same map.
+    /// </summary>
+    public TexturedShader(in TextureSampler albedo, bool gammaCorrect)
+    {
+        _albedo = albedo;
         _gammaCorrect = gammaCorrect;
     }
 

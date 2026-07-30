@@ -217,6 +217,13 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         var countOverdraw = settings.DebugView == DebugView.Overdraw;
         surface.SetOverdrawCounting(countOverdraw);
 
+        // The mip level is chosen per triangle inside the software painters; here it is chosen
+        // by the hardware's own sampler, per pixel, with nowhere to write it down. Switched
+        // off rather than left alone: a frame drawn on the CPU before the backend was switched
+        // would otherwise leave its levels in the buffer, and the view would present them as
+        // this frame's.
+        surface.SetMipLevelRecording(false);
+
         if (projection.IsOrthographic)
         {
             surface.SetLinearDepthRange();
@@ -257,7 +264,8 @@ public sealed class GpuRenderer : IRenderer, IDisposable
             scene,
             SceneLights.Resolve(scene.World, painter?.FallbackLight),
             _depthProgram,
-            mesh => _meshes.TryGetValue(mesh, out var cached) ? cached.Mesh : null);
+            mesh => _meshes.TryGetValue(mesh, out var cached) ? cached.Mesh : null,
+            BindShadowCutout);
 
         if (castsShadow)
         {
@@ -853,6 +861,11 @@ public sealed class GpuRenderer : IRenderer, IDisposable
 
         BindMap(TextureUnit.Texture0, "uHasAlbedoMap", textured ? albedo : null, filtering, mipMaps);
 
+        // The cutout reads the albedo map's own alpha, so it needs the same map bound and the
+        // UVs to read it at. Zero is no cutout — the shader's branch then never samples.
+        program.Set("uAlphaCutoff",
+            textured && albedo is not null && material is { IsCutout: true } ? material.AlphaCutoff : 0f);
+
         if (mode is GpuShadingMode.Material or GpuShadingMode.PhysicallyBased)
         {
             var hasTangents = mesh.Tangents is not null;
@@ -914,6 +927,33 @@ public sealed class GpuRenderer : IRenderer, IDisposable
             program.Set("uHasRoughnessMap", false);
             program.Set("uHasEmissiveMap", false);
         }
+    }
+
+    /// <summary>
+    /// Points the shadow pass's depth program at one caster's alpha mask, or tells it there
+    /// isn't one. Lives here rather than in <see cref="GpuShadowPass"/> because the texture
+    /// cache does, and uploading a map is the one thing the shadow pass would otherwise need
+    /// to know about textures at all.
+    ///
+    /// Nearest and un-mipped, matching what the software pass samples: the shadow map's texel
+    /// density has nothing to do with the camera's, so there is no screen footprint here to
+    /// choose a mip level from.
+    /// </summary>
+    private void BindShadowCutout(IMesh mesh, GpuProgram program)
+    {
+        var cutout = mesh.Material is { IsCutout: true } material && mesh.TexCoords is not null
+            ? material
+            : null;
+
+        if (cutout?.DiffuseMap is not { } mask)
+        {
+            _textures.Bind(TextureUnit.Texture0, _textures.White);
+            program.Set("uAlphaCutoff", 0f);
+            return;
+        }
+
+        _textures.Bind(TextureUnit.Texture0, _textures.Get(mask, TextureFiltering.Nearest, mipMaps: false));
+        program.Set("uAlphaCutoff", cutout.AlphaCutoff);
     }
 
     private void BindMap(TextureUnit unit, string flag, Texture? texture, TextureFiltering filtering, bool mipMaps)

@@ -5,10 +5,13 @@ using System.Runtime.CompilerServices;
 namespace SoftEngine.Core.Rasterization;
 
 /// <summary>UV coordinates plus the Gouraud light at the vertex, interpolated per pixel.</summary>
-public readonly struct TextureVarying : IVarying<TextureVarying>
+public readonly struct TextureVarying : IVarying<TextureVarying>, ITexturedVarying
 {
     public readonly Vector2 UV;
     public readonly LinearColor Light;
+
+    /// <inheritdoc/>
+    public Vector2 TexCoord => UV;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public TextureVarying(Vector2 uv, LinearColor light)

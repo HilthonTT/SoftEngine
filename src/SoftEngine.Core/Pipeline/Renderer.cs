@@ -167,6 +167,7 @@ public sealed class Renderer : IRenderer
         // Both have to be set before the clear, which allocates and resets what they own.
         surface.SetHighDynamicRange(scene.HighDynamicRange);
         surface.SetOverdrawCounting(rendererSettings.DebugView == DebugView.Overdraw);
+        surface.SetMipLevelRecording(rendererSettings.DebugView == DebugView.MipLevel);
 
         // Match the depth buffer to the projection's clip planes for this frame. A parallel
         // projection carries its depth in z rather than w, so it needs the other mapping.
@@ -1161,5 +1162,4 @@ public sealed class Renderer : IRenderer
             _internalWireFramePainter.DrawTriangle(surface, ColorRGB.Magenta, vbx, triangleIndex, ScreenTile.Full);
         }
     }
-
 }

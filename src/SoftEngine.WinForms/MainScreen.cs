@@ -1288,6 +1288,7 @@ public sealed partial class MainScreen : Form
             new BufferViewChoice("Shadow map", DebugView.ShadowMap),
             new BufferViewChoice("Occlusion buffer", DebugView.OcclusionBuffer),
             new BufferViewChoice("Velocity", DebugView.Velocity),
+            new BufferViewChoice("Mip level", DebugView.MipLevel),
         ]);
 
         cboBufferView.SelectedIndex = 0;

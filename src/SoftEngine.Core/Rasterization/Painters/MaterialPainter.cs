@@ -85,7 +85,7 @@ public sealed class MaterialPainter(ILight? light = null, float ambient = 0.12f)
 
         var material = mesh.Material;
 
-        var albedo = Bind(textured ? material?.DiffuseMap : null, p0, p1, p2, uv0, uv1, uv2);
+        var albedo = Bind(textured ? material?.DiffuseMap : null, p0, p1, p2, uv0, uv1, uv2, out var albedoMip);
         var normalMap = Bind(textured ? material?.NormalMap : null, p0, p1, p2, uv0, uv1, uv2);
         var specularMap = Bind(textured ? material?.SpecularMap : null, p0, p1, p2, uv0, uv1, uv2);
 
@@ -110,15 +110,32 @@ public sealed class MaterialPainter(ILight? light = null, float ambient = 0.12f)
             GammaCorrect,
             Shadows);
 
+        var v0 = new MaterialVarying(a.World, a.Norm, tangent0, uv0);
+        var v1 = new MaterialVarying(b.World, b.Norm, tangent1, uv1);
+        var v2 = new MaterialVarying(c.World, c.Norm, tangent2, uv2);
+
+        var invW0 = 1f / a.Proj.W;
+        var invW1 = 1f / b.Proj.W;
+        var invW2 = 1f / c.Proj.W;
+
+        var state = StateFor(mesh).WithMipLevel(albedoMip);
+
+        // A cutout needs the mask bound, which needs UVs — a mesh without them has no cutout
+        // to apply, whatever its material says.
+        if (textured && material is { IsCutout: true })
+        {
+            ScanlineRasterizer.Fill(
+                surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2,
+                new CutoutShader<MaterialVarying, MaterialShader>(shader, albedo, material.AlphaCutoff),
+                state,
+                tile);
+            return;
+        }
+
         ScanlineRasterizer.Fill(
-            surface,
-            p0, p1, p2,
-            1f / a.Proj.W, 1f / b.Proj.W, 1f / c.Proj.W,
-            new MaterialVarying(a.World, a.Norm, tangent0, uv0),
-            new MaterialVarying(b.World, b.Norm, tangent1, uv1),
-            new MaterialVarying(c.World, c.Norm, tangent2, uv2),
+            surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2,
             shader,
-            StateFor(mesh),
+            state,
             tile);
     }
 
@@ -126,14 +143,24 @@ public sealed class MaterialPainter(ILight? light = null, float ambient = 0.12f)
     private TextureSampler Bind(
         Texture? texture,
         in Vector3 p0, in Vector3 p1, in Vector3 p2,
-        in Vector2 uv0, in Vector2 uv1, in Vector2 uv2)
+        in Vector2 uv0, in Vector2 uv1, in Vector2 uv2) =>
+        Bind(texture, p0, p1, p2, uv0, uv1, uv2, out _);
+
+    /// <inheritdoc cref="Bind(Texture?, in Vector3, in Vector3, in Vector3, in Vector2, in Vector2, in Vector2)"/>
+    /// <param name="mipLevel">The level chosen, or -1 when there was no texture to choose one for.</param>
+    private TextureSampler Bind(
+        Texture? texture,
+        in Vector3 p0, in Vector3 p1, in Vector3 p2,
+        in Vector2 uv0, in Vector2 uv1, in Vector2 uv2,
+        out int mipLevel)
     {
         if (texture is null)
         {
+            mipLevel = -1;
             return default;
         }
 
-        var mipLevel = UseMipMaps ? MipSelector.Select(texture, p0, p1, p2, uv0, uv1, uv2) : 0;
+        mipLevel = UseMipMaps ? MipSelector.Select(texture, p0, p1, p2, uv0, uv1, uv2) : 0;
 
         return new TextureSampler(texture, mipLevel, Filtering);
     }

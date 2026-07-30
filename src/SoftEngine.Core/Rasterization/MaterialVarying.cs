@@ -11,12 +11,15 @@ namespace SoftEngine.Core.Rasterization;
 /// cross product in the shader against three more floats through the whole rasterizer.
 /// </summary>
 public readonly struct MaterialVarying(Vector3 world, Vector3 normal, Vector4 tangent, Vector2 uv)
-    : IVarying<MaterialVarying>
+    : IVarying<MaterialVarying>, ITexturedVarying
 {
     public readonly Vector3 World = world;
     public readonly Vector3 Normal = normal;
     public readonly Vector4 Tangent = tangent;
     public readonly Vector2 UV = uv;
+
+    /// <inheritdoc/>
+    public Vector2 TexCoord => UV;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static MaterialVarying Lerp(in MaterialVarying a, in MaterialVarying b, float t) =>

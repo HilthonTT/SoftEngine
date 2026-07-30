@@ -687,12 +687,14 @@ public static class GltfImporter
             var source = root.Materials[index];
             var material = new Material();
 
-            // Only a BLEND material is see-through. OPAQUE ignores its base colour's alpha
-            // entirely — a file whose factor ends in 0.5 with no alphaMode is opaque, and
-            // reading that alpha anyway is how a solid model arrives half transparent. MASK is
-            // a per-texel cutout the engine has no path for; drawing the whole quad is the
-            // less wrong of the two answers available.
+            // The three modes are three different things, and only one of them is
+            // transparency. OPAQUE ignores its base colour's alpha entirely — a file whose
+            // factor ends in 0.5 with no alphaMode is opaque, and reading that alpha anyway is
+            // how a solid model arrives half see-through. BLEND is the mesh-wide opacity the
+            // transparent pass sorts and blends. MASK is neither: a per-texel cutout, drawn in
+            // the opaque pass, which the base colour map's own alpha channel decides.
             var blended = string.Equals(source.AlphaMode, "BLEND", StringComparison.Ordinal);
+            var masked = string.Equals(source.AlphaMode, "MASK", StringComparison.Ordinal);
 
             if (source.PbrMetallicRoughness is { } pbr)
             {
@@ -739,6 +741,14 @@ public static class GltfImporter
 
             material.EmissiveMap = ReadTexture(source.EmissiveTexture);
             material.EmissiveStrength = source.Extensions?.EmissiveStrength?.Strength ?? 1f;
+
+            // Clamped above zero because zero is how the material spells "no cutout": a file
+            // asking for MASK with a cutoff of 0 wants every texel with any alpha at all, and
+            // the smallest positive threshold says that where 0 would say the opposite.
+            if (masked)
+            {
+                material.AlphaCutoff = System.Math.Clamp(source.AlphaCutoff, float.Epsilon, 1f);
+            }
 
             _materials[index] = (material, opacity);
 

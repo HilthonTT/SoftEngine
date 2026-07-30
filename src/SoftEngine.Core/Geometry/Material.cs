@@ -88,6 +88,33 @@ public sealed class Material
     /// <summary>Scales <see cref="Emissive"/>; above 1 needs an HDR target to mean anything.</summary>
     public float EmissiveStrength { get; set; } = 1f;
 
+    /// <summary>
+    /// Alpha below which a texel is not drawn at all, read from <see cref="DiffuseMap"/>'s
+    /// own alpha channel. Zero — the default — is no cutout, and the map's alpha is ignored
+    /// exactly as it always was.
+    ///
+    /// This is the third thing a surface can do with alpha, and it is not a weaker form of
+    /// either of the others. Blending makes a leaf <em>translucent</em>, which a leaf is not;
+    /// it also has to be sorted, and it writes no depth, so a tree blended against itself is
+    /// a different wrong picture from every angle. Ignoring alpha draws the quad the leaf was
+    /// painted on. A cutout is the answer the geometry was authored for: the pixel is either
+    /// leaf or it is nothing, so it stays in the opaque pass, writes depth, needs no sorting,
+    /// and the hole it leaves is a hole in the shadow too.
+    ///
+    /// It is a threshold rather than a boolean because the number belongs to the map. A mask
+    /// authored with soft edges wants a different cut from one authored hard, and glTF says
+    /// so per material (<c>alphaCutoff</c>, defaulting to 0.5).
+    /// </summary>
+    public float AlphaCutoff { get; set; }
+
+    /// <summary>
+    /// Whether this material cuts pixels out per texel — a cutoff above zero, and a map with
+    /// an alpha channel to read it from. Sampling a mask that is not there would test the
+    /// opaque 255 every texture in this engine carries by default, and reject nothing at the
+    /// cost of a sample per pixel.
+    /// </summary>
+    public bool IsCutout => AlphaCutoff > 0f && DiffuseMap is not null;
+
     /// <summary>Whether this material needs per-pixel tangents — that is, whether it has a normal map.</summary>
     public bool NeedsTangents => NormalMap is not null;
 }

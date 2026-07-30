@@ -62,16 +62,35 @@ public sealed class AnimationPlayer
     public float Duration => Clip.Duration;
 
     /// <summary>
-    /// Advances the playhead and poses the nodes. A paused player still poses them, so
-    /// pausing holds the current frame rather than dropping back to the rest pose.
+    /// How much of this clip reaches the nodes when an <see cref="AnimationMixer"/> is driving
+    /// it: 1 is the clip as authored, 0 is nothing, and in between is a blend with whatever the
+    /// layers under it produced. Ignored by <see cref="Update"/> and <see cref="Apply"/>, which
+    /// play one clip on its own and have nothing to blend against.
     /// </summary>
-    public void Update(float deltaSeconds)
+    public float Weight { get; set; } = 1f;
+
+    /// <summary>The node a channel was bound to at construction, or null when the name matched none.</summary>
+    public SceneNode? TargetOf(int channel) => _targets[channel];
+
+    /// <summary>
+    /// Advances the playhead without posing anything. What a mixer calls, because a layered
+    /// pose cannot be written a clip at a time.
+    /// </summary>
+    public void Advance(float deltaSeconds)
     {
         if (IsPlaying)
         {
             Time = Wrap(Time + deltaSeconds * Speed);
         }
+    }
 
+    /// <summary>
+    /// Advances the playhead and poses the nodes. A paused player still poses them, so
+    /// pausing holds the current frame rather than dropping back to the rest pose.
+    /// </summary>
+    public void Update(float deltaSeconds)
+    {
+        Advance(deltaSeconds);
         Apply();
     }
 

@@ -23,13 +23,18 @@ public readonly struct RasterState
     private readonly float _fogB; // linear: -1 / (End - Start)
     private readonly LinearColor _fogColor;
 
-    private RasterState(float transparency, byte fogMode, float fogA, float fogB, LinearColor fogColor)
+    // Offset by one so the default value (0) means "no texture", which is what a state nobody
+    // set a level on describes.
+    private readonly int _mipLevelPlusOne;
+
+    private RasterState(float transparency, byte fogMode, float fogA, float fogB, LinearColor fogColor, int mipLevelPlusOne)
     {
         _transparency = transparency;
         _fogMode = fogMode;
         _fogA = fogA;
         _fogB = fogB;
         _fogColor = fogColor;
+        _mipLevelPlusOne = mipLevelPlusOne;
     }
 
     /// <summary>Builds the fog part from a scene; opacity is applied per mesh via <see cref="WithOpacity"/>.</summary>
@@ -45,15 +50,31 @@ public readonly struct RasterState
         if (fog.Mode == FogMode.Linear)
         {
             var invRange = 1f / MathF.Max(fog.End - fog.Start, 1e-6f);
-            return new RasterState(0f, FogLinear, fog.End * invRange, -invRange, fog.Color);
+            return new RasterState(0f, FogLinear, fog.End * invRange, -invRange, fog.Color, 0);
         }
 
-        return new RasterState(0f, FogExponential, MathF.Max(fog.Density, 0f), 0f, fog.Color);
+        return new RasterState(0f, FogExponential, MathF.Max(fog.Density, 0f), 0f, fog.Color, 0);
     }
 
     /// <summary>The same fog with a mesh's opacity; 1 keeps the state opaque.</summary>
     public RasterState WithOpacity(float opacity) =>
-        new(1f - System.Math.Clamp(opacity, 0f, 1f), _fogMode, _fogA, _fogB, _fogColor);
+        new(1f - System.Math.Clamp(opacity, 0f, 1f), _fogMode, _fogA, _fogB, _fogColor, _mipLevelPlusOne);
+
+    /// <summary>
+    /// The same state, tagged with the mip level this triangle's textures are sampled from —
+    /// for <see cref="Pipeline.Debugging.DebugView.MipLevel"/>, and read by nothing else.
+    ///
+    /// The level rides here rather than in the shader because it is a property of the
+    /// triangle, chosen once by the painter from the screen footprint, and because the
+    /// rasterizer is the only thing that knows which pixel a write landed on. A painter that
+    /// samples no texture leaves it alone, and the view then reports the surface as untextured
+    /// rather than as level 0.
+    /// </summary>
+    public RasterState WithMipLevel(int level) =>
+        new(_transparency, _fogMode, _fogA, _fogB, _fogColor, System.Math.Max(level, 0) + 1);
+
+    /// <summary>The mip level a write from this state samples, or -1 where there is no texture.</summary>
+    public int MipLevel => _mipLevelPlusOne - 1;
 
     public bool IsOpaque => _transparency == 0f;
 

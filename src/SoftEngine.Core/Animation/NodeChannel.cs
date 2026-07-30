@@ -55,6 +55,53 @@ public sealed class NodeChannel(string targetName)
     }
 
     /// <summary>
+    /// This channel's translation at <paramref name="time"/>, or false when it keys none.
+    ///
+    /// Sampling and applying are separate so that more than one clip can be asked what it
+    /// wants a node to be before any of them gets to decide — which is what blending is. The
+    /// false return is the part that matters: a channel with no scale curve must leave the
+    /// blend's scale alone rather than contribute an identity to it, or layering a clip that
+    /// only rotates would drag every weighted scale back toward one.
+    /// </summary>
+    public bool SampleTranslation(float time, out Vector3 value)
+    {
+        if (Translation is { Count: > 0 } track)
+        {
+            value = track.Sample(time);
+            return true;
+        }
+
+        value = Vector3.Zero;
+        return false;
+    }
+
+    /// <inheritdoc cref="SampleTranslation"/>
+    public bool SampleRotation(float time, out Quaternion value)
+    {
+        if (Rotation is { Count: > 0 } track)
+        {
+            value = track.Sample(time);
+            return true;
+        }
+
+        value = Quaternion.Identity;
+        return false;
+    }
+
+    /// <inheritdoc cref="SampleTranslation"/>
+    public bool SampleScale(float time, out Vector3 value)
+    {
+        if (Scale is { Count: > 0 } track)
+        {
+            value = track.Sample(time);
+            return true;
+        }
+
+        value = Vector3.One;
+        return false;
+    }
+
+    /// <summary>
     /// Builds a channel from baked local matrices, the form Collada stores a node's animation
     /// in. Each is decomposed once at load, so playback interpolates translation, rotation and
     /// scale separately — blending the matrices themselves component by component shears a

@@ -64,6 +64,12 @@ uniform float uAmbientIntensity;
 
 uniform float uOpacity;
 
+// Material.AlphaCutoff: alpha below which the fragment is not drawn at all. 0 is no cutout,
+// which is every material that does not ask for one. Distinct from uOpacity — that is a
+// mesh-wide blend the transparent pass sorts, this is a per-texel statement about whether
+// the surface is there.
+uniform float uAlphaCutoff;
+
 // The mesh's base colour, in sRGB units, for this fragment.
 vec3 baseColorSrgb()
 {
@@ -305,6 +311,13 @@ vec3 physicallyBased()
 
 void main()
 {
+    // Before anything is shaded, and before the depth write: a cut-out texel must leave the
+    // depth buffer alone, or it occludes whatever is behind the hole it made.
+    if (uAlphaCutoff > 0.0 && texture(uAlbedoMap, vTexCoord).a < uAlphaCutoff)
+    {
+        discard;
+    }
+
     vec3 linear;
 
     if (uMode == MODE_PBR)

@@ -565,7 +565,7 @@ internal sealed class RenderOptions
                                     hundreds of times brighter than white instead of a
                                     white disc
                   --view <name>     present a buffer instead of the shaded image:
-                                    depth, normals, overdraw, shadowmap, occlusion
+                                    depth, normals, overdraw, shadow, occlusion, mip
 
             Camera
                   --camera x,y,z    an explicit camera position

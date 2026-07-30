@@ -75,15 +75,35 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
             ? MipSelector.Select(texture, p0, p1, p2, uv0, uv1, uv2)
             : 0;
 
+        var albedo = new TextureSampler(texture, mipLevel, Filtering);
+        var shader = new TexturedShader(albedo, GammaCorrect);
+
+        var state = StateFor(mesh).WithMipLevel(mipLevel);
+
+        var v0 = new TextureVarying(uv0, ia);
+        var v1 = new TextureVarying(uv1, ib);
+        var v2 = new TextureVarying(uv2, ic);
+
+        var invW0 = 1f / a.Proj.W;
+        var invW1 = 1f / b.Proj.W;
+        var invW2 = 1f / c.Proj.W;
+
+        // Two calls rather than one with a wrapped shader, because the wrapping is what
+        // decides whether the fill is compiled with an alpha test in it at all.
+        if (mesh.Material is { IsCutout: true } cutout)
+        {
+            ScanlineRasterizer.Fill(
+                surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2,
+                new CutoutShader<TextureVarying, TexturedShader>(shader, albedo, cutout.AlphaCutoff),
+                state,
+                tile);
+            return;
+        }
+
         ScanlineRasterizer.Fill(
-            surface,
-            p0, p1, p2,
-            1f / a.Proj.W, 1f / b.Proj.W, 1f / c.Proj.W,
-            new TextureVarying(uv0, ia),
-            new TextureVarying(uv1, ib),
-            new TextureVarying(uv2, ic),
-            new TexturedShader(texture, mipLevel, Filtering, GammaCorrect),
-            StateFor(mesh),
+            surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2,
+            shader,
+            state,
             tile);
     }
 }

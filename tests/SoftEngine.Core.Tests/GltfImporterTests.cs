@@ -449,6 +449,97 @@ public class GltfImporterTests
     }
 
     /// <summary>
+    /// MASK is a cutout, not an opacity, and the two must not be confused: a masked material
+    /// is fully opaque wherever it is drawn at all, and its base colour's alpha says nothing
+    /// about the mesh. What it does carry is the threshold, which glTF defaults to 0.5.
+    /// </summary>
+    [Theory]
+    [InlineData("MASK", null, 0.5f)]
+    [InlineData("MASK", "0.25", 0.25f)]
+    [InlineData("BLEND", "0.25", 0f)]
+    [InlineData("OPAQUE", "0.25", 0f)]
+    public void Import_AlphaModeMask_CarriesTheCutoffAndNothingElse(string mode, string? cutoff, float expected)
+    {
+        var builder = Triangle()
+            .With("mode", mode)
+            .With("cutoff", cutoff is null ? string.Empty : $", \"alphaCutoff\": {cutoff}");
+
+        var scene = Import(builder.Gltf("""
+            {
+              "asset": {"version": "2.0"},
+              "scene": 0,
+              "scenes": [{"nodes": [0]}],
+              "nodes": [{"mesh": 0}],
+              "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1, "material": 0}]}],
+              "materials": [{
+                "alphaMode": "@mode@"@cutoff@,
+                "pbrMetallicRoughness": {"baseColorFactor": [1, 1, 1, 1], "baseColorTexture": {"index": 0}}
+              }],
+              "textures": [{"source": 0}],
+              "images": [{"uri": "data:image/png;base64,QQ=="}],
+              "accessors": [
+                {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+                {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}
+              ],
+              "bufferViews": [
+                {"buffer": 0, "byteOffset": @pos@, "byteLength": @posLength@},
+                {"buffer": 0, "byteOffset": @idx@, "byteLength": @idxLength@}
+              ],
+              "buffers": [{"uri": "@BUFFER@", "byteLength": @LENGTH@}]
+            }
+            """),
+            _ => Texture.Checkerboard(2, 2, ColorRGB.White, ColorRGB.Black));
+
+        var material = Assert.Single(scene.Meshes).Material;
+        Assert.NotNull(material);
+
+        Assert.Equal(expected, material.AlphaCutoff, 3);
+        Assert.Equal(expected > 0f, material.IsCutout);
+    }
+
+    /// <summary>
+    /// Zero is how the engine spells "no cutout", so a file asking for MASK with a cutoff of
+    /// zero — which means "keep every texel with any alpha at all" — must not land on the
+    /// value that means the opposite.
+    /// </summary>
+    [Fact]
+    public void Import_AlphaModeMask_WithZeroCutoff_StaysACutout()
+    {
+        var scene = Import(Triangle().Gltf("""
+            {
+              "asset": {"version": "2.0"},
+              "scene": 0,
+              "scenes": [{"nodes": [0]}],
+              "nodes": [{"mesh": 0}],
+              "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1, "material": 0}]}],
+              "materials": [{
+                "alphaMode": "MASK",
+                "alphaCutoff": 0,
+                "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}
+              }],
+              "textures": [{"source": 0}],
+              "images": [{"uri": "data:image/png;base64,QQ=="}],
+              "accessors": [
+                {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+                {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}
+              ],
+              "bufferViews": [
+                {"buffer": 0, "byteOffset": @pos@, "byteLength": @posLength@},
+                {"buffer": 0, "byteOffset": @idx@, "byteLength": @idxLength@}
+              ],
+              "buffers": [{"uri": "@BUFFER@", "byteLength": @LENGTH@}]
+            }
+            """),
+            _ => Texture.Checkerboard(2, 2, ColorRGB.White, ColorRGB.Black));
+
+        var material = Assert.Single(scene.Meshes).Material;
+        Assert.NotNull(material);
+
+        Assert.True(material.IsCutout);
+        Assert.True(material.AlphaCutoff > 0f);
+    }
+
+    /// <summary>
     /// The skinning invariant, and the same one the Collada importer is held to: with the
     /// joints in the pose the mesh was bound in, every skinning matrix is the identity and the
     /// deformed mesh reproduces its own bind geometry exactly. Any error in reading the

@@ -60,9 +60,81 @@ public sealed class BufferVisualizer
             DebugView.ShadowMap => RenderShadowMap(surface, shadowMap),
             DebugView.OcclusionBuffer => RenderOcclusion(surface, occlusion),
             DebugView.Velocity => RenderVelocity(surface, velocity),
+            DebugView.MipLevel => RenderMipLevel(surface),
             _ => false,
         };
     }
+
+    /// <summary>
+    /// The mip level each pixel's texture was sampled at: level 0 red, then orange, yellow,
+    /// green, blue and violet as the chain descends, wrapping after six.
+    ///
+    /// <para>
+    /// A ramp rather than a heat map, and the distinction matters. Overdraw is a magnitude and
+    /// is read as one — more is worse. A mip level is a <em>category</em>: what you look for
+    /// here is where one band ends and the next begins, so the colours are chosen to be told
+    /// apart from their neighbours rather than to be ordered by eye.
+    /// </para>
+    ///
+    /// <para>
+    /// Untextured geometry is dark grey, not black, and the background is black. A painter that
+    /// samples no map made no mip decision to show, and colouring it as though it had sampled
+    /// level 0 would fill most scenes in this engine with a confident red.
+    /// </para>
+    /// </summary>
+    private static bool RenderMipLevel(FrameBuffer surface)
+    {
+        var levels = surface.MipLevels;
+
+        if (levels.IsEmpty)
+        {
+            return false;
+        }
+
+        var screen = surface.Screen;
+        var width = surface.Width;
+
+        // Walked in order rather than in parallel, as the overdraw view is and for the same
+        // reason: a ref struct cannot be closed over by the loop body.
+        for (var y = 0; y < surface.Height; y++)
+        {
+            var i = y * width;
+
+            for (var x = 0; x < width; x++, i++)
+            {
+                var level = levels[i];
+
+                if (level < 0)
+                {
+                    // Two different "no level here": nothing drawn at all, and something drawn
+                    // that sampled no texture.
+                    screen[i] = surface.IsBackground(x, y) ? Pack(0, 0, 0) : Pack(48, 48, 52);
+                    continue;
+                }
+
+                var (r, g, b) = MipTint(level);
+
+                screen[i] = Pack(Byte(r), Byte(g), Byte(b));
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// One colour per mip level, wrapping after six. Six is more levels than any frame shows
+    /// at once in practice — a 1024-texel map has eleven, and a single view of it spans three
+    /// or four — so the wrap is cheaper than a gradient nobody could read the steps of.
+    /// </summary>
+    private static (float R, float G, float B) MipTint(int level) => (level % 6) switch
+    {
+        0 => (0.90f, 0.20f, 0.20f),
+        1 => (0.95f, 0.55f, 0.15f),
+        2 => (0.90f, 0.85f, 0.20f),
+        3 => (0.30f, 0.80f, 0.35f),
+        4 => (0.25f, 0.55f, 0.95f),
+        _ => (0.65f, 0.35f, 0.90f),
+    };
 
     /// <summary>
     /// Per-pixel motion: the direction as a hue around the colour wheel, the speed as how far from

@@ -1,3 +1,5 @@
+using SoftEngine.Core.Geometry;
+using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Shading;
@@ -197,9 +199,31 @@ public sealed class ShadowMapRenderer
             var offset = _vertexOffset[index];
             var faces = mesh.Triangles;
 
+            // A cutout mesh blocks the light only where its mask says it is there. Resolved
+            // once per mesh rather than per triangle: it is a question about the material.
+            var cutout = mesh.Material is { IsCutout: true } material && mesh.TexCoords is { } texCoords
+                ? new Cutout(new TextureSampler(material.DiffuseMap, 0, TextureFiltering.Nearest), material.AlphaCutoff, texCoords)
+                : default;
+
             for (var t = 0; t < faces.Length; t++)
             {
                 var face = faces[t];
+
+                if (cutout.IsActive)
+                {
+                    FillTriangleMasked(
+                        depth,
+                        map.Resolution,
+                        _projected[offset + face.I0],
+                        _projected[offset + face.I1],
+                        _projected[offset + face.I2],
+                        cutout,
+                        face.I0, face.I1, face.I2,
+                        rowFrom,
+                        rowTo);
+
+                    continue;
+                }
 
                 FillTriangle(
                     depth,
@@ -209,6 +233,119 @@ public sealed class ShadowMapRenderer
                     _projected[offset + face.I2],
                     rowFrom,
                     rowTo);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A caster's alpha mask, resolved once per mesh: the map to read, the threshold, and the
+    /// mesh's own UVs to read it at.
+    ///
+    /// Level 0 and nearest filtering, where the shaded frame samples a mip level chosen from
+    /// the triangle's screen footprint. The two are not the same question. A shadow map's
+    /// texel density has nothing to do with the camera's, so there is no footprint here to
+    /// choose a level from — and the mask is the geometry: blurring it would make a leaf's
+    /// hole a different size in the shadow than in the leaf, which reads as the bias being
+    /// wrong rather than as the mask being filtered.
+    /// </summary>
+    private readonly struct Cutout(in TextureSampler mask, float cutoff, Vector2[] texCoords)
+    {
+        public readonly TextureSampler Mask = mask;
+        public readonly float Cutoff = cutoff;
+        public readonly Vector2[]? TexCoords = texCoords;
+
+        public bool IsActive => TexCoords is not null && Mask.HasTexture;
+    }
+
+    /// <summary>
+    /// <see cref="FillTriangle"/> with the mask consulted per texel. The UV is interpolated
+    /// with the same barycentrics the depth is, and no perspective correction: the light's
+    /// projection is orthographic, so a linear interpolation across the triangle is the exact
+    /// answer rather than an approximation of one.
+    /// </summary>
+    private static void FillTriangleMasked(
+        Span<float> depth, int resolution,
+        Vector3 p0, Vector3 p1, Vector3 p2,
+        in Cutout cutout,
+        int i0, int i1, int i2,
+        int rowFrom, int rowTo)
+    {
+        var minX = System.Math.Max((int)MathF.Ceiling(MathF.Min(p0.X, MathF.Min(p1.X, p2.X)) - 0.5f), 0);
+        var maxX = System.Math.Min((int)MathF.Floor(MathF.Max(p0.X, MathF.Max(p1.X, p2.X)) - 0.5f), resolution - 1);
+
+        if (minX > maxX)
+        {
+            return;
+        }
+
+        var minY = System.Math.Max((int)MathF.Ceiling(MathF.Min(p0.Y, MathF.Min(p1.Y, p2.Y)) - 0.5f), rowFrom);
+        var maxY = System.Math.Min((int)MathF.Floor(MathF.Max(p0.Y, MathF.Max(p1.Y, p2.Y)) - 0.5f), rowTo - 1);
+
+        if (minY > maxY)
+        {
+            return;
+        }
+
+        var area = Edge(p0, p1, p2.X, p2.Y);
+        if (MathF.Abs(area) < 1e-9f)
+        {
+            return;
+        }
+
+        var invArea = 1f / area;
+
+        var dw0 = (p1.Y - p2.Y) * invArea;
+        var dw1 = (p2.Y - p0.Y) * invArea;
+
+        var texCoords = cutout.TexCoords!;
+        var uv0 = texCoords[i0];
+        var uv1 = texCoords[i1];
+        var uv2 = texCoords[i2];
+
+        for (var y = minY; y <= maxY; y++)
+        {
+            var py = y + 0.5f;
+            var px = minX + 0.5f;
+
+            var w0 = Edge(p1, p2, px, py) * invArea;
+            var w1 = Edge(p2, p0, px, py) * invArea;
+
+            var row = y * resolution;
+
+            for (var x = minX; x <= maxX; x++, w0 += dw0, w1 += dw1)
+            {
+                var w2 = 1f - w0 - w1;
+
+                if (w0 < 0f || w1 < 0f || w2 < 0f)
+                {
+                    continue;
+                }
+
+                var z = w0 * p0.Z + w1 * p1.Z + w2 * p2.Z;
+
+                if (z < 0f || z > 1f)
+                {
+                    continue;
+                }
+
+                var texel = row + x;
+
+                // Tested after the depth comparison it would feed, so a texel already
+                // occupied by something nearer costs no texture read at all.
+                if (z >= depth[texel])
+                {
+                    continue;
+                }
+
+                var u = w0 * uv0.X + w1 * uv1.X + w2 * uv2.X;
+                var v = w0 * uv0.Y + w1 * uv1.Y + w2 * uv2.Y;
+
+                if (cutout.Mask.SampleAlpha(u, v) < cutout.Cutoff)
+                {
+                    continue;
+                }
+
+                depth[texel] = z;
             }
         }
     }

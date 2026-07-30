@@ -2,15 +2,6 @@ using SoftEngine.Core.Diagnostics;
 
 namespace SoftEngine.Core.Scenes;
 
-public enum FogMode
-{
-    /// <summary>Fog ramps linearly from none at <see cref="FogSettings.Start"/> to full at <see cref="FogSettings.End"/>.</summary>
-    Linear,
-
-    /// <summary>Fog thickens exponentially with distance: visibility = e^(-<see cref="FogSettings.Density"/> · distance).</summary>
-    Exponential,
-}
-
 /// <summary>
 /// Distance fog for a scene: pixels blend toward <see cref="Color"/> with view-space
 /// depth. Painters pick this up once per frame in Prepare; the blend itself happens

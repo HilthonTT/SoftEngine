@@ -252,6 +252,12 @@ public static class ScanlineRasterizer
         // without shading by design, so probing stays on the scalar one.
         var probing = surface.IsProbing;
 
+        // Hoisted out of the pixel loops: with the mip-level view closed — which is every
+        // frame but the ones someone is looking at it — this is one predictable branch per
+        // drawn pixel against a local, and no call.
+        var recordMips = surface.IsRecordingMipLevels;
+        var mipLevel = state.MipLevel;
+
         var x = xStart;
 
         // A span shorter than one vector cannot fill a block, and asking costs a call and a
@@ -263,7 +269,7 @@ public static class ScanlineRasterizer
         {
             x = VectorSpan(
                 surface, y, xStart, xEnd, sx, sw, ew, sv, ev, invSpan, dz, zBase,
-                shader, state, ref drawn, ref behindZ);
+                shader, state, recordMips, mipLevel, ref drawn, ref behindZ);
         }
 
         // Runs entirely behind the z-buffer are rejected a vector at a time here too, so that
@@ -306,6 +312,16 @@ public static class ScanlineRasterizer
             // most of them, in a dense model — and behind a call it measured about a tenth
             // slower than it does inline.
             var varying = TVarying.Scale(TVarying.Lerp(sv, ev, t), w);
+
+            // Folded away entirely for every shader that cuts nothing out — HasAlphaTest is a
+            // constant per instantiation, not a field. A rejected pixel leaves the depth
+            // buffer alone as well as the colour: a cutout leaf must not occlude what is
+            // behind the hole it made.
+            if (TShader.HasAlphaTest && !shader.IsCovered(varying))
+            {
+                continue;
+            }
+
             var color = shader.Shade(varying);
 
             if (state.HasFog)
@@ -320,6 +336,11 @@ public static class ScanlineRasterizer
             if (written)
             {
                 drawn++;
+
+                if (recordMips)
+                {
+                    surface.RecordMipLevel(x, y, mipLevel);
+                }
             }
             else
             {
@@ -363,6 +384,8 @@ public static class ScanlineRasterizer
         float invSpan, float dz, float zBase,
         in TShader shader,
         in RasterState state,
+        bool recordMips,
+        int mipLevel,
         ref int drawn,
         ref int behindZ)
         where TVarying : struct, IVarying<TVarying>
@@ -427,6 +450,16 @@ public static class ScanlineRasterizer
                 // there: behind a call, the shader stops being inlined into the loop that
                 // drives it and the whole fill pays for it.
                 var varying = TVarying.Scale(TVarying.Lerp(sv, ev, parameters[lane]), lanePosition);
+
+                // Per lane rather than per block: the mask is a picture, and a run of eight
+                // pixels across a leaf's edge is exactly the run where some are in and some
+                // are out. Rejecting the whole block would cut the silhouette to a
+                // vector-wide staircase and disagree with the scalar tail beside it.
+                if (TShader.HasAlphaTest && !shader.IsCovered(varying))
+                {
+                    continue;
+                }
+
                 var color = shader.Shade(varying);
 
                 if (state.HasFog)
@@ -441,6 +474,11 @@ public static class ScanlineRasterizer
                 if (written)
                 {
                     drawn++;
+
+                    if (recordMips)
+                    {
+                        surface.RecordMipLevel(x + lane, y, mipLevel);
+                    }
                 }
                 else
                 {
