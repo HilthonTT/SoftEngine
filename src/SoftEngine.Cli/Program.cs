@@ -1,4 +1,5 @@
 using SoftEngine.Cli;
+using SoftEngine.Core.Baking;
 using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Imaging;
@@ -111,8 +112,29 @@ static int Render(RenderOptions options)
 
     var factor = SuperSampler.ClampFactor(options.SuperSampling);
 
-    var backend = RenderBackends.Create(options.Backend);
+    // Only the software rasterizer reads an irradiance volume — the GPU backend holds its ambient
+    // light in six uniforms, which is a cube and not a grid. So "pick a backend for me" must not
+    // pick the one that would quietly ignore what was asked for; an explicit --gpu still gets what
+    // it asked for, and is told what it costs.
+    var requested = options.Bake && options.Backend == RenderBackend.Automatic
+        ? RenderBackend.Cpu
+        : options.Backend;
+
+    var backend = RenderBackends.Create(requested);
     var renderer = backend.Renderer;
+
+    // Whether the bake is worth doing at all: the two other backends ignore a volume, one because
+    // it cannot hold one and one because it is busy computing the thing a volume approximates.
+    // Baking anyway would spend minutes on something nothing will read.
+    var bakes = options.Bake && renderer is Renderer;
+
+    if (options.Bake && !bakes)
+    {
+        Console.Error.WriteLine(renderer is PathTracer
+            ? "softengine: the path tracer computes indirect light as it goes — nothing to bake."
+            : "softengine: this backend holds its ambient light as six values and cannot read a " +
+              "volume; the frame will be lit by the environment instead.");
+    }
 
     // Said before the render rather than after it, so a fallback explains the frame time that
     // is about to follow instead of arriving too late to.
@@ -292,6 +314,36 @@ static int Render(RenderOptions options)
     var output = options.ResolveOutput();
 
     var renderTime = TimeSpan.Zero;
+    var bakeTime = TimeSpan.Zero;
+
+    if (bakes)
+    {
+        // Posed first: a bake measures light bouncing off the geometry where it stands, and a rig
+        // that has never been updated stands wherever its nodes were constructed. A sequence bakes
+        // once, at its first frame — an irradiance volume is a statement about an arrangement of a
+        // world, and rebaking it per frame would cost more than the frames do.
+        loaded.World.Update(MathF.Max(options.Time, 0f));
+
+        var bakeStart = Stopwatch.GetTimestamp();
+
+        scene.Irradiance = IrradianceBaker.Bake(scene, new BakeSettings
+        {
+            Resolution = options.BakeResolution,
+            Rays = options.BakeRays,
+            Bounces = options.BakeBounces,
+        });
+
+        bakeTime = Stopwatch.GetElapsedTime(bakeStart);
+
+        if (options.Stats)
+        {
+            var volume = scene.Irradiance;
+
+            Console.WriteLine(
+                $"baked {volume.CountX}×{volume.CountY}×{volume.CountZ} probes " +
+                $"({volume.ValidCount} outside geometry) in {bakeTime.TotalMilliseconds:F0} ms");
+        }
+    }
 
     for (var frame = 0; frame < frames; frame++)
     {

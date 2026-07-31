@@ -65,6 +65,18 @@ public sealed class Bvh
 
     public int LeafCount { get; }
 
+    /// <summary>
+    /// The box around everything in the tree — the root's own bounds, which the build already
+    /// measured.
+    ///
+    /// An empty tree reports an inverted box (min above max), which is what an empty box <em>is</em>
+    /// here: it is the identity the build starts from, and every test against it fails, which is the
+    /// right answer for a world with nothing in it. Callers that need a region to work over, like
+    /// <see cref="Baking.IrradianceBaker"/> choosing where to put probes, have to notice that rather
+    /// than take the difference.
+    /// </summary>
+    public (Vector3 Min, Vector3 Max) Bounds => (_nodes[0].Min, _nodes[0].Max);
+
     /// <summary>Deepest path from the root, which is what the traversal stack has to hold.</summary>
     public int MaxDepth { get; }
 

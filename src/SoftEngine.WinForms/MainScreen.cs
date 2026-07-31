@@ -1,4 +1,5 @@
 ﻿using SoftEngine.Core.Animation;
+using SoftEngine.Core.Baking;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Gpu;
 using SoftEngine.Core.Editing;
@@ -84,6 +85,9 @@ public sealed partial class MainScreen : Form
     /// <summary>A loaded panorama and where it came from, or null until one is opened.</summary>
     private CubeMap? _panorama;
     private string? _panoramaPath;
+
+    /// <summary>The last bake of the current world, or null when nothing has been measured yet.</summary>
+    private Core.Shading.IrradianceVolume? _bakedLight;
 
     /// <summary>Set by every rendered frame, cleared when the debugger panels have caught up.</summary>
     private bool _frameDirty;
@@ -251,6 +255,12 @@ public sealed partial class MainScreen : Form
             panel3D1.Invalidate();
         };
         btnPanorama.Click += async (s, e) => await LoadPanoramaAsync();
+        chkBakedLight.CheckedChanged += (s, e) =>
+        {
+            ApplyBakedLight();
+            panel3D1.Invalidate();
+        };
+        btnBake.Click += async (s, e) => await BakeIndirectLightAsync();
         chkGammaCorrect.CheckedChanged += (s, e) =>
         {
             if (panel3D1.Scene is { } scene)
@@ -1599,6 +1609,7 @@ public sealed partial class MainScreen : Form
         // The button in the display panel is themed as a button, not as a label like its
         // neighbours — the loop above them all would otherwise repaint its text over its fill.
         btnPanorama.ForeColor = Theme.TextPrimary;
+        btnBake.ForeColor = Theme.TextPrimary;
         foreach (Control control in flpShading.Controls)
         {
             control.ForeColor = Theme.TextPrimary;
@@ -1770,6 +1781,93 @@ public sealed partial class MainScreen : Form
     }
 
     /// <summary>
+    /// Traces the world's bounce light into a grid of probes, off the UI thread.
+    ///
+    /// It is seconds of work — a few hundred probes at a hundred paths each — and unlike everything
+    /// else on this panel it is not a setting but a measurement, so it has a button rather than a
+    /// checkbox. The checkbox beside it decides whether the measurement is used.
+    /// </summary>
+    private async Task BakeIndirectLightAsync()
+    {
+        if (panel3D1.Scene is not { } scene)
+        {
+            return;
+        }
+
+        btnBake.Enabled = false;
+        UseWaitCursor = true;
+
+        try
+        {
+            // Resolution follows the viewport's own budget: this runs while somebody waits, and a
+            // 24³ grid is fourteen thousand probes.
+            var volume = await Task.Run(() => IrradianceBaker.Bake(scene, new BakeSettings
+            {
+                Resolution = 12,
+                Rays = 128,
+                Bounces = 2,
+            }));
+
+            _bakedLight = volume;
+
+            chkBakedLight.Text = $"Baked light ({volume.ValidCount} probes)";
+            chkBakedLight.Enabled = true;
+
+            toolTip1.SetToolTip(chkBakedLight,
+                $"{volume.CountX}×{volume.CountY}×{volume.CountZ} probes, {volume.ValidCount} of them " +
+                "outside geometry.\nRead by the software rasterizer; the GPU backend and the path " +
+                "tracer ignore it.");
+
+            if (chkBakedLight.Checked)
+            {
+                ApplyBakedLight();
+                panel3D1.Invalidate();
+            }
+            else
+            {
+                chkBakedLight.Checked = true;
+            }
+        }
+        finally
+        {
+            UseWaitCursor = false;
+            btnBake.Enabled = true;
+        }
+    }
+
+    /// <summary>
+    /// Hands the scene its baked light, or takes it away again.
+    ///
+    /// Nothing here rebakes. A volume describes one arrangement of a world, and a drag or a new
+    /// model leaves it describing a room that is no longer there — which is why loading a world
+    /// throws it away outright rather than quietly lighting the next one with the last one's light.
+    /// </summary>
+    private void ApplyBakedLight()
+    {
+        if (panel3D1.Scene is not { } scene)
+        {
+            return;
+        }
+
+        scene.Irradiance = chkBakedLight.Checked ? _bakedLight : null;
+    }
+
+    /// <summary>Forgets the bake, for when the world it measured is not the world any more.</summary>
+    private void ClearBakedLight()
+    {
+        _bakedLight = null;
+
+        chkBakedLight.Checked = false;
+        chkBakedLight.Enabled = false;
+        chkBakedLight.Text = "No baked light";
+
+        if (panel3D1.Scene is { } scene)
+        {
+            scene.Irradiance = null;
+        }
+    }
+
+    /// <summary>
     /// Decodes a panorama and projects it onto a cube. Radiance files go through the engine's own
     /// codec because no platform image library has a type for what is in one; everything else goes
     /// through GDI+, which reads every 8-bit format Windows knows and no HDR one.
@@ -1900,6 +1998,11 @@ public sealed partial class MainScreen : Form
             panel3D1.ClearPick();
 
             panel3D1.Scene?.World = setup.World;
+
+            // The probes measured the light in the world that just left. Keeping them would light
+            // this one with the last one's bounce light, which is wrong in a way that looks like a
+            // shading bug rather than like stale data.
+            ClearBakedLight();
 
             panel3D1.RendererSettings.SkeletonTickSize = setup.SkeletonTickSize;
 

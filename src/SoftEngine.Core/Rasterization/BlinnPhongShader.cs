@@ -14,7 +14,7 @@ namespace SoftEngine.Core.Rasterization;
 /// </summary>
 public readonly struct BlinnPhongShader : IPixelShader<PhongVarying>
 {
-    private readonly AmbientCube _ambient;
+    private readonly AmbientField _ambient;
     private readonly Vector3 _eye;
     private readonly float _specularStrength;
     private readonly float _shininess;
@@ -38,7 +38,7 @@ public readonly struct BlinnPhongShader : IPixelShader<PhongVarying>
         ColorRGB color,
         LightSet lights,
         Vector3 eye,
-        AmbientCube ambient,
+        AmbientField ambient,
         float specularStrength,
         float shininess,
         bool gammaCorrect = false,
@@ -71,7 +71,7 @@ public readonly struct BlinnPhongShader : IPixelShader<PhongVarying>
         var n = Vector3.Normalize(v.Normal);
         var view = Vector3.Normalize(_eye - v.World);
 
-        var diffuse = _ambient.Evaluate(n);
+        var diffuse = _ambient.Evaluate(v.World, n);
         var specular = LinearColor.Black;
 
         for (var i = 0; i < _lights.Count; i++)

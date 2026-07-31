@@ -42,7 +42,7 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
 
     private readonly LightSet _lights;
     private readonly Vector3 _eye;
-    private readonly AmbientCube _ambient;
+    private readonly AmbientField _ambient;
     private readonly PrefilteredEnvironment? _environment;
     private readonly ShadowMap? _shadows;
 
@@ -63,7 +63,7 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
         float normalStrength,
         LightSet lights,
         Vector3 eye,
-        AmbientCube ambient,
+        AmbientField ambient,
         PrefilteredEnvironment? environment,
         ShadowMap? shadows)
     {
@@ -122,7 +122,7 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
 
         var result = Direct(v.World, n, view, nDotV, alpha, f0, diffuseColor);
 
-        result += Ambient(n, view, nDotV, roughness, f0, diffuseColor);
+        result += Ambient(v.World, n, view, nDotV, roughness, f0, diffuseColor);
 
         if (_emissiveMap.HasTexture)
         {
@@ -206,12 +206,14 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
     /// The specular half is the split-sum approximation —
     /// <see cref="PrefilteredEnvironment"/> for the light, <see cref="BrdfLut"/> for the
     /// surface's response to it. With no environment to prefilter, both halves fall back to
-    /// the <see cref="AmbientCube"/>, evaluated along the reflection direction rather than
+    /// the <see cref="AmbientField"/>, evaluated along the reflection direction rather than
     /// the normal: six directional averages are a poor mirror, but a surface reflecting the
     /// bright side of the room stays brighter than one reflecting the dark side, which is
-    /// the part that reads.
+    /// the part that reads. A baked volume makes that fallback a good deal less poor — the
+    /// six averages are then the ones measured where the surface actually is.
     /// </summary>
     private LinearColor Ambient(
+        Vector3 world,
         Vector3 n,
         Vector3 view,
         float nDotV,
@@ -230,7 +232,7 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
             f0.G + (MathF.Max(ceiling, f0.G) - f0.G) * weight,
             f0.B + (MathF.Max(ceiling, f0.B) - f0.B) * weight);
 
-        var irradiance = _ambient.Evaluate(n);
+        var irradiance = _ambient.Evaluate(world, n);
 
         var diffuse = new LinearColor(
             diffuseColor.R * irradiance.R * (1f - fresnel.R),
@@ -242,7 +244,7 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
 
         var incoming = _environment is { } environment
             ? environment.Sample(reflection, roughness)
-            : _ambient.Evaluate(reflection);
+            : _ambient.Evaluate(world, reflection);
 
         var response = BrdfLut.Sample(nDotV, roughness);
         var scale = response.X;

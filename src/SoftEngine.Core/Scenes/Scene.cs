@@ -71,4 +71,19 @@ public sealed class Scene
     /// should receive; this is the knob between the two.
     /// </summary>
     public float AmbientIntensity { get; set; } = 0.35f;
+
+    /// <summary>
+    /// Indirect light measured ahead of time by <see cref="Baking.IrradianceBaker"/>, or null for
+    /// the ambient term the engine has always used.
+    ///
+    /// When set it <em>replaces</em> <see cref="Environment"/>'s contribution to the ambient rather
+    /// than adding to it — the bake already saw the sky, and counting it twice would be brighter
+    /// than either answer. The environment still draws as the sky and still feeds the PBR painter's
+    /// reflections, which are a different question about the same map.
+    ///
+    /// Two renderers ignore it, for opposite reasons. The <see cref="Tracing.PathTracer"/> computes
+    /// the thing this is a measurement of. The GPU backend cannot: six uniforms hold a cube and not
+    /// a grid, so it keeps lighting the frame with the environment.
+    /// </summary>
+    public Shading.IrradianceVolume? Irradiance { get; set; }
 }

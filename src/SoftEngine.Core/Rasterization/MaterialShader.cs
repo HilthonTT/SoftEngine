@@ -26,7 +26,7 @@ public readonly struct MaterialShader : IPixelShader<MaterialVarying>
     private readonly ColorRGB _color;
     private readonly LightSet _lights;
     private readonly Vector3 _eye;
-    private readonly AmbientCube _ambient;
+    private readonly AmbientField _ambient;
     private readonly float _specularStrength;
     private readonly float _shininess;
     private readonly float _normalStrength;
@@ -44,7 +44,7 @@ public readonly struct MaterialShader : IPixelShader<MaterialVarying>
         in TextureSampler specularMap,
         LightSet lights,
         Vector3 eye,
-        AmbientCube ambient,
+        AmbientField ambient,
         float specularStrength,
         float shininess,
         float normalStrength,
@@ -85,7 +85,7 @@ public readonly struct MaterialShader : IPixelShader<MaterialVarying>
         // Evaluated with the shading normal, so a normal map shapes the ambient the same
         // way it shapes the lights — which is most of what makes it read as detail rather
         // than as a pattern printed on a flat surface.
-        var diffuse = _ambient.Evaluate(n);
+        var diffuse = _ambient.Evaluate(v.World, n);
         var specular = LinearColor.Black;
 
         for (var i = 0; i < _lights.Count; i++)

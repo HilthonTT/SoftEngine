@@ -48,11 +48,14 @@ public abstract class LitPainter(ILight? light, float ambient) : IPainter
 
     /// <summary>
     /// The light a surface receives from no particular direction, as a function of which
-    /// way it faces. A flat grey by default — <see cref="Ambient"/> in every channel — and
-    /// the scene's environment reduced to six directional averages when it has one, so a
-    /// surface facing the sky and one facing the ground stop receiving the same light.
+    /// way it faces — and, when the scene carries a bake, of where it is. A flat grey by
+    /// default — <see cref="Ambient"/> in every channel — the scene's environment reduced to
+    /// six directional averages when it has one, so a surface facing the sky and one facing
+    /// the ground stop receiving the same light, and an <see cref="IrradianceVolume"/> when
+    /// one has been baked, so two surfaces facing the same way in different rooms stop
+    /// receiving it too.
     /// </summary>
-    protected AmbientCube AmbientLight { get; private set; }
+    protected AmbientField AmbientLight { get; private set; }
 
     /// <summary>Whether this frame shades in linear light with sRGB output (see <see cref="Scene.GammaCorrect"/>).</summary>
     protected bool GammaCorrect { get; private set; }
@@ -78,8 +81,15 @@ public abstract class LitPainter(ILight? light, float ambient) : IPainter
     /// texel of all six faces, so the result is kept until the environment or its intensity
     /// changes — which, for a scene with a fixed sky, is never.
     /// </summary>
-    private AmbientCube ResolveAmbient(Scene scene)
+    private AmbientField ResolveAmbient(Scene scene)
     {
+        // A bake measured the light the rest of this method guesses at, including whatever the
+        // environment contributes — so it replaces the guess rather than joining it.
+        if (scene.Irradiance is { } volume)
+        {
+            return new AmbientField(volume);
+        }
+
         if (scene.Environment is not { } environment || !scene.AmbientFromEnvironment)
         {
             return new AmbientCube(Ambient);
@@ -120,7 +130,7 @@ public abstract class LitPainter(ILight? light, float ambient) : IPainter
     protected LinearColor LitColor(Vector3 worldPosition, Vector3 normal)
     {
         var n = normal.LengthSquared() > 1e-12f ? Vector3.Normalize(normal) : Vector3.UnitY;
-        var total = AmbientLight.Evaluate(n);
+        var total = AmbientLight.Evaluate(worldPosition, n);
         var shadows = Shadows;
 
         for (var i = 0; i < Lights.Count; i++)

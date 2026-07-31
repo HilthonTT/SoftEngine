@@ -20,6 +20,7 @@ a reference.
 - Any number of coloured directional / point / spot lights, in an **HDR linear float target**.
 - **Cascaded shadow maps**, SSAO, and an environment cube map as both skybox and ambient — loadable
   from a Radiance `.hdr` panorama that keeps its range.
+- **Baked indirect light**: the path tracer measured into a grid of probes the rasterizer reads.
 - Materials: albedo, normal, specular, metallic-roughness and emissive maps, plus **alpha cutouts**.
 - **Scene graph**, keyframed **animation** with clip **blending**, and linear-blend **skinning**.
 - Post-process stack: bloom, tone mapping, FXAA, vignette. Supersampling, **TAA** and **motion blur**.
@@ -36,7 +37,7 @@ a reference.
 ```bash
 dotnet build SoftEngine.slnx
 dotnet run --project src/SoftEngine.WinForms              # interactive viewer
-dotnet test tests/SoftEngine.Core.Tests                   # 658 tests
+dotnet test tests/SoftEngine.Core.Tests                   # 673 tests
 dotnet run -c Release --project bench/SoftEngine.Benchmarks   # Release, or you measure the debugger
 ```
 
@@ -184,7 +185,8 @@ The same map becomes the ambient term as an
 [`AmbientCube`](src/SoftEngine.Core/Shading/AmbientCube.cs) — six directional averages rather than
 one constant, because a ceiling and a floor in one room do not receive the same light from their
 surroundings. Per-pixel painters evaluate it with the *shading* normal, so a normal map shapes the
-ambient too.
+ambient too. What a cube still cannot say is that two surfaces facing the *same* way are lit
+differently because they are in different places; that is what a bake measures, below.
 
 **Environments that keep their range.** A real sun is four orders of magnitude brighter than the
 cloud beside it; clipped to white it blooms no harder than a highlight. A `CubeMap` can carry a
@@ -416,6 +418,7 @@ dotnet run -c Release --project src/SoftEngine.Cli -- model.gltf -o frame.png -w
 | `--yaw`, `--pitch`, `--zoom`, `--camera`, `-t` | where to stand, and how far into the animation |
 | `--env`, `--environment-size`, `--hdr-sky` | light it with a panorama or the linear-light sky |
 | `--shadows`, `--cascades` | shadow pass |
+| `--bake`, `--bake-resolution`, `--bake-rays`, `--bake-bounces` | measure indirect light into probes first |
 | `--trace`, `--samples`, `--bounces`, `--physical` | path-trace instead of rasterizing |
 | `--frames`, `--fps`, `--turntable`, `--shutter` | render a numbered sequence |
 | `--backend`, `--gpu`, `--cpu`, `--gpu-info` | where the frame is filled |
@@ -452,9 +455,10 @@ with JPEG maps renders untextured and the program says how many it skipped.
 | **Ctrl+← / Ctrl+→** | Step through kept frames |
 | **F12** | Save the view as a PNG |
 
-Plus **Load model…** (bundled demos or a file from disk), shading radios, buffer view, cascade count,
-gizmo mode, display and post-processing checkboxes, and a stats overlay reporting triangle counts,
-pixel counts and per-frame timing.
+Plus **Load model…** (bundled demos or a file from disk), **Bake indirect light** (and the checkbox
+that decides whether the frame uses it), shading radios, buffer view, cascade count, gizmo mode,
+display and post-processing checkboxes, and a stats overlay reporting triangle counts, pixel counts
+and per-frame timing.
 
 ## Graphics debugger
 
@@ -568,6 +572,10 @@ painter it is handed because choosing a shading model per mesh is what it exists
 dotnet run -c Release --project src/SoftEngine.Cli -- model.gltf --trace --samples 256 --bounces 4
 ```
 
+The walk itself is [`PathIntegrator`](src/SoftEngine.Core/Tracing/PathIntegrator.cs), which the
+irradiance bake asks the same question of from points that have no pixel — so what a bake stores as
+ambient light is what this renderer would have found there, by construction rather than by care.
+
 It computes **interreflection**, **true ambient occlusion**, and **shadows with no bias to tune**.
 It is not a production renderer: no bidirectional tracing, no MIS, no light hierarchy, and delta
 lights sampled explicitly — so hard shadows, no caustics, and a room lit through a keyhole stays
@@ -590,6 +598,62 @@ wherever a light is doing the work. The environment lights the trace at `SkyInte
 into what is there, up to 512 samples or until something moves. Seeded per pixel rather than from a
 shared generator, so two runs produce the same image down to the last bit.
 
+## Baked indirect light
+
+The rasterizer and the path tracer are usually presented as alternatives: one fast and approximate,
+the other slow and correct. A bake is the third thing — the slow renderer run *ahead of time* over
+the part of the image that does not change quickly, and the fast one reading the answer.
+
+Bounce light is exactly that part. It takes a hundred rays a point to compute and it varies over
+metres; a specular highlight varies over a pixel and has to be recomputed every frame from every
+angle. So [`IrradianceBaker`](src/SoftEngine.Core/Baking/IrradianceBaker.cs) fires rays out of a grid
+of points and asks [`PathIntegrator`](src/SoftEngine.Core/Tracing/PathIntegrator.cs) — *the path
+tracer's own walk*, now shared between the two — what comes back along each one.
+
+```bash
+dotnet run -c Release --project src/SoftEngine.Cli -- model.gltf --bake --bake-rays 128 -p pbr
+```
+
+**Probes, not lightmaps.** A lightmap needs a second, non-overlapping UV set per mesh; nothing here
+unwraps one and glTF's second UV set is not read. A probe grid needs no UVs at all — and it lands on
+a type the engine already had. An [`AmbientCube`](src/SoftEngine.Core/Shading/AmbientCube.cs) *is* a
+probe, so an [`IrradianceVolume`](src/SoftEngine.Core/Shading/IrradianceVolume.cs) is one per place,
+trilinearly blended, and a shader still asks the same question it always did — which is why the
+volume drops into a scene without any painter knowing it exists.
+
+- **The lights are never in it.** A probe collects the light arriving from the *surfaces* around it,
+  which is their direct lighting after it has bounced. A delta light has no size for a ray to land
+  on, so it cannot be collected — and that is what keeps the rasterizer from counting the sun twice
+  when it adds its own direct term to the ambient one.
+- **A face is the cosine-weighted mean radiance about its axis**, not the sum — the same quantity
+  `AmbientCube.FromEnvironment` reduces a sky to. That is what makes the two sources interchangeable
+  rather than merely similar: a bake under a uniform sky reproduces that sky's own value, and there
+  is a test that says so.
+- **There is no 0.35 here.** `Scene.AmbientIntensity` exists because the sky's brightness is not what
+  a surface facing it receives. A bake answers that by measuring it, so it needs no fudge — and a
+  baked scene is correspondingly brighter than the guess it replaces.
+- **A probe inside a wall is the trap.** It sees the inside of the wall in every direction and bakes
+  black; blended into the floor beside it, that black is a dark smear along the bottom of every wall
+  in the scene. Probes are tested with a cheap unshaded pass first — how many directions end on the
+  *back* of a surface — and a buried one lends no weight to the blend, which is then renormalized so
+  a point with one usable neighbour is lit by that neighbour rather than by a seventh of it.
+- **Directions are a jittered Fibonacci sphere.** Random directions leave gaps wide enough to miss a
+  window; an unjittered set makes every probe sample the *same* few hundred directions, which turns
+  the estimator's error into a pattern that repeats across the grid instead of averaging out between
+  neighbours.
+
+Probes are seeded from their own index, so a bake is reproducible to the bit however many threads
+ran it — the same property the frame renderer's per-pixel seeding buys.
+
+**What it costs and what it does not do.** A few hundred probes at 128 paths each is about a tenth of
+a second on the bundled models. A volume describes one *arrangement* of a world: move a wall or a
+light and it describes a room that no longer exists, and nothing notices, because noticing would mean
+rebaking. Loading a world in the viewer throws the bake away for that reason. Indirect light also
+varies no faster than the grid does, so contact shadows stay SSAO's job. Two renderers ignore a
+volume for opposite reasons: the path tracer computes the thing it approximates, and the GPU backend
+holds its ambient in six uniforms, which is a cube and not a grid — so `--bake` on the automatic
+backend picks the CPU rather than silently ignoring what was asked for.
+
 ## Layout
 
 ```
@@ -597,6 +661,7 @@ src/
 ├── SoftEngine.Core/        # engine, no UI dependency (net10.0)
 │   ├── Acceleration/       # world triangles flattened, and the SAH BVH over them
 │   ├── Animation/          # tracks, interpolation, channels, clips, playback, blending
+│   ├── Baking/             # the irradiance bake and what it is allowed to spend
 │   ├── Buffers/            # FrameBuffer, velocity, pooled vertex/world buffers
 │   ├── Diagnostics/        # stats, event log, pixel history, frame captures
 │   ├── Editing/            # undoable edits and the history drags record into
@@ -609,7 +674,7 @@ src/
 │   ├── Rasterization/      # scanline filler, painters, shaders, varyings, sampling
 │   ├── Scenes/             # world, camera, projections, lights — Graph/ Serialization/
 │   ├── Shading/            # linear colour, light sets, ambient cube, GGX, BRDF LUT
-│   └── Tracing/            # path tracer, settings, per-pixel sampler
+│   └── Tracing/            # path tracer, the integrator it shares with the bake, sampler
 ├── SoftEngine.Gpu/         # OpenGL backend via Silk.NET, and Shaders/
 ├── SoftEngine.Cli/         # headless renderer (net10.0 console)
 └── SoftEngine.WinForms/    # interactive front-end (net10.0-windows)
@@ -620,7 +685,7 @@ tests/SoftEngine.Core.Tests/   # xUnit suite, and Golden/ image baselines
 
 ## Testing
 
-`dotnet test tests/SoftEngine.Core.Tests` — 658 tests. Most are ordinary unit tests, and there is a
+`dotnet test tests/SoftEngine.Core.Tests` — 673 tests. Most are ordinary unit tests, and there is a
 whole class of regression none of them can reach: a renderer can satisfy every property a test names
 and still produce a visibly wrong picture. Nothing in 600 passing tests notices that the specular
 term came out a tenth dimmer.
@@ -670,6 +735,9 @@ Measured at 1280×720 on twenty threads, best of thirty frames.
 
 - Replace `Mesh`'s Euler `Rotation3D` with the quaternion `SceneNode` already uses — which is also
   what would let the gizmo's rings turn a mesh about a world axis.
+- Probes in a scene document, so a bake outlives the session that made it — which needs somewhere to
+  put a few thousand cubes that is not the JSON a person is expected to edit by hand.
+- A per-texel bake, which needs a UV unwrapper before it needs anything else.
 - Alpha cutouts in the **path tracer**, which needs an any-hit predicate threaded through the BVH's
   traversal loop.
 - More than one shadow-casting light, which needs a depth buffer and a pass per light.

@@ -112,6 +112,21 @@ internal sealed class RenderOptions
     /// </summary>
     public bool PhysicalExposure { get; set; }
 
+    /// <summary>
+    /// Whether indirect light is measured into an irradiance volume before the frame is rasterized,
+    /// instead of standing in for it with the environment's six directional averages.
+    /// </summary>
+    public bool Bake { get; set; }
+
+    /// <summary>Probes along the world's longest axis.</summary>
+    public int BakeResolution { get; set; } = 12;
+
+    /// <summary>Paths traced out of each probe.</summary>
+    public int BakeRays { get; set; } = 128;
+
+    /// <summary>Bounces each of those paths may take.</summary>
+    public int BakeBounces { get; set; } = 2;
+
     /// <summary>Print what graphics adapter is available and exit, rendering nothing.</summary>
     public bool ShowGpuInfo { get; set; }
 
@@ -297,6 +312,25 @@ internal sealed class RenderOptions
                     options.PhysicalExposure = true;
                     break;
 
+                case "--bake":
+                    options.Bake = true;
+                    break;
+
+                case "--bake-resolution":
+                    options.BakeResolution = Int(args, ref i, options, arg, options.BakeResolution);
+                    options.Bake = true;
+                    break;
+
+                case "--bake-rays":
+                    options.BakeRays = Int(args, ref i, options, arg, options.BakeRays);
+                    options.Bake = true;
+                    break;
+
+                case "--bake-bounces":
+                    options.BakeBounces = Int(args, ref i, options, arg, options.BakeBounces);
+                    options.Bake = true;
+                    break;
+
                 case "--gpu-info":
                     options.ShowGpuInfo = true;
                     break;
@@ -390,6 +424,23 @@ internal sealed class RenderOptions
         if (options.Bounces is < 0 or > 64)
         {
             options.Errors.Add("--bounces must be between 0 and 64");
+        }
+
+        // The engine clamps these too. Saying so here is what keeps a typo from quietly baking
+        // something other than what was asked for — a bake is minutes, not a frame you re-render.
+        if (options.BakeResolution is < 2 or > 64)
+        {
+            options.Errors.Add("--bake-resolution must be between 2 and 64");
+        }
+
+        if (options.BakeRays is < 1 or > 65536)
+        {
+            options.Errors.Add("--bake-rays must be between 1 and 65536");
+        }
+
+        if (options.BakeBounces is < 0 or > 64)
+        {
+            options.Errors.Add("--bake-bounces must be between 0 and 64");
         }
 
         if (options.EnvironmentPath is { } environment && !File.Exists(environment))
@@ -549,6 +600,16 @@ internal sealed class RenderOptions
                                     lighting only); implies --trace
                   --physical        put direct and bounced light on the same scale, instead
                                     of matching the rasterizer's exposure for direct light
+
+            Baked indirect light
+                  --bake            measure the scene's bounce light into a grid of probes
+                                    before rasterizing, instead of standing in for it with
+                                    the environment's six directional averages
+                  --bake-resolution <n>
+                                    probes along the world's longest axis (default 12)
+                  --bake-rays <n>   paths traced out of each probe (default 128)
+                  --bake-bounces <n>
+                                    bounces each of those paths may take (default 2)
 
             Shading
               -p, --painter <name>  none, classic, flat, gouraud, phong, textured, material, pbr
