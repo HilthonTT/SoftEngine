@@ -460,6 +460,12 @@ that decides whether the frame uses it), shading radios, buffer view, cascade co
 display and post-processing checkboxes, and a stats overlay reporting triangle counts, pixel counts
 and per-frame timing.
 
+**View ▸ Rendered by** picks CPU, GPU or path tracer, and the choice is remembered in
+`%APPDATA%\SoftEngine\viewer.json` — what settled, not what was asked for, so a machine whose driver
+has gone missing does not probe for an OpenGL context on every launch. With nothing saved it still
+opens on the CPU: the viewer is a demonstration of a software rasterizer, and defaulting to the
+graphics card would quietly show you something else.
+
 ## Graphics debugger
 
 Modelled on [Rasterizr Studio](https://github.com/tgjones/rasterizr). Because the pipeline runs on

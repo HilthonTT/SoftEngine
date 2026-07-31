@@ -100,6 +100,13 @@ public sealed partial class MainScreen : Form
     /// <summary>Path of the model file on screen, when the world came from one rather than from a demo.</summary>
     private string? _modelPath;
 
+    /// <summary>
+    /// The switches that outlive the session. Read once, here, because a field initializer runs
+    /// before the constructor body — and the backend has to be restored while the menu is being
+    /// wired, not after somebody has already seen the wrong item ticked.
+    /// </summary>
+    private readonly ViewerSettings _settings = ViewerSettings.Load();
+
     public MainScreen()
     {
         InitializeComponent();
@@ -368,6 +375,8 @@ public sealed partial class MainScreen : Form
             }
         };
 
+        RestoreBackend();
+
         UpdateBackendMenu();
     }
 
@@ -383,6 +392,8 @@ public sealed partial class MainScreen : Form
             panel3D1.Backend = backend;
         }
 
+        RememberBackend();
+
         if (panel3D1.BackendFallback is { } fallback)
         {
             MessageBox.Show(
@@ -392,6 +403,51 @@ public sealed partial class MainScreen : Form
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
         }
+    }
+
+    /// <summary>
+    /// Puts the viewport back on the backend it was left on.
+    ///
+    /// <para>
+    /// A request that falls back says so through the status bar rather than through a dialog. A
+    /// modal box in front of a window that has not appeared yet is a poor way to find out that a
+    /// driver is missing, and unlike a menu click nobody has just asked a question that is waiting
+    /// for an answer.
+    /// </para>
+    /// </summary>
+    private void RestoreBackend()
+    {
+        // The panel is already on the CPU, and building the renderer it is already using would cost
+        // a rebuild to arrive back where it started.
+        if (_settings.Backend == RenderBackend.Cpu)
+        {
+            return;
+        }
+
+        using (new WaitCursorScope(this))
+        {
+            panel3D1.Backend = _settings.Backend;
+        }
+
+        RememberBackend();
+    }
+
+    /// <summary>
+    /// Records the backend that <em>settled</em>, which is not always the one that was asked for.
+    ///
+    /// Saving the request instead would leave a machine whose graphics driver has gone missing
+    /// probing for an OpenGL context on every launch, and the file claiming a backend the menu is
+    /// not showing as ticked. What is remembered is what is on screen.
+    /// </summary>
+    private void RememberBackend()
+    {
+        if (_settings.Backend == panel3D1.Backend)
+        {
+            return;
+        }
+
+        _settings.Backend = panel3D1.Backend;
+        _settings.Save();
     }
 
     private void UpdateBackendMenu()
@@ -414,6 +470,13 @@ public sealed partial class MainScreen : Form
                 "Light traced through the scene on the CPU, refining for as long as nothing moves.",
             _ => "Every triangle rasterized on the CPU by this engine's own scanline filler.",
         };
+
+        // A request that fell back explains itself here. It is the only account a restored choice
+        // gets — nobody clicked anything at startup, so there is no dialog to have answered.
+        if (panel3D1.BackendFallback is { } fallback)
+        {
+            lblBackendStatus.ToolTipText = $"{fallback}\n\n{lblBackendStatus.ToolTipText}";
+        }
     }
 
     /// <summary>An hourglass for as long as it is held. Building a GL context is not instant.</summary>
