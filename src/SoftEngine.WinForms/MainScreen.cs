@@ -56,6 +56,7 @@ public sealed partial class MainScreen : Form
         new("Cube", "cube"),
         new("Big cube", "bigcube"),
         new("Textured cube", "texturedcube"),
+        new("Primitives", "primitives"),
         new("Transparency", "transparency"),
         new("Shadows", "shadows"),
         new("Cascaded shadows", "cascades"),
@@ -2449,6 +2450,35 @@ public sealed partial class MainScreen : Form
                 });
                 world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.35f, -0.5f, -1f) });
                 break;
+
+            case "primitives":
+            {
+                world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.4f, -0.8f, 0.4f) });
+
+                // One texture across all of them, because the point of the scene is the UVs:
+                // a checker shows a stretched pole, a mirrored seam or a twisted cap at a
+                // glance, and a flat colour hides all three.
+                var checker = Texture.Checkerboard(256, 8, new ColorRGB(225, 225, 230), new ColorRGB(98, 88, 158));
+
+                world.Meshes.Add(new PlaneMesh(48f, 48f, 8, 8, uvScale: 12f)
+                {
+                    Position = new Vector3(0, -3f, 0),
+                    Texture = checker,
+                });
+
+                world.Meshes.Add(new UvSphere(1.6f) { Position = new Vector3(-7.5f, -1.4f, 0), Texture = checker });
+                world.Meshes.Add(new Cylinder(1.4f, 3.2f) { Position = new Vector3(-2.5f, -1.4f, 0), Texture = checker });
+                world.Meshes.Add(new Cone(1.5f, 3.2f) { Position = new Vector3(2.5f, -1.4f, 0), Texture = checker });
+                world.Meshes.Add(new Torus(1.5f, 0.5f)
+                {
+                    Position = new Vector3(7.5f, -1f, 0),
+                    Rotation = new Rotation3D(70, 0, 0).ToRad(),
+                    Texture = checker,
+                });
+
+                cameraPosition = new Vector3(0, 2f, -16f);
+                break;
+            }
 
             case "transparency":
             {

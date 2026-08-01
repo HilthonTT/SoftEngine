@@ -1,0 +1,341 @@
+using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Geometry;
+using SoftEngine.Core.Geometry.Primitives;
+using SoftEngine.Core.Pipeline;
+using SoftEngine.Core.Rasterization.Painters;
+using SoftEngine.Core.Scenes;
+using SoftEngine.Core.Scenes.Cameras;
+using SoftEngine.Core.Scenes.Projections;
+using System.Numerics;
+
+namespace SoftEngine.Core.Tests;
+
+/// <summary>
+/// The generated primitives. Three things can go wrong in a parametric surface and only three:
+/// the winding can come out inside-out (invisible under back-face culling, lit from behind
+/// without it), the sheet can fail to close (a hairline crack that a shadow map or a path tracer
+/// leaks light through), and the normals can disagree with the geometry they belong to. Each has
+/// a test below that covers every primitive at once, because each is a property of the surface
+/// rather than of any one shape's arithmetic.
+/// </summary>
+public class PrimitiveTests
+{
+    private const float Radius = 1.5f;
+
+    private static Mesh Make(string primitive) => primitive switch
+    {
+        "plane" => new PlaneMesh(2f, 3f, 4, 5),
+        "sphere" => new UvSphere(Radius, 24, 16),
+        "cylinder" => new Cylinder(1f, 2f, 24),
+        "cone" => new Cone(1f, 2f, 24),
+        "torus" => new Torus(1f, 0.25f, 32, 16),
+        _ => throw new ArgumentOutOfRangeException(nameof(primitive), primitive, "Unknown primitive."),
+    };
+
+    /// <summary>The analytic volume of each closed primitive, which its triangles should nearly enclose.</summary>
+    private static double ExactVolume(string primitive) => primitive switch
+    {
+        "sphere" => 4d / 3d * System.Math.PI * System.Math.Pow(Radius, 3),
+        "cylinder" => System.Math.PI * 1d * 1d * 2d,
+        "cone" => System.Math.PI * 1d * 1d * 2d / 3d,
+        "torus" => 2d * System.Math.PI * System.Math.PI * 1d * 0.25d * 0.25d,
+        _ => throw new ArgumentOutOfRangeException(nameof(primitive), primitive, "Not a closed primitive."),
+    };
+
+    [Theory]
+    [InlineData("plane")]
+    [InlineData("sphere")]
+    [InlineData("cylinder")]
+    [InlineData("cone")]
+    [InlineData("torus")]
+    public void Normals_AreUnitLength(string primitive)
+    {
+        var mesh = Make(primitive);
+
+        Assert.Equal(mesh.Vertices.Length, mesh.NormVertices.Length);
+        Assert.All(mesh.NormVertices, normal => Assert.Equal(1f, normal.Length(), 3));
+    }
+
+    [Theory]
+    [InlineData("plane")]
+    [InlineData("sphere")]
+    [InlineData("cylinder")]
+    [InlineData("cone")]
+    [InlineData("torus")]
+    public void TexCoords_CoverEveryVertexAndStayInTheUnitSquare(string primitive)
+    {
+        var mesh = Make(primitive);
+
+        Assert.NotNull(mesh.TexCoords);
+        Assert.Equal(mesh.Vertices.Length, mesh.TexCoords.Length);
+        Assert.All(mesh.TexCoords, uv =>
+        {
+            Assert.InRange(uv.X, 0f, 1f);
+            Assert.InRange(uv.Y, 0f, 1f);
+        });
+    }
+
+    [Theory]
+    [InlineData("plane")]
+    [InlineData("sphere")]
+    [InlineData("cylinder")]
+    [InlineData("cone")]
+    [InlineData("torus")]
+    public void Triangles_AreInRangeAndHaveArea(string primitive)
+    {
+        var mesh = Make(primitive);
+
+        Assert.NotEmpty(mesh.Triangles);
+        Assert.All(mesh.Triangles, triangle =>
+        {
+            foreach (var index in new[] { triangle.I0, triangle.I1, triangle.I2 })
+            {
+                Assert.InRange(index, 0, mesh.Vertices.Length - 1);
+            }
+
+            // A pole or an apex is one point shared by a whole fan of triangles, and the easy
+            // way to build one leaves a degenerate triangle behind on the seam of every quad.
+            Assert.True(FaceNormal(mesh, triangle).Length() > 1e-6f, "Degenerate triangle.");
+        });
+    }
+
+    /// <summary>
+    /// Every edge of a closed surface is shared by exactly two triangles, and traversed once in
+    /// each direction — which fails both when the sheet does not meet itself and when one patch
+    /// of it is wound against its neighbours. Edges are matched by position, not by vertex
+    /// index: the UV seam duplicates a whole column of vertices that stand in the same place.
+    /// </summary>
+    [Theory]
+    [InlineData("sphere")]
+    [InlineData("cylinder")]
+    [InlineData("cone")]
+    [InlineData("torus")]
+    public void ClosedPrimitives_HaveNoBoundaryOrReversedEdges(string primitive)
+    {
+        var mesh = Make(primitive);
+        var welded = WeldByPosition(mesh.Vertices);
+        var edges = new HashSet<(int From, int To)>();
+
+        foreach (var triangle in mesh.Triangles)
+        {
+            var (a, b, c) = (welded[triangle.I0], welded[triangle.I1], welded[triangle.I2]);
+
+            foreach (var edge in new[] { (a, b), (b, c), (c, a) })
+            {
+                Assert.True(edges.Add(edge), $"Edge {edge} is traversed twice the same way round.");
+            }
+        }
+
+        foreach (var (from, to) in edges)
+        {
+            Assert.Contains((to, from), edges);
+        }
+    }
+
+    /// <summary>
+    /// The divergence theorem read as a test: summing each triangle's contribution gives a
+    /// positive volume only when the surface is wound outward, and one close to the analytic
+    /// volume only when it is the shape it claims to be. A flat tessellation always cuts a
+    /// corner or two off a curve, hence the tolerance.
+    /// </summary>
+    [Theory]
+    [InlineData("sphere")]
+    [InlineData("cylinder")]
+    [InlineData("cone")]
+    [InlineData("torus")]
+    public void ClosedPrimitives_EncloseTheirAnalyticVolume(string primitive)
+    {
+        var mesh = Make(primitive);
+        var volume = 0d;
+
+        foreach (var triangle in mesh.Triangles)
+        {
+            var (a, b, c) = (mesh.Vertices[triangle.I0], mesh.Vertices[triangle.I1], mesh.Vertices[triangle.I2]);
+            volume += Vector3.Dot(a, Vector3.Cross(b, c)) / 6d;
+        }
+
+        var exact = ExactVolume(primitive);
+        Assert.InRange(volume, exact * 0.9d, exact * 1.02d);
+    }
+
+    [Theory]
+    [InlineData("plane")]
+    [InlineData("sphere")]
+    [InlineData("cylinder")]
+    [InlineData("cone")]
+    [InlineData("torus")]
+    public void VertexNormals_PointTheSameWayAsTheTrianglesTheyBelongTo(string primitive)
+    {
+        var mesh = Make(primitive);
+
+        Assert.All(mesh.Triangles, triangle =>
+        {
+            var face = Vector3.Normalize(FaceNormal(mesh, triangle));
+
+            foreach (var index in new[] { triangle.I0, triangle.I1, triangle.I2 })
+            {
+                Assert.True(
+                    Vector3.Dot(face, mesh.NormVertices[index]) > 0f,
+                    $"Vertex {index}'s normal faces away from its own triangle.");
+            }
+        });
+    }
+
+    [Fact]
+    public void PlaneMesh_IsAGridOfUpwardFacingQuads()
+    {
+        var plane = new PlaneMesh(2f, 3f, 4, 5);
+
+        Assert.Equal(4 * 5 * 2, plane.Triangles.Length);
+        Assert.All(plane.NormVertices, normal => Approx.Equal(Vector3.UnitY, normal));
+        Assert.All(plane.Triangles, triangle => Approx.Equal(Vector3.UnitY, Vector3.Normalize(FaceNormal(plane, triangle))));
+        Assert.All(plane.Vertices, vertex =>
+        {
+            Assert.Equal(0f, vertex.Y);
+            Assert.InRange(vertex.X, -1f, 1f);
+            Assert.InRange(vertex.Z, -1.5f, 1.5f);
+        });
+    }
+
+    [Fact]
+    public void PlaneMesh_SubdivisionsBelowOne_StillProduceAQuad() =>
+        Assert.Equal(2, new PlaneMesh(1f, 1f, 0, -3).Triangles.Length);
+
+    [Fact]
+    public void PlaneMesh_UvScale_TilesTheTextureWithoutMovingAVertex()
+    {
+        var plain = new PlaneMesh(4f, 4f, 2, 2);
+        var tiled = new PlaneMesh(4f, 4f, 2, 2, uvScale: 8f);
+
+        Assert.Equal(plain.Vertices, tiled.Vertices);
+        Assert.Equal(1f, plain.TexCoords!.Max(uv => uv.X));
+        Assert.Equal(8f, tiled.TexCoords!.Max(uv => uv.X));
+    }
+
+    /// <summary>
+    /// An uncapped cylinder is the one primitive here that is meant to be open, and its two rims
+    /// are exactly the edges belonging to a single triangle.
+    /// </summary>
+    [Fact]
+    public void Cylinder_Uncapped_IsOpenAtBothEnds()
+    {
+        var tube = new Cylinder(1f, 2f, 24, capped: false);
+        var welded = WeldByPosition(tube.Vertices);
+        var edges = new HashSet<(int, int)>();
+
+        foreach (var triangle in tube.Triangles)
+        {
+            var (a, b, c) = (welded[triangle.I0], welded[triangle.I1], welded[triangle.I2]);
+            edges.Add((a, b));
+            edges.Add((b, c));
+            edges.Add((c, a));
+        }
+
+        Assert.Equal(2 * 24, edges.Count(edge => !edges.Contains((edge.Item2, edge.Item1))));
+    }
+
+    [Fact]
+    public void UvSphere_CarriesTheTexCoordsAnIcoSphereCannot()
+    {
+        Assert.Null(new IcoSphere(2).TexCoords);
+        Assert.NotNull(new UvSphere().TexCoords);
+    }
+
+    [Theory]
+    [InlineData("sphere", Radius)]
+    [InlineData("cylinder", 1.4142f)]
+    [InlineData("cone", 1.4142f)]
+    [InlineData("torus", 1.25f)]
+    public void ClosedPrimitives_ReportTheirBoundingRadius(string primitive, float expected) =>
+        Assert.Equal(expected, Make(primitive).BoundingRadius, 3);
+
+    /// <summary>
+    /// The winding convention as the renderer actually applies it. Reversing every triangle of a
+    /// closed solid does not make it disappear under back-face culling — it makes the far side
+    /// of the solid the visible one, so the surface that survives is measurably further away.
+    /// </summary>
+    [Theory]
+    [InlineData("sphere")]
+    [InlineData("cylinder")]
+    [InlineData("cone")]
+    [InlineData("torus")]
+    public void ClosedPrimitives_PresentTheirNearSideToTheCamera(string primitive)
+    {
+        var outward = Render(Make(primitive));
+        var inverted = Render(Reversed(Make(primitive)));
+
+        Assert.True(outward.Pixels > 0, "Nothing was drawn at all.");
+        Assert.True(
+            outward.Depth < inverted.Depth,
+            $"The visible surface is the far one: {outward.Depth} is not nearer than {inverted.Depth}.");
+    }
+
+    private sealed class FixedCamera(Vector3 position) : ICamera
+    {
+        public Vector3 Position { get; set; } = position;
+
+        public Matrix4x4 ViewMatrix => Matrix4x4.CreateLookAt(Position, Vector3.Zero, Vector3.UnitY);
+    }
+
+    private static (int Pixels, int Depth) Render(Mesh mesh)
+    {
+        var renderer = new Renderer();
+        var surface = new FrameBuffer(128, 128) { Stats = renderer.Stats };
+        renderer.Settings.BackFaceCulling = true;
+
+        renderer.Render(
+            new Scene
+            {
+                Surface = surface,
+                Camera = new FixedCamera(new Vector3(0f, 0f, 6f)),
+                Projection = new PerspectiveProjection(MathF.PI / 4f, 1f, 100f),
+                World = new SimpleWorld { Meshes = [mesh], Lights = [] },
+            },
+            new ClassicPainter());
+
+        return (renderer.Stats.DrawnPixelCount, surface.GetDepth(64, 64));
+    }
+
+    /// <summary>The same geometry wound inside out, which is what these tests are guarding against.</summary>
+    private static Mesh Reversed(Mesh mesh) => new(
+        mesh.Vertices,
+        [.. mesh.Triangles.Select(t => new Triangle(t.I0, t.I2, t.I1))],
+        [.. mesh.NormVertices.Select(n => -n)]);
+
+    private static Vector3 FaceNormal(Mesh mesh, Triangle triangle) => Vector3.Cross(
+        mesh.Vertices[triangle.I1] - mesh.Vertices[triangle.I0],
+        mesh.Vertices[triangle.I2] - mesh.Vertices[triangle.I0]);
+
+    /// <summary>
+    /// Maps each vertex to an index shared by every vertex standing in the same place, so that a
+    /// seam — where one point of the surface is two vertices with different UVs — reads as the
+    /// single point it is.
+    /// </summary>
+    private static int[] WeldByPosition(Vector3[] vertices)
+    {
+        var welded = new int[vertices.Length];
+        var unique = new List<Vector3>();
+
+        for (var i = 0; i < vertices.Length; i++)
+        {
+            welded[i] = -1;
+
+            for (var u = 0; u < unique.Count; u++)
+            {
+                if ((unique[u] - vertices[i]).Length() < 1e-5f)
+                {
+                    welded[i] = u;
+                    break;
+                }
+            }
+
+            if (welded[i] < 0)
+            {
+                welded[i] = unique.Count;
+                unique.Add(vertices[i]);
+            }
+        }
+
+        return welded;
+    }
+}

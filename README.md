@@ -348,6 +348,32 @@ image to bytes and the front-end supplies a decoder.
 column-vector and transposed on the way in; the bind shape matrix is folded into the bind pose at
 load. `HackyImportCollada` still returns bare meshes, which is all a static model needs.
 
+### Primitives
+
+![A torus, cone, cylinder and sphere on a tiled plane](docs/screenshots/primitives.png)
+
+Geometry that comes from code rather than from a file, in
+[`Geometry/Primitives/`](src/SoftEngine.Core/Geometry/Primitives/): `Cube` and `TexturedCube`,
+`IcoSphere` and `UvSphere`, `PlaneMesh`, `Cylinder`, `Cone`, `Torus`. All are centred on the origin
+with Y as their axis, all carry UVs and per-vertex normals, and all are parameterised — segment
+counts, radii, whether a cylinder has end caps, how many times a floor's texture tiles.
+
+- **Two spheres, because a UV sphere is the textured one.** An icosahedron subdivides into even
+  triangles but has no seam to cut a UV map along, and `IcoSphere` carries no `TexCoords` at all.
+  Rings of latitude have a seam, uneven triangles and slivers at the poles. Untextured, prefer the
+  icosphere.
+- **One winding convention, written down once.** The renderer reads `Cross(v1 - v0, v2 - v0)` as the
+  outward normal, so a patch wound the other way is invisible under back-face culling and lit from
+  behind without it. Every primitive goes through `PrimitiveBuilder.AddQuad`, and the tests check
+  the result by the divergence theorem: a surface wound outward encloses a *positive* volume, and
+  one close to the analytic volume of the shape it claims to be.
+- **Seams and hard edges cost duplicate vertices.** A vertex carries one texture coordinate, so the
+  column where u wraps to 0 is doubled; an end cap meets its cylinder wall at a hard edge, so its
+  rim is its own vertices. One shared vertex cannot hold two normals, and averaging them rounds the
+  rim of every cylinder in the scene.
+- **`PlaneMesh`, not `Plane`.** `System.Numerics` has a `Plane`, and a file importing both
+  namespaces could then name neither.
+
 ## Picking and gizmos
 
 ![The picked sphere outlined in amber](docs/screenshots/picking.png)
@@ -691,7 +717,7 @@ tests/SoftEngine.Core.Tests/   # xUnit suite, and Golden/ image baselines
 
 ## Testing
 
-`dotnet test tests/SoftEngine.Core.Tests` — 673 tests. Most are ordinary unit tests, and there is a
+`dotnet test tests/SoftEngine.Core.Tests` — 714 tests. Most are ordinary unit tests, and there is a
 whole class of regression none of them can reach: a renderer can satisfy every property a test names
 and still produce a visibly wrong picture. Nothing in 600 passing tests notices that the specular
 term came out a tenth dimmer.
