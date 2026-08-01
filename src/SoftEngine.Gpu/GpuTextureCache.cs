@@ -138,12 +138,17 @@ public sealed class GpuTextureCache : IDisposable
             _gl.GenerateMipmap(TextureTarget.Texture2D);
         }
 
-        var magnify = filtering == TextureFiltering.Bilinear ? TextureMagFilter.Linear : TextureMagFilter.Nearest;
+        var magnify = filtering == TextureFiltering.Nearest ? TextureMagFilter.Nearest : TextureMagFilter.Linear;
 
+        // Bilinear takes one level and trilinear blends two, on this backend as on the other —
+        // GL says which in the minification filter's second half. Mapping bilinear to
+        // LinearMipmapLinear would give the CPU's per-triangle level a smoothness the CPU
+        // cannot produce, and hide the difference the mode was added to make.
         var minify = (filtering, mipMaps) switch
         {
-            (TextureFiltering.Bilinear, true) => TextureMinFilter.LinearMipmapLinear,
-            (TextureFiltering.Bilinear, false) => TextureMinFilter.Linear,
+            (TextureFiltering.Trilinear, true) => TextureMinFilter.LinearMipmapLinear,
+            (TextureFiltering.Bilinear or TextureFiltering.Trilinear, true) => TextureMinFilter.LinearMipmapNearest,
+            (TextureFiltering.Bilinear or TextureFiltering.Trilinear, false) => TextureMinFilter.Linear,
             (_, true) => TextureMinFilter.NearestMipmapNearest,
             _ => TextureMinFilter.Nearest,
         };

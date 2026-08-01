@@ -266,6 +266,13 @@ public sealed class RenderState
 
     public bool TextureFiltering { get; set; } = true;
 
+    /// <summary>
+    /// Whether a filtered fill blends the two mip levels a surface falls between. Off by
+    /// default, and meaningless with <see cref="TextureFiltering"/> off — there is no chain to
+    /// blend when nothing is mip-mapped.
+    /// </summary>
+    public bool TrilinearFiltering { get; set; }
+
     public bool Animate { get; set; } = true;
 }
 

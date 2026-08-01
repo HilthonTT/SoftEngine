@@ -6,15 +6,9 @@ namespace SoftEngine.Core.Picking;
 /// A half-line in space: where it starts and which way it goes. What a click on the viewport
 /// becomes once the projection has been undone.
 /// </summary>
-public readonly struct Ray
+public readonly struct Ray(Vector3 origin, Vector3 direction)
 {
-    public Ray(Vector3 origin, Vector3 direction)
-    {
-        Origin = origin;
-        Direction = direction;
-    }
-
-    public Vector3 Origin { get; }
+    public Vector3 Origin { get; } = origin;
 
     /// <summary>
     /// The direction travelled per unit of the parameter. Normalized for a ray in world
@@ -22,7 +16,7 @@ public readonly struct Ray
     /// <see cref="Transform"/>, which is what lets a hit found in a mesh's own space report
     /// the distance in the space the query was asked in.
     /// </summary>
-    public Vector3 Direction { get; }
+    public Vector3 Direction { get; } = direction;
 
     public Vector3 At(float distance) => Origin + Direction * distance;
 

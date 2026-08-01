@@ -245,6 +245,10 @@ public sealed partial class MainScreen : Form
         chkSky.Checked = true;
         chkTextureFiltering.Checked = true;
 
+        // Trilinear is a refinement of filtering rather than an alternative to it: with filtering
+        // off there is no mip chain to blend between, so the box has nothing to say.
+        chkTrilinear.Enabled = chkTextureFiltering.Checked;
+
         chkFog.CheckedChanged += (s, e) => ApplyFog();
         chkShadows.CheckedChanged += (s, e) => ApplyShadows();
         chkSky.CheckedChanged += (s, e) =>
@@ -286,6 +290,12 @@ public sealed partial class MainScreen : Form
             }
         };
         chkTextureFiltering.CheckedChanged += (s, e) =>
+        {
+            chkTrilinear.Enabled = chkTextureFiltering.Checked;
+            ApplyTextureFiltering(panel3D1.Painter);
+            panel3D1.Invalidate();
+        };
+        chkTrilinear.CheckedChanged += (s, e) =>
         {
             ApplyTextureFiltering(panel3D1.Painter);
             panel3D1.Invalidate();
@@ -1047,6 +1057,7 @@ public sealed partial class MainScreen : Form
         document.Rendering.Painter = PainterName(panel3D1.Painter);
         document.Rendering.SuperSampling = chkSuperSampling.Checked ? 2 : 1;
         document.Rendering.TextureFiltering = chkTextureFiltering.Checked;
+        document.Rendering.TrilinearFiltering = chkTrilinear.Checked;
         document.Rendering.Animate = chkAnimate.Checked;
 
         document.Environment ??= new EnvironmentState();
@@ -1199,6 +1210,8 @@ public sealed partial class MainScreen : Form
             chkGammaCorrect.Checked = rendering.GammaCorrect;
             chkHighDynamicRange.Checked = rendering.HighDynamicRange;
             chkTextureFiltering.Checked = rendering.TextureFiltering;
+            chkTrilinear.Checked = rendering.TrilinearFiltering;
+            chkTrilinear.Enabled = rendering.TextureFiltering;
             chkSuperSampling.Checked = rendering.SuperSampling > 1;
             chkAnimate.Checked = rendering.Animate;
             chkTemporalAntiAliasing.Checked = rendering.TemporalAntiAliasing;
@@ -1317,10 +1330,15 @@ public sealed partial class MainScreen : Form
         return painter;
     }
 
-    /// <summary>Applies the filtering checkbox to whichever painter samples textures, if any.</summary>
+    /// <summary>Applies the filtering checkboxes to whichever painter samples textures, if any.</summary>
     private void ApplyTextureFiltering(IPainter? painter)
     {
-        var filtering = chkTextureFiltering.Checked ? TextureFiltering.Bilinear : TextureFiltering.Nearest;
+        var filtering = (chkTextureFiltering.Checked, chkTrilinear.Checked) switch
+        {
+            (true, true) => TextureFiltering.Trilinear,
+            (true, false) => TextureFiltering.Bilinear,
+            _ => TextureFiltering.Nearest,
+        };
 
         switch (painter)
         {

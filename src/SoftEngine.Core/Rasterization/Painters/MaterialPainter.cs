@@ -160,8 +160,12 @@ public sealed class MaterialPainter(ILight? light = null, float ambient = 0.12f)
             return default;
         }
 
-        mipLevel = UseMipMaps ? MipSelector.Select(texture, p0, p1, p2, uv0, uv1, uv2) : 0;
+        var mip = UseMipMaps
+            ? MipSelector.SelectBlended(texture, Filtering, p0, p1, p2, uv0, uv1, uv2)
+            : default;
 
-        return new TextureSampler(texture, mipLevel, Filtering);
+        mipLevel = mip.Level;
+
+        return new TextureSampler(texture, mip, Filtering);
     }
 }

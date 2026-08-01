@@ -30,8 +30,8 @@ public sealed class HdrImage
 
     public HdrImage(int width, int height, float[] pixels)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width, nameof(width));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height, nameof(height));
         ArgumentNullException.ThrowIfNull(pixels, nameof(pixels));
 
         if (pixels.Length != width * height * 3)

@@ -5,9 +5,10 @@ using System.Numerics;
 namespace SoftEngine.Core.Rasterization;
 
 /// <summary>
-/// One mip level of a texture, bound to a filtering mode and ready to sample. Pixel
-/// shaders hold these by value: resolving the level and the filter up front turns what
-/// would be a per-pixel indirection through <see cref="Texture"/> into a direct array read.
+/// One mip level of a texture — or two, for a trilinear fill — bound to a filtering mode and
+/// ready to sample. Pixel shaders hold these by value: resolving the level and the filter up
+/// front turns what would be a per-pixel indirection through <see cref="Texture"/> into a
+/// direct array read.
 ///
 /// UV addressing wraps, and V grows upward — V = 0 is the bottom row of the image.
 /// </summary>
@@ -18,19 +19,52 @@ public readonly struct TextureSampler
     private readonly int _height;
     private readonly bool _bilinear;
 
+    // The coarser of the two levels a trilinear fill blends, and how much of it to take. Null
+    // for every other mode, and for a trilinear triangle that landed on a level exactly — so
+    // the one-level paths below are reached by a null test rather than by a blend of zero,
+    // and their arithmetic is untouched to the bit.
+    private readonly int[]? _coarsePixels;
+    private readonly int _coarseWidth;
+    private readonly int _coarseHeight;
+    private readonly float _blend;
+
     public TextureSampler(Texture? texture, int mipLevel, TextureFiltering filtering)
+        : this(texture, new MipSelection(mipLevel, 0f), filtering)
+    {
+    }
+
+    public TextureSampler(Texture? texture, in MipSelection mip, TextureFiltering filtering)
     {
         if (texture is null)
         {
             return;
         }
 
-        var mip = texture.GetMip(mipLevel);
+        var level = texture.GetMip(mip.Level);
 
-        _pixels = mip.Pixels;
-        _width = mip.Width;
-        _height = mip.Height;
-        _bilinear = filtering == TextureFiltering.Bilinear;
+        _pixels = level.Pixels;
+        _width = level.Width;
+        _height = level.Height;
+        _bilinear = filtering != TextureFiltering.Nearest;
+
+        if (filtering != TextureFiltering.Trilinear || mip.Blend <= 0f)
+        {
+            return;
+        }
+
+        var coarse = texture.GetMip(mip.Level + 1);
+
+        // GetMip clamps past the end of the chain, so the last level asked to blend upward
+        // would otherwise blend with itself — a second tap for no change in the result.
+        if (ReferenceEquals(coarse.Pixels, level.Pixels))
+        {
+            return;
+        }
+
+        _coarsePixels = coarse.Pixels;
+        _coarseWidth = coarse.Width;
+        _coarseHeight = coarse.Height;
+        _blend = mip.Blend;
     }
 
     /// <summary>False when no texture was bound; sampling then returns black.</summary>
@@ -69,39 +103,14 @@ public readonly struct TextureSampler
             return ((_pixels[nx + ny * _width] >>> 24) & 0xFF) * (1f / 255f);
         }
 
-        // The same half-texel shift and wrap the bilinear colour path uses, so the mask and
-        // the colour it masks are read from the same four texels with the same weights.
-        var fx = u * _width - 0.5f;
-        var fy = (1f - v) * _height - 0.5f;
+        var alpha = AlphaBilinear(_pixels, _width, _height, u, v);
 
-        var x0 = (int)MathF.Floor(fx);
-        var y0 = (int)MathF.Floor(fy);
-        var tx = fx - x0;
-        var ty = fy - y0;
-
-        if (x0 < 0)
+        // The mask crosses levels with the colour it masks, or a cutout edge would be cut from
+        // one level and shaded from two.
+        if (_coarsePixels is not null)
         {
-            x0 += _width;
+            alpha = float.Lerp(alpha, AlphaBilinear(_coarsePixels, _coarseWidth, _coarseHeight, u, v), _blend);
         }
-        if (y0 < 0)
-        {
-            y0 += _height;
-        }
-        var x1 = x0 + 1 == _width ? 0 : x0 + 1;
-        var y1 = y0 + 1 == _height ? 0 : y0 + 1;
-
-        var pixels = _pixels;
-
-        var a00 = (pixels[x0 + y0 * _width] >>> 24) & 0xFF;
-        var a10 = (pixels[x1 + y0 * _width] >>> 24) & 0xFF;
-        var a01 = (pixels[x0 + y1 * _width] >>> 24) & 0xFF;
-        var a11 = (pixels[x1 + y1 * _width] >>> 24) & 0xFF;
-
-        var alpha =
-            a00 * ((1f - tx) * (1f - ty)) +
-            a10 * (tx * (1f - ty)) +
-            a01 * ((1f - tx) * ty) +
-            a11 * (tx * ty);
 
         return alpha * (1f / 255f);
     }
@@ -113,7 +122,29 @@ public readonly struct TextureSampler
             return default;
         }
 
-        return _bilinear ? SampleBilinear(u, v) : SampleNearest(u, v);
+        if (!_bilinear)
+        {
+            return SampleNearest(u, v);
+        }
+
+        u -= MathF.Floor(u);
+        v -= MathF.Floor(v);
+
+        ColorBilinear(_pixels, _width, _height, u, v, out var r, out var g, out var b);
+
+        if (_coarsePixels is not null)
+        {
+            ColorBilinear(_coarsePixels, _coarseWidth, _coarseHeight, u, v, out var cr, out var cg, out var cb);
+
+            // Blended before rounding: two colours each rounded to a byte and then mixed
+            // would quantize twice, and the band the blend exists to remove would come back
+            // as a fainter one.
+            r = float.Lerp(r, cr, _blend);
+            g = float.Lerp(g, cg, _blend);
+            b = float.Lerp(b, cb, _blend);
+        }
+
+        return new ColorRGB((byte)(r + 0.5f), (byte)(g + 0.5f), (byte)(b + 0.5f));
     }
 
     private ColorRGB SampleNearest(float u, float v)
@@ -127,49 +158,84 @@ public readonly struct TextureSampler
         return ColorRGB.FromPacked(_pixels![x + y * _width]);
     }
 
-    private ColorRGB SampleBilinear(float u, float v)
+    /// <summary>
+    /// The four-texel weighted average of one level, in unrounded channel values. U and V
+    /// have already been reduced to [0, 1) by the caller, which is what lets both levels of a
+    /// trilinear tap share one reduction.
+    /// </summary>
+    private static void ColorBilinear(
+        int[] pixels, int width, int height, float u, float v,
+        out float r, out float g, out float b)
     {
-        u -= MathF.Floor(u);
-        v -= MathF.Floor(v);
-
-        // Texel centers sit at (i + 0.5), so shift by half a texel before splitting
-        // into base index and blend fraction. V flips the same way nearest does.
-        var fx = u * _width - 0.5f;
-        var fy = (1f - v) * _height - 0.5f;
-
-        var x0 = (int)MathF.Floor(fx);
-        var y0 = (int)MathF.Floor(fy);
-        var tx = fx - x0;
-        var ty = fy - y0;
-
-        // Wrap addressing: u, v were reduced to [0, 1), so only the -1/edge cases remain.
-        if (x0 < 0)
-        {
-            x0 += _width;
-        }
-        if (y0 < 0)
-        {
-            y0 += _height;
-        }
-        var x1 = x0 + 1 == _width ? 0 : x0 + 1;
-        var y1 = y0 + 1 == _height ? 0 : y0 + 1;
-
-        var pixels = _pixels!;
-
-        var c00 = pixels[x0 + y0 * _width];
-        var c10 = pixels[x1 + y0 * _width];
-        var c01 = pixels[x0 + y1 * _width];
-        var c11 = pixels[x1 + y1 * _width];
+        Corners(width, height, u, v, out var c00, out var c10, out var c01, out var c11, out var tx, out var ty);
 
         var w00 = (1f - tx) * (1f - ty);
         var w10 = tx * (1f - ty);
         var w01 = (1f - tx) * ty;
         var w11 = tx * ty;
 
-        var r = ((c00 >> 16) & 0xFF) * w00 + ((c10 >> 16) & 0xFF) * w10 + ((c01 >> 16) & 0xFF) * w01 + ((c11 >> 16) & 0xFF) * w11;
-        var g = ((c00 >> 8) & 0xFF) * w00 + ((c10 >> 8) & 0xFF) * w10 + ((c01 >> 8) & 0xFF) * w01 + ((c11 >> 8) & 0xFF) * w11;
-        var b = (c00 & 0xFF) * w00 + (c10 & 0xFF) * w10 + (c01 & 0xFF) * w01 + (c11 & 0xFF) * w11;
+        var p00 = pixels[c00];
+        var p10 = pixels[c10];
+        var p01 = pixels[c01];
+        var p11 = pixels[c11];
 
-        return new ColorRGB((byte)(r + 0.5f), (byte)(g + 0.5f), (byte)(b + 0.5f));
+        r = ((p00 >> 16) & 0xFF) * w00 + ((p10 >> 16) & 0xFF) * w10 + ((p01 >> 16) & 0xFF) * w01 + ((p11 >> 16) & 0xFF) * w11;
+        g = ((p00 >> 8) & 0xFF) * w00 + ((p10 >> 8) & 0xFF) * w10 + ((p01 >> 8) & 0xFF) * w01 + ((p11 >> 8) & 0xFF) * w11;
+        b = (p00 & 0xFF) * w00 + (p10 & 0xFF) * w10 + (p01 & 0xFF) * w01 + (p11 & 0xFF) * w11;
+    }
+
+    /// <summary>The same average of the alpha channel, in [0, 255].</summary>
+    private static float AlphaBilinear(int[] pixels, int width, int height, float u, float v)
+    {
+        Corners(width, height, u, v, out var c00, out var c10, out var c01, out var c11, out var tx, out var ty);
+
+        var a00 = (pixels[c00] >>> 24) & 0xFF;
+        var a10 = (pixels[c10] >>> 24) & 0xFF;
+        var a01 = (pixels[c01] >>> 24) & 0xFF;
+        var a11 = (pixels[c11] >>> 24) & 0xFF;
+
+        return
+            a00 * ((1f - tx) * (1f - ty)) +
+            a10 * (tx * (1f - ty)) +
+            a01 * ((1f - tx) * ty) +
+            a11 * (tx * ty);
+    }
+
+    /// <summary>
+    /// The four texel indices around (u, v) and the fractions between them, shared by the
+    /// colour and alpha taps so a mask is read from the same texels with the same weights.
+    /// </summary>
+    private static void Corners(
+        int width, int height, float u, float v,
+        out int c00, out int c10, out int c01, out int c11,
+        out float tx, out float ty)
+    {
+        // Texel centers sit at (i + 0.5), so shift by half a texel before splitting
+        // into base index and blend fraction. V flips the same way nearest does.
+        var fx = u * width - 0.5f;
+        var fy = (1f - v) * height - 0.5f;
+
+        var x0 = (int)MathF.Floor(fx);
+        var y0 = (int)MathF.Floor(fy);
+
+        tx = fx - x0;
+        ty = fy - y0;
+
+        // Wrap addressing: u, v were reduced to [0, 1), so only the -1/edge cases remain.
+        if (x0 < 0)
+        {
+            x0 += width;
+        }
+        if (y0 < 0)
+        {
+            y0 += height;
+        }
+        var x1 = x0 + 1 == width ? 0 : x0 + 1;
+        var y1 = y0 + 1 == height ? 0 : y0 + 1;
+
+        c00 = x0 + y0 * width;
+        c10 = x1 + y0 * width;
+        c01 = x0 + y1 * width;
+        c11 = x1 + y1 * width;
     }
 }

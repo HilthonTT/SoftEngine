@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Numerics;
+using SoftEngine.Core.Geometry;
 using SoftEngine.Gpu;
 
 namespace SoftEngine.Cli;
@@ -21,6 +22,12 @@ internal sealed class RenderOptions
     public int Height { get; set; } = 1080;
 
     public string Painter { get; set; } = "gouraud";
+
+    /// <summary>
+    /// How the painters that sample textures filter them: <c>nearest</c>, <c>bilinear</c> or
+    /// <c>trilinear</c>. Anything else is reported rather than guessed at.
+    /// </summary>
+    public string Filtering { get; set; } = "bilinear";
 
     public int SuperSampling { get; set; } = 1;
 
@@ -163,6 +170,27 @@ internal sealed class RenderOptions
 
                 case "--painter" or "-p":
                     options.Painter = Next(args, ref i, options, arg) ?? options.Painter;
+                    break;
+
+                case "--filter" or "--filtering":
+                    {
+                        var name = Next(args, ref i, options, arg);
+
+                        if (name is null)
+                        {
+                            break;
+                        }
+
+                        if (TryParseFiltering(name, out _))
+                        {
+                            options.Filtering = name;
+                        }
+                        else
+                        {
+                            options.Errors.Add($"unknown texture filter '{name}' — expected nearest, bilinear or trilinear");
+                        }
+                    }
+
                     break;
 
                 case "--ss" or "--supersample":
@@ -464,6 +492,32 @@ internal sealed class RenderOptions
         }
     }
 
+    /// <summary>The filtering mode <see cref="Filtering"/> names, bilinear if it names nothing.</summary>
+    public TextureFiltering ResolveFiltering() =>
+        TryParseFiltering(Filtering, out var filtering) ? filtering : TextureFiltering.Bilinear;
+
+    private static bool TryParseFiltering(string name, out TextureFiltering filtering)
+    {
+        switch (name.ToLowerInvariant())
+        {
+            case "nearest" or "point" or "none":
+                filtering = TextureFiltering.Nearest;
+                return true;
+
+            case "bilinear" or "linear":
+                filtering = TextureFiltering.Bilinear;
+                return true;
+
+            case "trilinear":
+                filtering = TextureFiltering.Trilinear;
+                return true;
+
+            default:
+                filtering = TextureFiltering.Bilinear;
+                return false;
+        }
+    }
+
     /// <summary>The output path, derived from the input when none was given.</summary>
     public string ResolveOutput()
     {
@@ -614,6 +668,9 @@ internal sealed class RenderOptions
             Shading
               -p, --painter <name>  none, classic, flat, gouraud, phong, textured, material, pbr
                                     (default gouraud)
+                  --filter <mode>   texture filtering: nearest, bilinear (default), or
+                                    trilinear, which blends the two mip levels a surface
+                                    falls between instead of stepping between them
                   --post <list>     comma-separated: ssao, bloom, tonemap, fxaa, vignette
                   --shadows         render a shadow map from the scene's first light
                   --cascades <n>    shadows fitted to n slices of the view distance, 1-4

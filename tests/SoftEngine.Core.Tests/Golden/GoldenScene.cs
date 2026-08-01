@@ -233,6 +233,31 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
                 b.Painter = new TexturedPainter();
             }),
 
+        new("textured-trilinear",
+            "a tessellated floor whose triangles each choose their own mip level, blended",
+            b =>
+            {
+                // The floor above is two triangles, so it holds two mip levels and shows the
+                // boundary between them once. The artifact trilinear filtering exists for is
+                // what happens when the ground is tessellated: this engine chooses a level per
+                // triangle, so neighbouring triangles at slightly different depths pick
+                // different levels and the seam between them is visible as a change in
+                // sharpness. A grid of them puts every one of those seams in one picture.
+                var floor = new PlaneMesh(40f, 40f, 12, 12, uvScale: 16f)
+                {
+                    Position = new Vector3(0f, -1f, 0f),
+                    Texture = Texture.Checkerboard(128, 8, new ColorRGB(232, 228, 216), new ColorRGB(52, 60, 78)),
+                };
+
+                floor.Texture.EnsureMipMaps();
+
+                b.Meshes.Add(floor);
+                b.Lights.Add(Sun(1.1f));
+
+                b.Scene.Camera = Look(new Vector3(0f, 0.6f, 6f), new Vector3(0f, -0.9f, -14f));
+                b.Painter = new TexturedPainter { Filtering = TextureFiltering.Trilinear };
+            }),
+
         new("material-normal-mapping",
             "two cubes, one with a normal map and one without",
             b =>

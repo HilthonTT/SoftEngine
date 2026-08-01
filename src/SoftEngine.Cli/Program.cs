@@ -283,7 +283,7 @@ static int Render(RenderOptions options)
 
     renderer.PostProcess = post;
 
-    var painter = BuildPainter(options.Painter);
+    var painter = BuildPainter(options.Painter, options.ResolveFiltering());
 
     // Last, so it wins over everything derived above — which is the point of naming a document:
     // it carries the settings somebody actually chose.
@@ -293,7 +293,7 @@ static int Render(RenderOptions options)
 
         if (document.Rendering is { Painter: { Length: > 0 } named })
         {
-            painter = BuildPainter(named);
+            painter = BuildPainter(named, options.ResolveFiltering());
         }
     }
 
@@ -461,10 +461,13 @@ static string Numbered(string output, int frame)
     return string.IsNullOrEmpty(directory) ? numbered : Path.Combine(directory, numbered);
 }
 
-static IPainter? BuildPainter(string name)
+static IPainter? BuildPainter(string name, TextureFiltering filtering)
 {
     // Filtering is on for every painter that samples a texture: a still image has no shimmer to
-    // trade away, so there is nothing to gain by turning it off and detail to lose.
+    // trade away, so there is nothing to gain by turning it off and detail to lose. Mip maps go
+    // with it — a nearest fill was asked for the unfiltered image, chain and all.
+    var mipMaps = filtering != TextureFiltering.Nearest;
+
     switch (name.ToLowerInvariant())
     {
         case "none":
@@ -480,13 +483,13 @@ static IPainter? BuildPainter(string name)
             return new PhongPainter();
 
         case "textured":
-            return new TexturedPainter { Filtering = TextureFiltering.Bilinear, UseMipMaps = true };
+            return new TexturedPainter { Filtering = filtering, UseMipMaps = mipMaps };
 
         case "material":
-            return new MaterialPainter { Filtering = TextureFiltering.Bilinear, UseMipMaps = true };
+            return new MaterialPainter { Filtering = filtering, UseMipMaps = mipMaps };
 
         case "pbr" or "physicallybased":
-            return new PbrPainter { Filtering = TextureFiltering.Bilinear, UseMipMaps = true };
+            return new PbrPainter { Filtering = filtering, UseMipMaps = mipMaps };
 
         default:
             return new GouraudPainter();

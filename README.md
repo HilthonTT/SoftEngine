@@ -37,7 +37,7 @@ a reference.
 ```bash
 dotnet build SoftEngine.slnx
 dotnet run --project src/SoftEngine.WinForms              # interactive viewer
-dotnet test tests/SoftEngine.Core.Tests                   # 673 tests
+dotnet test tests/SoftEngine.Core.Tests                   # 724 tests
 dotnet run -c Release --project bench/SoftEngine.Benchmarks   # Release, or you measure the debugger
 ```
 
@@ -80,7 +80,7 @@ image would have to be re-recorded to absorb the drift.
 | Flat | `FlatPainter` | One Lambert term per triangle from its centroid normal. |
 | Gouraud | `GouraudPainter` | Per-vertex Lambert, interpolated. |
 | Phong | `PhongPainter` | Per-pixel Blinn-Phong from interpolated position and normal. |
-| Textured | `TexturedPainter` | Perspective-correct texturing, bilinear, mip-mapped. |
+| Textured | `TexturedPainter` | Perspective-correct texturing, bilinear or trilinear, mip-mapped. |
 | Material | `MaterialPainter` | Albedo + normal + specular maps over Blinn-Phong. |
 | Physically based | `PbrPainter` | Cook-Torrance metallic-roughness, lit by lights and environment. |
 
@@ -149,6 +149,34 @@ default) is no cutout.
 
 glTF's `alphaMode: "MASK"` maps onto it directly, `alphaCutoff` and all. The GPU backend discards on
 the same threshold. The path tracer does not — see the roadmap.
+
+### Texture filtering
+
+[`MipSelector`](src/SoftEngine.Core/Rasterization/MipSelector.cs) chooses one level of the chain per
+*triangle*, from the ratio of its texel footprint to its screen area — cruder than per-pixel
+derivatives, and it keeps the per-pixel path branch-free. What it costs is a seam: two neighbouring
+triangles at slightly different depths land either side of a rounding boundary, are drawn a whole
+level apart, and their shared edge becomes a visible change in sharpness that slides across a floor
+as the camera moves.
+
+`TextureFiltering.Trilinear` keeps the fraction the rounding threw away and blends the two levels the
+surface falls between, so those two triangles are drawn 0.02 of a level apart rather than a whole
+one. Three details:
+
+- **A level plus a zero blend is what every other mode already asked for.** Bilinear still *rounds*
+  to the nearest level and trilinear *floors* and blends up — the same choice, expressed once for a
+  path that keeps the fraction and once for one that has to throw it away. The blended path is
+  reached by a null test on the second level, not by a blend of zero, so nothing else is off by a
+  bit. Every golden image was unchanged when this landed.
+- **The two levels are mixed before the result is rounded**, or the band the blend exists to remove
+  comes back as a fainter one, quantized twice.
+- **The mask crosses levels with the colour it masks**, so a cutout edge is not cut from one level
+  and shaded from two.
+
+It costs a second bilinear tap wherever a surface lies between levels, so it is opt-in: `--filter
+trilinear`, or the viewer's **Trilinear** checkbox under texture filtering. The GPU backend says the
+same thing in a sampler parameter — `LINEAR_MIPMAP_NEAREST` for bilinear, `LINEAR_MIPMAP_LINEAR` for
+trilinear — rather than blending levels the software path would not.
 
 ## Shadows
 
@@ -440,7 +468,7 @@ dotnet run -c Release --project src/SoftEngine.Cli -- model.gltf -o frame.png -w
 | | |
 | --- | --- |
 | `-w`, `-h`, `--ss` | resolution and supersampling |
-| `-p`, `--post`, `--view` | painter, post effects, buffer view |
+| `-p`, `--post`, `--view`, `--filter` | painter, post effects, buffer view, texture filtering |
 | `--yaw`, `--pitch`, `--zoom`, `--camera`, `-t` | where to stand, and how far into the animation |
 | `--env`, `--environment-size`, `--hdr-sky` | light it with a panorama or the linear-light sky |
 | `--shadows`, `--cascades` | shadow pass |
@@ -717,12 +745,12 @@ tests/SoftEngine.Core.Tests/   # xUnit suite, and Golden/ image baselines
 
 ## Testing
 
-`dotnet test tests/SoftEngine.Core.Tests` — 714 tests. Most are ordinary unit tests, and there is a
+`dotnet test tests/SoftEngine.Core.Tests` — 724 tests. Most are ordinary unit tests, and there is a
 whole class of regression none of them can reach: a renderer can satisfy every property a test names
 and still produce a visibly wrong picture. Nothing in 600 passing tests notices that the specular
 term came out a tenth dimmer.
 
-**Golden images.** Fifteen generated scenes are rendered headless at 320×180 and compared against
+**Golden images.** Sixteen generated scenes are rendered headless at 320×180 and compared against
 PNGs committed beside them, so a change shows up in the diff as a picture. Scenes are *generated*
 rather than loaded — a baseline depending on a model in the assets folder breaks when the model is
 re-exported, which teaches everyone to re-record on failure without looking. `SOFTENGINE_UPDATE_GOLDEN=1`

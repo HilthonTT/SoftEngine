@@ -16,7 +16,10 @@ namespace SoftEngine.Benchmarks;
 /// One measurable workload: a scene, a painter, and whatever renderer settings the workload is
 /// about. Built fresh per run so a measurement never inherits another one's warmed buffers.
 /// </summary>
-internal sealed class BenchmarkScene(string name, string description, Func<int, int, (Renderer Renderer, Scene Scene, IPainter Painter)> build)
+internal sealed class BenchmarkScene(
+    string name, 
+    string description, 
+    Func<int, int, (Renderer Renderer, Scene Scene, IPainter Painter)> build)
 {
     public string Name { get; } = name;
 

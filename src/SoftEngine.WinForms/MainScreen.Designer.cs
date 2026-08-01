@@ -56,6 +56,7 @@ public sealed partial class MainScreen
         chkGammaCorrect = new CheckBox();
         chkHighDynamicRange = new CheckBox();
         chkTextureFiltering = new CheckBox();
+        chkTrilinear = new CheckBox();
         chkSuperSampling = new CheckBox();
         chkTemporalAntiAliasing = new CheckBox();
         chkMotionBlur = new CheckBox();
@@ -305,6 +306,7 @@ public sealed partial class MainScreen
         flpDisplay.Controls.Add(chkGammaCorrect);
         flpDisplay.Controls.Add(chkHighDynamicRange);
         flpDisplay.Controls.Add(chkTextureFiltering);
+        flpDisplay.Controls.Add(chkTrilinear);
         flpDisplay.Controls.Add(chkSuperSampling);
         flpDisplay.Controls.Add(chkTemporalAntiAliasing);
         flpDisplay.Controls.Add(chkMotionBlur);
@@ -521,7 +523,19 @@ public sealed partial class MainScreen
         chkTextureFiltering.Text = "Texture filtering";
         toolTip1.SetToolTip(chkTextureFiltering, "Bilinear filtering with mip-mapping (Textured shading)");
         chkTextureFiltering.UseVisualStyleBackColor = true;
-        // 
+        //
+        // chkTrilinear
+        //
+        chkTrilinear.AutoSize = true;
+        chkTrilinear.Location = new Point(2, 392);
+        chkTrilinear.Margin = new Padding(14, 2, 0, 2);
+        chkTrilinear.Name = "chkTrilinear";
+        chkTrilinear.Size = new Size(117, 21);
+        chkTrilinear.TabIndex = 15;
+        chkTrilinear.Text = "Trilinear";
+        toolTip1.SetToolTip(chkTrilinear, "Blend the two mip levels a surface falls between, instead of stepping from one to the next");
+        chkTrilinear.UseVisualStyleBackColor = true;
+        //
         // chkSuperSampling
         // 
         chkSuperSampling.AutoSize = true;
@@ -529,7 +543,7 @@ public sealed partial class MainScreen
         chkSuperSampling.Margin = new Padding(2, 2, 0, 2);
         chkSuperSampling.Name = "chkSuperSampling";
         chkSuperSampling.Size = new Size(123, 21);
-        chkSuperSampling.TabIndex = 15;
+        chkSuperSampling.TabIndex = 16;
         chkSuperSampling.Text = "Supersample 2×";
         toolTip1.SetToolTip(chkSuperSampling, "Render at twice the resolution and average down — anti-aliases everything, fills four times the pixels");
         chkSuperSampling.UseVisualStyleBackColor = true;
@@ -541,7 +555,7 @@ public sealed partial class MainScreen
         chkTemporalAntiAliasing.Margin = new Padding(2, 2, 0, 2);
         chkTemporalAntiAliasing.Name = "chkTemporalAntiAliasing";
         chkTemporalAntiAliasing.Size = new Size(102, 21);
-        chkTemporalAntiAliasing.TabIndex = 16;
+        chkTemporalAntiAliasing.TabIndex = 17;
         chkTemporalAntiAliasing.Text = "Temporal AA";
         toolTip1.SetToolTip(chkTemporalAntiAliasing, "Jitter the frame by a fraction of a pixel and average it with the previous ones — supersampling spread over time. Costs a velocity pass.");
         chkTemporalAntiAliasing.UseVisualStyleBackColor = true;
@@ -553,7 +567,7 @@ public sealed partial class MainScreen
         chkMotionBlur.Margin = new Padding(2, 2, 0, 2);
         chkMotionBlur.Name = "chkMotionBlur";
         chkMotionBlur.Size = new Size(96, 21);
-        chkMotionBlur.TabIndex = 17;
+        chkMotionBlur.TabIndex = 18;
         chkMotionBlur.Text = "Motion blur";
         toolTip1.SetToolTip(chkMotionBlur, "Smear each pixel along the direction its surface is travelling. Costs a velocity pass.");
         chkMotionBlur.UseVisualStyleBackColor = true;
@@ -1433,6 +1447,7 @@ public sealed partial class MainScreen
     private CheckBox chkBakedLight;
     private Button btnBake;
     private CheckBox chkTextureFiltering;
+    private CheckBox chkTrilinear;
     private CheckBox chkSuperSampling;
     private CheckBox chkTemporalAntiAliasing;
     private CheckBox chkMotionBlur;

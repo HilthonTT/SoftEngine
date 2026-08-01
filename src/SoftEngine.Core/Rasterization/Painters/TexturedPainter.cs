@@ -71,14 +71,14 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
         var uv1 = vertexBuffer.GetTexCoord(t.I1);
         var uv2 = vertexBuffer.GetTexCoord(t.I2);
 
-        var mipLevel = UseMipMaps
-            ? MipSelector.Select(texture, p0, p1, p2, uv0, uv1, uv2)
-            : 0;
+        var mip = UseMipMaps
+            ? MipSelector.SelectBlended(texture, Filtering, p0, p1, p2, uv0, uv1, uv2)
+            : default;
 
-        var albedo = new TextureSampler(texture, mipLevel, Filtering);
+        var albedo = new TextureSampler(texture, mip, Filtering);
         var shader = new TexturedShader(albedo, GammaCorrect);
 
-        var state = StateFor(mesh).WithMipLevel(mipLevel);
+        var state = StateFor(mesh).WithMipLevel(mip.Level);
 
         var v0 = new TextureVarying(uv0, ia);
         var v1 = new TextureVarying(uv1, ib);
