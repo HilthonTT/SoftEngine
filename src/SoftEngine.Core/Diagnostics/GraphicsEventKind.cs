@@ -21,6 +21,14 @@ public enum GraphicsEventKind
     MeshCullTriangles,
     PainterDrawTriangles,
     SkyRender,
+
+    /// <summary>
+    /// The order-independent transparency resolve: the pass that blends every pixel's stored
+    /// fragments, farthest first. Its arguments are the fragments stored, the pixels they
+    /// covered, and how many of them a full pixel had to composite together.
+    /// </summary>
+    TransparencyResolve,
+
     WireFrameOverlayDraw,
     GizmoDrawGrid,
     GizmoDrawAxes,

@@ -304,6 +304,13 @@ public sealed partial class MainScreen : Form
 
         chkTemporalAntiAliasing.Checked = panel3D1.RendererSettings.TemporalAntiAliasing;
         chkMotionBlur.Checked = panel3D1.RendererSettings.MotionBlur;
+        chkOrderIndependentTransparency.Checked = panel3D1.RendererSettings.OrderIndependentTransparency;
+
+        chkOrderIndependentTransparency.CheckedChanged += (s, e) =>
+        {
+            panel3D1.RendererSettings.OrderIndependentTransparency = chkOrderIndependentTransparency.Checked;
+            panel3D1.Invalidate();
+        };
 
         chkTemporalAntiAliasing.CheckedChanged += (s, e) =>
         {
@@ -1216,6 +1223,7 @@ public sealed partial class MainScreen : Form
             chkAnimate.Checked = rendering.Animate;
             chkTemporalAntiAliasing.Checked = rendering.TemporalAntiAliasing;
             chkMotionBlur.Checked = rendering.MotionBlur;
+            chkOrderIndependentTransparency.Checked = rendering.OrderIndependentTransparency;
 
             SelectItem(cboBufferView, choice =>
                 choice is BufferViewChoice view &&

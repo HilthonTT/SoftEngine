@@ -39,6 +39,22 @@ public sealed class RenderStats
     /// <summary>Meshes the occlusion pass rasterized to do it.</summary>
     public int OccluderMeshCount { get; internal set; }
 
+    /// <summary>
+    /// Transparent fragments stored for the order-independent resolve, and the pixels they
+    /// covered. Both zero when the frame sorted its transparent triangles instead.
+    /// </summary>
+    public int TransparentFragmentCount { get; internal set; }
+
+    /// <summary>Pixels holding at least one stored transparent fragment.</summary>
+    public int TransparentPixelCount { get; internal set; }
+
+    /// <summary>
+    /// How many times a pixel held its maximum number of fragments and had to composite its two
+    /// farthest into one. Zero means the frame's transparency resolved exactly; a large number
+    /// means the scene wants a bigger <see cref="Buffers.FragmentBuffer.Capacity"/>.
+    /// </summary>
+    public int TransparentOverflowCount { get; internal set; }
+
     private int _drawnPixelCount;
     private int _behindZPixelCount;
     private int _occludedTriangleCount;
@@ -106,6 +122,9 @@ public sealed class RenderStats
         OccludedMeshTriangleCount = 0;
         OccludedMeshCount = 0;
         OccluderMeshCount = 0;
+        TransparentFragmentCount = 0;
+        TransparentPixelCount = 0;
+        TransparentOverflowCount = 0;
         _drawnPixelCount = 0;
         _behindZPixelCount = 0;
         _occludedTriangleCount = 0;

@@ -258,6 +258,13 @@ public sealed class RenderState
 
     public bool MotionBlur { get; set; }
 
+    /// <summary>
+    /// Whether transparent surfaces are resolved per pixel rather than by sorting the triangles.
+    /// Off by default, matching the renderer: it changes the picture wherever the sort was
+    /// getting it wrong, so a scene that wants it says so.
+    /// </summary>
+    public bool OrderIndependentTransparency { get; set; }
+
     /// <summary>The buffer view presented instead of the shaded image, by enum name.</summary>
     public string DebugView { get; set; } = "Off";
 

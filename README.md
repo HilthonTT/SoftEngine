@@ -24,6 +24,7 @@ a reference.
 - Materials: albedo, normal, specular, metallic-roughness and emissive maps, plus **alpha cutouts**.
 - **Scene graph**, keyframed **animation** with clip **blending**, and linear-blend **skinning**.
 - Post-process stack: bloom, tone mapping, FXAA, vignette. Supersampling, **TAA** and **motion blur**.
+- Transparency sorted per triangle, or **order-independent** and resolved per pixel.
 - **Ray-cast picking** with draggable, snapping, undoable transform gizmos.
 - **JSON scene files**, a **headless CLI** (stills and sequences), and a **graphics debugger** with
   buffer views and frame history.
@@ -37,7 +38,7 @@ a reference.
 ```bash
 dotnet build SoftEngine.slnx
 dotnet run --project src/SoftEngine.WinForms              # interactive viewer
-dotnet test tests/SoftEngine.Core.Tests                   # 724 tests
+dotnet test tests/SoftEngine.Core.Tests                   # 738 tests
 dotnet run -c Release --project bench/SoftEngine.Benchmarks   # Release, or you measure the debugger
 ```
 
@@ -53,7 +54,7 @@ model ──world──▶ world ──view──▶ view ──projection──
 
 Per frame, [`Renderer`](src/SoftEngine.Core/Pipeline/Renderer.cs): clear → shadow cascades →
 occlusion pre-pass → transform and cull → project and bin into tiles → parallel tiled fill → sky →
-transparent blend → gizmos → post-process → optional buffer view.
+transparent blend (or store and resolve) → gizmos → post-process → optional buffer view.
 
 [`ScanlineRasterizer`](src/SoftEngine.Core/Rasterization/ScanlineRasterizer.cs) sorts a triangle by
 Y, splits at the middle vertex and walks two half-triangles, interpolating depth plus a *varying*
@@ -247,6 +248,59 @@ Effects that need depth declare `NeedsDepth`, and the stack then reads the z-buf
 *view-space distance* — a screen-space radius is in world units, so it needs the distance rather
 than something merely monotonic in it. Two honest SSAO limits: it only knows what is on screen, and
 it multiplies the finished image, so it darkens direct light along with ambient.
+
+## Transparency
+
+Transparent meshes skip the opaque fill and blend over the finished image afterwards, depth-tested
+against it but never writing depth. What has to be decided is the order they blend in, and there are
+two answers.
+
+**By triangle.** The default. The frame sorts its transparent triangles farthest-first by the mean
+clip-space *w* of their vertices and blends each as it is drawn; tiles still parallelize, because
+every tile walks the same sorted order, so the sequence at any one pixel is preserved. It costs a
+sort of a list that is usually short, and it is correct exactly when a triangle has one depth to be
+sorted by.
+
+**By pixel.** `Settings.OrderIndependentTransparency`, `--oit` on the command line. Two panes that
+pass through each other have no correct order: whichever is drawn second is in front along the whole
+of the seam where they cross, and no arrangement of two triangles fixes it. Neither does a small
+triangle sorted against a large one it lies partly behind and partly in front of — a pane meeting the
+floor it stands on.
+
+The order that is never ambiguous is the one at a pixel, so
+[`FragmentBuffer`](src/SoftEngine.Core/Buffers/FragmentBuffer.cs) decides it there. A transparent
+fragment is depth-tested as before and then *stored* — colour, alpha, depth — instead of blended.
+Once the pass is over, each pixel holds the list of surfaces covering it and a resolve blends that
+list back to front. Nothing depends on the order the triangles arrived in, which is why the renderer
+stops sorting them at all when this is on.
+
+|  ![Intersecting glass](tests/SoftEngine.Core.Tests/Golden/References/intersecting-glass.png) |
+| :--: |
+| Three panes turned through each other — the golden baseline for the per-pixel path |
+
+Storage is divided the way the fill already is: **one arena per screen tile**, owned by the one
+worker that owns that tile. A pixel belongs to exactly one tile, so no two threads reach the same
+arena — nothing to lock, nothing to bump atomically, no false sharing. The resolve parallelizes over
+the same rectangles for the same reason.
+
+Only covered pixels get storage. An arena hands out a block of slots the first time a pixel is
+written and remembers which pixels it has touched, so both the resolve and the per-frame reset walk
+the covered pixels rather than the screen — a window's worth of glass costs a window, not a frame.
+Peak memory is about `covered pixels × Capacity × 20 bytes`.
+
+**Where it is approximate, and how you find out.** A pixel keeps `FragmentBuffer.Capacity` fragments
+(eight by default). Past that, the two farthest are composited into one: `near over (far over dst)`
+collapses to a single "over" whose alpha is `1 - (1-af)(1-an)`, so a surface behind both still
+receives exactly the light it would have. What is lost is the ability to put a third surface between
+them — which is the fragment there was no room for. The error is put at the far end deliberately,
+where the nearer fragments have already absorbed most of the light. `--stats` and
+`RenderStats.TransparentOverflowCount` report how often it happened, because "the picture is wrong
+and nothing said so" should not be one of the outcomes.
+
+It is off by default. It changes the picture wherever the sort was getting it wrong — which is the
+point, and is also why turning it on is a decision rather than a default. A probed pixel's history
+shows each stored fragment as its own entry, in the order the resolve blended them, naming the
+triangle that shaded it rather than the resolve that applied it.
 
 ## Occlusion culling
 
@@ -472,6 +526,7 @@ dotnet run -c Release --project src/SoftEngine.Cli -- model.gltf -o frame.png -w
 | `--yaw`, `--pitch`, `--zoom`, `--camera`, `-t` | where to stand, and how far into the animation |
 | `--env`, `--environment-size`, `--hdr-sky` | light it with a panorama or the linear-light sky |
 | `--shadows`, `--cascades` | shadow pass |
+| `--oit` | resolve transparency per pixel instead of by sorting the triangles |
 | `--bake`, `--bake-resolution`, `--bake-rays`, `--bake-bounces` | measure indirect light into probes first |
 | `--trace`, `--samples`, `--bounces`, `--physical` | path-trace instead of rasterizing |
 | `--frames`, `--fps`, `--turntable`, `--shutter` | render a numbered sequence |
@@ -529,7 +584,7 @@ the CPU, the panels show what the renderer actually did rather than what a drive
 | --- | --- |
 | **Graphics Event List** | Every step of the frame in pipeline order. |
 | **Graphics Object Table** | Every object the frame touched, with sizes and counts. Meshes carry an **active** checkbox that drops them from the frame. |
-| **Pixel History** | For the selected pixel: the clear, then each triangle that tried to write it — *including the ones the depth test rejected* — ending with the post-process pass. |
+| **Pixel History** | For the selected pixel: the clear, then each triangle that tried to write it — *including the ones the depth test rejected* — then, where transparency is resolved per pixel, each stored fragment as the resolve blended it, ending with the post-process pass. |
 
 Identifiers are shared: `obj:7` in the event list is `obj:7` in the object table.
 
@@ -619,6 +674,10 @@ job without a pass over the frame first. The mip-level view has nothing to show,
 chooses the level per pixel with nowhere to write it down. Overdraw needs a second geometry pass and
 the shadow map a copy back, so both are computed only while open. There is a ceiling of **16 lights**
 in the fragment shader, where the software path has none.
+Order-independent transparency is the software path’s: a fragment list per pixel is not something
+the fixed blend stage can be asked for, so the adapter sorts transparent *meshes* by depth and
+blends them in that order whether or not `--oit` was passed — a coarser sort than the software
+renderer’s own default, which sorts triangles.
 
 ## Path-traced reference
 
@@ -745,12 +804,12 @@ tests/SoftEngine.Core.Tests/   # xUnit suite, and Golden/ image baselines
 
 ## Testing
 
-`dotnet test tests/SoftEngine.Core.Tests` — 724 tests. Most are ordinary unit tests, and there is a
+`dotnet test tests/SoftEngine.Core.Tests` — 738 tests. Most are ordinary unit tests, and there is a
 whole class of regression none of them can reach: a renderer can satisfy every property a test names
 and still produce a visibly wrong picture. Nothing in 600 passing tests notices that the specular
 term came out a tenth dimmer.
 
-**Golden images.** Sixteen generated scenes are rendered headless at 320×180 and compared against
+**Golden images.** Seventeen generated scenes are rendered headless at 320×180 and compared against
 PNGs committed beside them, so a change shows up in the diff as a picture. Scenes are *generated*
 rather than loaded — a baseline depending on a model in the assets folder breaks when the model is
 re-exported, which teaches everyone to re-record on failure without looking. `SOFTENGINE_UPDATE_GOLDEN=1`

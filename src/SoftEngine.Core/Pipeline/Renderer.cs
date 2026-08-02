@@ -58,6 +58,10 @@ public sealed class Renderer : IRenderer
     private readonly TileBinner _opaqueBins = new();
     private readonly TileBinner _transparentBins = new();
 
+    // Per-pixel transparent fragments, for the order-independent path. Allocates nothing until
+    // a frame both switches it on and has something transparent to store.
+    private readonly FragmentBuffer _fragments = new();
+
     // Per-mesh index of the PainterDrawTriangles event, so a probed pixel write can point
     // back at the event that produced it. Grown to the mesh count, reused across frames.
     private int[] _meshDrawEvent = [];
@@ -102,6 +106,13 @@ public sealed class Renderer : IRenderer
 
     /// <summary>The shutter and sample count behind <see cref="RendererSettings.MotionBlur"/>.</summary>
     public MotionBlur MotionBlur { get; } = new();
+
+    /// <summary>
+    /// The per-pixel fragment lists behind
+    /// <see cref="RendererSettings.OrderIndependentTransparency"/> — how many fragments a pixel
+    /// may hold, and what the last frame stored in them.
+    /// </summary>
+    public FragmentBuffer Fragments => _fragments;
 
     /// <summary>
     /// Forgets what the previous frame looked like and where everything was in it.
@@ -478,31 +489,21 @@ public sealed class Renderer : IRenderer
             SkyRenderer.Render(scene, environment, skyEvent);
         }
 
-        // Phase 2b: transparent triangles blend over the finished opaque image, farthest
-        // first. Tiles still parallelize safely — every tile walks the sorted order, so the
-        // blend order at any single pixel is preserved.
-        var transparentCount = SortTransparent(worldBuffer);
+        // Phase 2b: transparent triangles over the finished opaque image.
+        //
+        // Two ways to get the blend order right, and the setting chooses between them. Sorting
+        // the triangles farthest-first and blending each as it is drawn is the cheap one, and
+        // tiles still parallelize safely because every tile walks the same sorted order. Storing
+        // each fragment and blending the lists afterwards is the correct one, because the order
+        // it decides is per pixel — see FragmentBuffer for what a per-triangle sort cannot do.
+        var orderIndependent = rendererSettings.OrderIndependentTransparency;
+        var transparentCount = SortTransparent(worldBuffer, orderIndependent);
 
         if (painter is not null && transparentCount > 0)
         {
-            if (!parallelFill)
-            {
-                PaintTransparentAll(painter, surface, meshes, worldBuffer, transparentCount, drawEvents, meshIdBase);
-            }
-            else
-            {
-                BinTriangles(_transparentBins, surface, worldBuffer, _transparentOrder, transparentCount);
-
-                if (_transparentBins.TotalItems < ParallelFillThreshold)
-                {
-                    PaintTransparentAll(painter, surface, meshes, worldBuffer, transparentCount, drawEvents, meshIdBase);
-                }
-                else
-                {
-                    Parallel.For(0, _transparentBins.TileCount, t =>
-                        PaintTransparentTile(painter, surface, meshes, worldBuffer, t, drawEvents, meshIdBase));
-                }
-            }
+            PaintTransparent(
+                painter, surface, meshes, worldBuffer, transparentCount,
+                parallelFill, orderIndependent, drawEvents, meshIdBase, events);
         }
 
         // The wireframe overlay draws lines across arbitrary rows, so it runs after the
@@ -1033,6 +1034,113 @@ public sealed class Renderer : IRenderer
         }
     }
 
+    /// <summary>
+    /// Draws this frame's transparent triangles over the finished opaque image, either blending
+    /// each as it is filled or storing its fragments for a resolve that blends them per pixel.
+    ///
+    /// <para>
+    /// The two share everything except where the blend happens: the same draw list, the same
+    /// binning, the same choice between a tiled fill and a sequential one, and the same depth
+    /// test against opaque geometry. What the order-independent path adds is an arena per tile,
+    /// set on the worker before it fills and taken off it afterwards, and the resolve at the end.
+    /// </para>
+    /// </summary>
+    private void PaintTransparent(
+        IPainter painter,
+        FrameBuffer surface,
+        List<IMesh> meshes,
+        WorldBuffer worldBuffer,
+        int transparentCount,
+        bool parallelFill,
+        bool orderIndependent,
+        int[]? drawEvents,
+        int meshIdBase,
+        GraphicsEventLog events)
+    {
+        // Whether the pass is tiled decides how many arenas there are, so it has to be settled
+        // before the first fragment is stored rather than discovered while storing them.
+        var tiled = false;
+
+        if (parallelFill)
+        {
+            BinTriangles(_transparentBins, surface, worldBuffer, _transparentOrder, transparentCount);
+            tiled = _transparentBins.TotalItems >= ParallelFillThreshold;
+        }
+
+        if (!orderIndependent)
+        {
+            if (tiled)
+            {
+                Parallel.For(0, _transparentBins.TileCount, t =>
+                    PaintTransparentTile(painter, surface, meshes, worldBuffer, t, drawEvents, meshIdBase));
+            }
+            else
+            {
+                PaintTransparentAll(painter, surface, meshes, worldBuffer, transparentCount, drawEvents, meshIdBase);
+            }
+
+            return;
+        }
+
+        _fragments.Begin(tiled ? _transparentBins.TileCount : 1, surface.IsProbing);
+
+        if (tiled)
+        {
+            Parallel.For(0, _transparentBins.TileCount, t =>
+            {
+                // A tile no transparent triangle reaches gets no arena at all: an arena carries
+                // a slot per pixel of its rectangle, and a screen's worth of them for the two
+                // tiles a window actually covers is the allocation this check avoids.
+                if (_transparentBins.TrianglesIn(t).Length == 0)
+                {
+                    return;
+                }
+
+                var tile = _transparentBins.TileAt(t);
+
+                FrameBuffer.SetFragmentArena(
+                    _fragments.ArenaFor(t, tile.XFrom, tile.YFrom, tile.XTo, tile.YTo));
+
+                try
+                {
+                    PaintTransparentTile(painter, surface, meshes, worldBuffer, t, drawEvents, meshIdBase);
+                }
+                finally
+                {
+                    // Always, and on the worker that set it: the pool hands these threads back
+                    // out, and one still pointing at last frame's arena would store into it.
+                    FrameBuffer.SetFragmentArena(null);
+                }
+            });
+        }
+        else
+        {
+            FrameBuffer.SetFragmentArena(_fragments.ArenaFor(0, 0, 0, surface.Width, surface.Height));
+
+            try
+            {
+                PaintTransparentAll(painter, surface, meshes, worldBuffer, transparentCount, drawEvents, meshIdBase);
+            }
+            finally
+            {
+                FrameBuffer.SetFragmentArena(null);
+            }
+        }
+
+        _fragments.Resolve(surface);
+
+        Stats.TransparentFragmentCount = _fragments.FragmentCount;
+        Stats.TransparentPixelCount = _fragments.CoveredPixelCount;
+        Stats.TransparentOverflowCount = _fragments.OverflowCount;
+
+        events.Add(
+            GraphicsEventKind.TransparencyResolve,
+            SceneObjectIds.RenderTarget,
+            _fragments.FragmentCount,
+            _fragments.CoveredPixelCount,
+            _fragments.OverflowCount);
+    }
+
     private void PaintTransparentTile(IPainter painter, FrameBuffer surface, List<IMesh> meshes, WorldBuffer worldBuffer, int tileIndex, int[]? drawEvents, int meshIdBase)
     {
         var ordinals = _transparentBins.TrianglesIn(tileIndex);
@@ -1112,14 +1220,34 @@ public sealed class Renderer : IRenderer
     /// <summary>
     /// Orders this frame's transparent triangles farthest-first by the mean view-space
     /// depth (clip-space w) of their vertices, into <see cref="_transparentOrder"/>.
-    /// Returns the number of sorted entries.
+    /// Returns the number of entries.
+    ///
+    /// <para>
+    /// <paramref name="orderIndependent"/> skips the sort itself and only fills the array. A
+    /// resolve that orders the fragments of each pixel does not care what order the triangles
+    /// that produced them arrived in — that is what it is for — so the sort would be a pass over
+    /// the draw list computing a key nothing reads.
+    /// </para>
     /// </summary>
-    private int SortTransparent(WorldBuffer worldBuffer)
+    private int SortTransparent(WorldBuffer worldBuffer, bool orderIndependent)
     {
         var count = _transparent.Count;
         if (count == 0)
         {
             return 0;
+        }
+
+        if (orderIndependent)
+        {
+            if (_transparentOrder.Length < count)
+            {
+                var size = System.Math.Max(count, _transparentOrder.Length * 2);
+                _transparentKeys = new float[size];
+                _transparentOrder = new (int, int)[size];
+            }
+
+            CollectionsMarshal.AsSpan(_transparent).CopyTo(_transparentOrder);
+            return count;
         }
 
         if (_transparentKeys.Length < count)

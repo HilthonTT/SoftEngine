@@ -31,6 +31,32 @@ public sealed class RendererSettings
     public bool OcclusionCulling { get; set; } = true;
 
     /// <summary>
+    /// Whether transparent surfaces are resolved per pixel instead of by sorting the triangles.
+    ///
+    /// <para>
+    /// Off, the frame sorts its transparent triangles farthest-first by their mean depth and
+    /// blends each as it is drawn. That is correct exactly when a triangle has one depth to be
+    /// sorted by, and two panes of glass that intersect each other do not: whichever is drawn
+    /// second is in front along the whole of the seam where they cross. Neither does a small
+    /// triangle sorted against a large one it lies partly behind and partly in front of.
+    /// </para>
+    ///
+    /// <para>
+    /// On, each transparent fragment is depth-tested and then stored rather than blended, and a
+    /// resolve blends every pixel's own list back to front once the pass is over — so the order
+    /// is decided per pixel, where it is never ambiguous, and nothing depends on the order the
+    /// triangles were drawn in. It costs the storage (see <see cref="FragmentBuffer"/>, which is
+    /// also where the per-pixel fragment limit lives) and one pass over the covered pixels.
+    /// </para>
+    ///
+    /// <para>
+    /// Off by default, because it changes the picture wherever the sort was getting it wrong —
+    /// which is the point, and is also why turning it on is a decision rather than a default.
+    /// </para>
+    /// </summary>
+    public bool OrderIndependentTransparency { get; set; }
+
+    /// <summary>
     /// Whether the frame is jittered by a fraction of a pixel and averaged with the previous ones —
     /// supersampling spread over time instead of over area.
     ///

@@ -33,6 +33,12 @@ internal sealed class RenderOptions
 
     public bool BackFaceCulling { get; set; } = true;
 
+    /// <summary>
+    /// Whether transparent surfaces are resolved per pixel rather than by sorting the triangles
+    /// that produced them. Matters only where transparent geometry overlaps itself.
+    /// </summary>
+    public bool OrderIndependentTransparency { get; set; }
+
     public bool Wireframe { get; set; }
 
     public bool Grid { get; set; }
@@ -199,6 +205,10 @@ internal sealed class RenderOptions
 
                 case "--no-cull":
                     options.BackFaceCulling = false;
+                    break;
+
+                case "--oit":
+                    options.OrderIndependentTransparency = true;
                     break;
 
                 case "--wireframe":
@@ -631,6 +641,9 @@ internal sealed class RenderOptions
               -w, --width <px>      render width  (default 1920)
               -h, --height <px>     render height (default 1080)
                   --ss <n>          supersample n× and average down, 1-4 (default 1)
+                  --oit             resolve transparency per pixel instead of by sorting the
+                                    transparent triangles — correct where they intersect each
+                                    other, and where a small one straddles a large one
                   --stats           print triangle, pixel and timing counts
 
             Where it renders

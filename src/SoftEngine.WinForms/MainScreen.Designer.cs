@@ -60,6 +60,7 @@ public sealed partial class MainScreen
         chkSuperSampling = new CheckBox();
         chkTemporalAntiAliasing = new CheckBox();
         chkMotionBlur = new CheckBox();
+        chkOrderIndependentTransparency = new CheckBox();
         lblShadingHeader = new Label();
         flpShading = new FlowLayoutPanel();
         rdbNoneShading = new RadioButton();
@@ -310,6 +311,7 @@ public sealed partial class MainScreen
         flpDisplay.Controls.Add(chkSuperSampling);
         flpDisplay.Controls.Add(chkTemporalAntiAliasing);
         flpDisplay.Controls.Add(chkMotionBlur);
+        flpDisplay.Controls.Add(chkOrderIndependentTransparency);
         flpDisplay.FlowDirection = FlowDirection.TopDown;
         flpDisplay.Location = new Point(16, 170);
         flpDisplay.Margin = new Padding(0);
@@ -571,6 +573,18 @@ public sealed partial class MainScreen
         chkMotionBlur.Text = "Motion blur";
         toolTip1.SetToolTip(chkMotionBlur, "Smear each pixel along the direction its surface is travelling. Costs a velocity pass.");
         chkMotionBlur.UseVisualStyleBackColor = true;
+        // 
+        // chkOrderIndependentTransparency
+        // 
+        chkOrderIndependentTransparency.AutoSize = true;
+        chkOrderIndependentTransparency.Location = new Point(2, 467);
+        chkOrderIndependentTransparency.Margin = new Padding(2, 2, 0, 2);
+        chkOrderIndependentTransparency.Name = "chkOrderIndependentTransparency";
+        chkOrderIndependentTransparency.Size = new Size(140, 21);
+        chkOrderIndependentTransparency.TabIndex = 19;
+        chkOrderIndependentTransparency.Text = "Per-pixel glass";
+        toolTip1.SetToolTip(chkOrderIndependentTransparency, "Resolve transparency per pixel instead of by sorting the transparent triangles — correct where glass intersects glass, and where a small pane straddles a large one. Costs storage for the fragments.");
+        chkOrderIndependentTransparency.UseVisualStyleBackColor = true;
         // 
         // lblShadingHeader
         // 
@@ -1451,6 +1465,7 @@ public sealed partial class MainScreen
     private CheckBox chkSuperSampling;
     private CheckBox chkTemporalAntiAliasing;
     private CheckBox chkMotionBlur;
+    private CheckBox chkOrderIndependentTransparency;
     private Label lblShadingHeader;
     private FlowLayoutPanel flpShading;
     private RadioButton rdbNoneShading;

@@ -245,6 +245,7 @@ public static class SceneSerializer
         OcclusionCulling = settings?.OcclusionCulling ?? true,
         TemporalAntiAliasing = settings?.TemporalAntiAliasing ?? false,
         MotionBlur = settings?.MotionBlur ?? false,
+        OrderIndependentTransparency = settings?.OrderIndependentTransparency ?? false,
         DebugView = (settings?.DebugView ?? DebugView.Off).ToString(),
     };
 
@@ -380,6 +381,7 @@ public static class SceneSerializer
                 settings.OcclusionCulling = rendering.OcclusionCulling;
                 settings.TemporalAntiAliasing = rendering.TemporalAntiAliasing;
                 settings.MotionBlur = rendering.MotionBlur;
+                settings.OrderIndependentTransparency = rendering.OrderIndependentTransparency;
                 settings.DebugView = ParseEnum(rendering.DebugView, DebugView.Off);
             }
         }

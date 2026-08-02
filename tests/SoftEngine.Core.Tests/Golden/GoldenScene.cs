@@ -59,6 +59,13 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
         /// </summary>
         public int SuperSample { get; set; } = 1;
 
+        /// <summary>
+        /// Whether transparency is resolved per pixel rather than by sorting the transparent
+        /// triangles. Off, as the renderer leaves it, so a scene that wants it says so — and the
+        /// scenes that do not keep the baselines they had before it existed.
+        /// </summary>
+        public bool OrderIndependentTransparency { get; set; }
+
         public SimpleWorld World => (SimpleWorld)Scene.World;
 
         public List<IMesh> Meshes => World.Meshes;
@@ -98,6 +105,8 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
         };
 
         build(built);
+
+        renderer.Settings.OrderIndependentTransparency = built.OrderIndependentTransparency;
 
         var scene = built.Scene;
         var factor = SuperSampler.ClampFactor(built.SuperSample);
@@ -340,6 +349,37 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
                 b.Scene.GammaCorrect = true;
                 b.Scene.Camera = Look(new Vector3(0.4f, 0.6f, 4.6f), Vector3.Zero);
                 b.Painter = new PhongPainter();
+            }),
+
+        new("intersecting-glass",
+            "three panes turned through each other, resolved per pixel",
+            b =>
+            {
+                b.Meshes.Add(Cube(new Vector3(0f, -0.1f, -1.4f), 0.8f, new ColorRGB(196, 92, 76)));
+
+                // Turned about Y so that each pane passes through the other two: along part of
+                // every seam one is nearer and along the rest the other is. No order to draw
+                // them in is right everywhere, which is the whole subject of this baseline —
+                // the sorted path renders it differently, and there is a test that says so.
+                var green = Pane(new Vector3(-0.35f, 0.1f, 0.3f), 2.2f, new ColorRGB(90, 200, 140), 0.45f);
+                var blue = Pane(new Vector3(0.35f, 0.1f, 0.3f), 2.2f, new ColorRGB(120, 140, 235), 0.5f);
+                var amber = Pane(new Vector3(0f, 0.15f, 0.5f), 2.2f, new ColorRGB(240, 200, 90), 0.4f);
+
+                green.Rotation = new Rotation3D(0f, 0.6f, 0f);
+                blue.Rotation = new Rotation3D(0f, -0.6f, 0f);
+                amber.Rotation = new Rotation3D(1.15f, 0f, 0f);
+
+                b.Meshes.Add(green);
+                b.Meshes.Add(blue);
+                b.Meshes.Add(amber);
+
+                b.Lights.Add(Sun(1.1f));
+
+                b.Scene.Environment = SkyBox.Gradient(SunDirection, resolution: 32);
+                b.Scene.GammaCorrect = true;
+                b.Scene.Camera = Look(new Vector3(0.5f, 0.7f, 4.4f), Vector3.Zero);
+                b.Painter = new PhongPainter();
+                b.OrderIndependentTransparency = true;
             }),
 
         new("post-process-stack",

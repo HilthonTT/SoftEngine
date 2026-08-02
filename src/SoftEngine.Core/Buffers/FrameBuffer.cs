@@ -760,11 +760,57 @@ public sealed class FrameBuffer(int width, int height)
         return true;
     }
 
+    // The per-pixel fragment list this thread's transparent writes are being stored into, or
+    // null when they blend immediately. Thread-static for the same reason the probe context is:
+    // the transparent fill runs a worker per tile, and a tile's pixels belong to its own arena.
+    [ThreadStatic]
+    private static FragmentBuffer.Arena? _fragmentArena;
+
+    /// <summary>
+    /// Sends this thread's subsequent <see cref="PutPixelBlend"/> calls into
+    /// <paramref name="arena"/> instead of blending them, or restores immediate blending when
+    /// given null. See <see cref="FragmentBuffer"/> for why a transparent fragment is worth
+    /// storing rather than blending.
+    /// </summary>
+    internal static void SetFragmentArena(FragmentBuffer.Arena? arena) => _fragmentArena = arena;
+
+    /// <summary>
+    /// Blends one stored fragment over the pixel, at the point in the resolve its depth puts it.
+    /// The colour is taken as already shaded and fogged — it was both, at the moment it was
+    /// stored — so this is the blend <see cref="PutPixelBlend"/> would have done, deferred.
+    /// </summary>
+    internal void BlendStoredFragment(int index, int depth, LinearColor color, float alpha, in ProbeContext context)
+    {
+        var blended = LinearColor.Lerp(LoadAt(index), color, alpha);
+
+        if (index == _probeIndex)
+        {
+            // The write is recorded with the context captured when the fragment was stored, so
+            // the history names the triangle that shaded it rather than the resolve that
+            // blended it — and the entries arrive in the order the blends actually happened.
+            RecordProbeWith(
+                index,
+                depth,
+                blended,
+                _zBuffer[index],
+                passed: true,
+                context with { Source = PixelWriteSource.TransparentFragment });
+        }
+
+        StoreAt(index, blended);
+    }
+
     /// <summary>
     /// Depth-tests and alpha-blends one pixel over the current contents. The depth
     /// buffer is read but never written: transparent surfaces must not occlude what
-    /// is drawn after them, only sit behind opaque geometry. Callers are responsible
-    /// for drawing transparent geometry back-to-front.
+    /// is drawn after them, only sit behind opaque geometry.
+    ///
+    /// <para>
+    /// With a fragment arena active (see <see cref="SetFragmentArena"/>) the fragment is stored
+    /// instead of blended, and the blend happens in the resolve once every transparent surface
+    /// covering the pixel is known. Without one the blend is immediate, and the caller is
+    /// responsible for having drawn transparent geometry back to front.
+    /// </para>
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool PutPixelBlend(int x, int y, int z, LinearColor color, float alpha)
@@ -781,6 +827,25 @@ public sealed class FrameBuffer(int width, int height)
         bool passed = z <= previousDepth;
 
         CountWrite(index);
+
+        if (_fragmentArena is { } arena)
+        {
+            if (!passed)
+            {
+                // Recorded here rather than at the resolve, which never sees it: a fragment the
+                // opaque depth buffer rejected is exactly the kind of write a pixel history is
+                // being read to find.
+                if (index == _probeIndex)
+                {
+                    RecordProbe(index, z, color, previousDepth, passed: false);
+                }
+
+                return false;
+            }
+
+            arena.Add(x, y, z, color, alpha, index == _probeIndex ? _probeContext : default);
+            return true;
+        }
 
         if (passed || index == _probeIndex)
         {
@@ -895,15 +960,22 @@ public sealed class FrameBuffer(int width, int height)
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private void RecordProbe(int index, int z, LinearColor color, int previousDepth, bool passed)
+    private void RecordProbe(int index, int z, LinearColor color, int previousDepth, bool passed) =>
+        RecordProbeWith(index, z, color, previousDepth, passed, _probeContext);
+
+    /// <summary>
+    /// <see cref="RecordProbe"/> with the drawing context supplied rather than read from the
+    /// thread — for a write whose context was captured earlier than the write itself, which is
+    /// every fragment the transparency resolve blends.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void RecordProbeWith(int index, int z, LinearColor color, int previousDepth, bool passed, in ProbeContext context)
     {
         var history = _probeHistory;
         if (history is null)
         {
             return;
         }
-
-        var context = _probeContext;
 
         var write = new PixelWrite
         {
@@ -951,7 +1023,7 @@ public sealed class FrameBuffer(int width, int height)
         return new ProbeVertex(mesh.Vertices[index], vertex.World, vertex.View, vertex.Proj, vertex.Norm);
     }
 
-    private readonly record struct ProbeContext(
+    internal readonly record struct ProbeContext(
         int EventIndex,
         PixelWriteSource Source,
         int ObjectId,

@@ -156,6 +156,7 @@ static int Render(RenderOptions options)
     }
 
     renderer.Settings.BackFaceCulling = options.BackFaceCulling;
+    renderer.Settings.OrderIndependentTransparency = options.OrderIndependentTransparency;
     renderer.Settings.ShowTriangles = options.Wireframe;
     renderer.Settings.ShowXZGrid = options.Grid;
     renderer.Settings.ShowAxes = options.Axes;
@@ -435,6 +436,17 @@ static int Render(RenderOptions options)
         Console.WriteLine($"  meshes  {loaded.World.Meshes.Count} ({stats.OccludedMeshCount} hidden behind {stats.OccluderMeshCount} occluder(s))");
         Console.WriteLine($"  tris    {stats.TotalTriangleCount} total, {stats.DrawnTriangleCount} drawn");
         Console.WriteLine($"  pixels  {stats.DrawnPixelCount} drawn");
+
+        // Only when the frame actually stored fragments. The overflow count goes with them
+        // because it is the one number that says the resolve was approximate.
+        if (stats.TransparentFragmentCount > 0)
+        {
+            Console.WriteLine(
+                $"  glass   {stats.TransparentFragmentCount} fragments over {stats.TransparentPixelCount} pixels" +
+                (stats.TransparentOverflowCount > 0
+                    ? $", {stats.TransparentOverflowCount} merged past the per-pixel limit"
+                    : string.Empty));
+        }
     }
 
     return 0;
