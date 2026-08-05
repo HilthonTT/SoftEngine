@@ -24,8 +24,10 @@ namespace SoftEngine.Core.Pipeline.Temporal;
 /// </summary>
 public sealed class MotionState
 {
-    private readonly Dictionary<IMesh, Matrix4x4> _previous = new(ReferenceEqualityComparer.Instance);
-    private readonly Dictionary<IMesh, Matrix4x4> _current = new(ReferenceEqualityComparer.Instance);
+    // Not readonly: Advance swaps them, so this frame's matrices become the history without
+    // being copied into it.
+    private Dictionary<IMesh, Matrix4x4> _previous = new(ReferenceEqualityComparer.Instance);
+    private Dictionary<IMesh, Matrix4x4> _current = new(ReferenceEqualityComparer.Instance);
 
     /// <summary>The camera and projection of the previous frame, composed.</summary>
     public Matrix4x4 PreviousViewProjection { get; private set; } = Matrix4x4.Identity;
@@ -47,6 +49,13 @@ public sealed class MotionState
     /// The two dictionaries are swapped rather than one being cleared and refilled, so a mesh that
     /// has left the world stops being remembered — which is what keeps this from growing without
     /// bound in a scene that loads and unloads geometry.
+    ///
+    /// <para>
+    /// Swapped, and not also copied. Nothing reads the history between here and the next frame's
+    /// velocity pass, so filling one dictionary and then replaying it into the other did the same
+    /// work twice — once per mesh per frame, on a path every frame runs whether or not anything
+    /// temporal is switched on.
+    /// </para>
     /// </summary>
     public void Advance(IWorld world, in Matrix4x4 viewProjection)
     {
@@ -59,12 +68,9 @@ public sealed class MotionState
             _current[mesh] = mesh.WorldMatrix;
         }
 
-        _previous.Clear();
-
-        foreach (var (mesh, matrix) in _current)
-        {
-            _previous[mesh] = matrix;
-        }
+        // The one this frame filled becomes the history; what the previous frame left behind
+        // becomes the scratch the next one clears and refills.
+        (_previous, _current) = (_current, _previous);
 
         PreviousViewProjection = viewProjection;
         HasHistory = true;

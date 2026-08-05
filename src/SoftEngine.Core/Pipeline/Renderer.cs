@@ -937,12 +937,40 @@ public sealed class Renderer : IRenderer
     }
 
     /// <summary>
+    /// Triangles below which binning on the calling thread beats spreading it across the
+    /// cores. Well under what any scene the tiled fill is worth running for produces.
+    /// </summary>
+    private const int ParallelBinThreshold = 2048;
+
+    /// <summary>How many triangles one bounds worker takes at a time.</summary>
+    private const int BinBandSize = 512;
+
+    // The draw list being binned, and the screen-space bounds measured from it: minX, minY,
+    // maxX, maxY, minZ per triangle. Both are reused across frames, and across the opaque and
+    // transparent passes — those never overlap, since the whole opaque fill has finished by
+    // the time anything transparent is binned.
+    private (int MeshIndex, int TriangleIndex)[] _binSource = [];
+    private float[] _binBounds = [];
+
+    /// <summary>
     /// Bins a draw list's triangles by the screen tiles their bounding boxes touch. The
     /// projection to screen space is repeated by the painter that eventually fills the
-    /// triangle, but doing it here — once, sequentially — is what lets a tile skip the
-    /// triangles that never reach it.
+    /// triangle, but doing it here — once — is what lets a tile skip the triangles that never
+    /// reach it.
+    ///
+    /// <para>
+    /// Measuring a triangle and filing it are separated because only one of them has to happen
+    /// in order. Measuring is a pure map — three vertices in, a rectangle out — and it is the
+    /// expensive half: each triangle reaches into its mesh's vertex buffer at three unrelated
+    /// indices, and on a dense model those arrays are far larger than the cache, so the pass is
+    /// bound by memory latency rather than by the arithmetic. Latency is exactly what spreading
+    /// the work over the cores hides, so the rectangles are measured in parallel bands. Filing
+    /// them stays sequential: the bins are a counting sort, and a triangle's ordinal is its
+    /// position in draw order, which is what the transparent blend and the pixel probe both
+    /// read back.
+    /// </para>
     /// </summary>
-    private static void BinTriangles(
+    private void BinTriangles(
         TileBinner bins,
         FrameBuffer surface,
         WorldBuffer worldBuffer,
@@ -951,31 +979,86 @@ public sealed class Renderer : IRenderer
     {
         bins.Reset(surface.Width, surface.Height);
 
+        if (count < ParallelBinThreshold || Environment.ProcessorCount <= 1)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                var (minX, minY, maxX, maxY, minZ) = Bounds(surface, worldBuffer, list[i]);
+                bins.Add(minX, minY, maxX, maxY, minZ);
+            }
+
+            bins.Build();
+            return;
+        }
+
+        // Copied into a field rather than measured straight off the span: a span cannot be
+        // captured by the worker below, and the copy is a few bytes per triangle of sequential
+        // memory against three scattered vertex reads it lets run concurrently.
+        if (_binSource.Length < count)
+        {
+            _binSource = new (int, int)[System.Math.Max(count, _binSource.Length * 2)];
+            _binBounds = new float[_binSource.Length * 5];
+        }
+
+        var source = _binSource;
+        var bounds = _binBounds;
+
+        list[..count].CopyTo(source);
+
+        var bands = (count + BinBandSize - 1) / BinBandSize;
+
+        Parallel.For(0, bands, band =>
+        {
+            var from = band * BinBandSize;
+            var to = System.Math.Min(from + BinBandSize, count);
+
+            for (var i = from; i < to; i++)
+            {
+                var (minX, minY, maxX, maxY, minZ) = Bounds(surface, worldBuffer, source[i]);
+
+                var slot = i * 5;
+                bounds[slot] = minX;
+                bounds[slot + 1] = minY;
+                bounds[slot + 2] = maxX;
+                bounds[slot + 3] = maxY;
+                bounds[slot + 4] = minZ;
+            }
+        });
+
         for (var i = 0; i < count; i++)
         {
-            var (meshIndex, triangleIndex) = list[i];
-            var vbx = worldBuffer.VertexBuffers[meshIndex];
-            var t = vbx.GetTriangle(triangleIndex);
-
-            var p0 = surface.ToScreen3(vbx.GetVertex(t.I0).Proj);
-            var p1 = surface.ToScreen3(vbx.GetVertex(t.I1).Proj);
-            var p2 = surface.ToScreen3(vbx.GetVertex(t.I2).Proj);
-
-            bins.Add(
-                MathF.Min(p0.X, MathF.Min(p1.X, p2.X)),
-                MathF.Min(p0.Y, MathF.Min(p1.Y, p2.Y)),
-                MathF.Max(p0.X, MathF.Max(p1.X, p2.X)),
-                MathF.Max(p0.Y, MathF.Max(p1.Y, p2.Y)),
-                MathF.Min(p0.Z, MathF.Min(p1.Z, p2.Z)));
+            var slot = i * 5;
+            bins.Add(bounds[slot], bounds[slot + 1], bounds[slot + 2], bounds[slot + 3], bounds[slot + 4]);
         }
 
         bins.Build();
     }
 
-    private static void BinTriangles(TileBinner bins, FrameBuffer surface, WorldBuffer worldBuffer, List<(int MeshIndex, int TriangleIndex)> list, int count) =>
+    /// <summary>The screen-space bounding box of one draw-list entry, and its nearest depth.</summary>
+    private static (float MinX, float MinY, float MaxX, float MaxY, float MinZ) Bounds(
+        FrameBuffer surface,
+        WorldBuffer worldBuffer,
+        (int MeshIndex, int TriangleIndex) entry)
+    {
+        var vbx = worldBuffer.VertexBuffers[entry.MeshIndex];
+        var t = vbx.GetTriangle(entry.TriangleIndex);
+
+        var p0 = surface.ToScreen3(vbx.GetVertex(t.I0).Proj);
+        var p1 = surface.ToScreen3(vbx.GetVertex(t.I1).Proj);
+        var p2 = surface.ToScreen3(vbx.GetVertex(t.I2).Proj);
+
+        return (
+            MathF.Min(p0.X, MathF.Min(p1.X, p2.X)),
+            MathF.Min(p0.Y, MathF.Min(p1.Y, p2.Y)),
+            MathF.Max(p0.X, MathF.Max(p1.X, p2.X)),
+            MathF.Max(p0.Y, MathF.Max(p1.Y, p2.Y)),
+            MathF.Min(p0.Z, MathF.Min(p1.Z, p2.Z)));
+    }
+
+    private void BinTriangles(TileBinner bins, FrameBuffer surface, WorldBuffer worldBuffer, List<(int MeshIndex, int TriangleIndex)> list, int count) =>
         BinTriangles(bins, surface, worldBuffer, CollectionsMarshal.AsSpan(list), count);
 
-    private static void BinTriangles(TileBinner bins, FrameBuffer surface, WorldBuffer worldBuffer, (int MeshIndex, int TriangleIndex)[] list, int count) =>
+    private void BinTriangles(TileBinner bins, FrameBuffer surface, WorldBuffer worldBuffer, (int MeshIndex, int TriangleIndex)[] list, int count) =>
         BinTriangles(bins, surface, worldBuffer, list.AsSpan(0, count), count);
 
     private void PaintOpaqueTile(IPainter painter, FrameBuffer surface, List<IMesh> meshes, WorldBuffer worldBuffer, int tileIndex, int[]? drawEvents, int meshIdBase)
