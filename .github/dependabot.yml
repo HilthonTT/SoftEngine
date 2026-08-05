@@ -1,0 +1,52 @@
+version: 2
+
+updates:
+  # NuGet. `directory: "/"` is the repository root and Dependabot walks down from there,
+  # which is what reaches the four project files that actually reference packages.
+  - package-ecosystem: nuget
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - nuget
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # Silk.NET ships its OpenGL and Windowing packages as one versioned set, and the
+      # GPU backend binds against both. Bumping them in separate pull requests puts the
+      # repository through a state where the two disagree, which is a build break rather
+      # than a review.
+      silk-net:
+        patterns:
+          - "Silk.NET*"
+      # Likewise the test stack: the runner, the adapter and the collector are only ever
+      # meaningful together.
+      test-stack:
+        patterns:
+          - "xunit*"
+          - "Microsoft.NET.Test.Sdk"
+          - "coverlet*"
+
+  # The workflows pin their actions by major version, so this is what keeps the pins
+  # moving rather than quietly ageing.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      actions:
+        patterns:
+          - "*"
