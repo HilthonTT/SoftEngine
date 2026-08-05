@@ -1,0 +1,56 @@
+<Project>
+
+  <!--
+    Imported by every project in the repository before its own .csproj is read, so
+    the settings that should never differ between them live here once. Target
+    frameworks deliberately do *not*: the viewer is net10.0-windows and everything
+    else is net10.0, and that difference is the point of the split.
+  -->
+
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+
+    <!--
+      The SDK's default analysis level, not `latest-recommended`. Recommended turns on
+      CA1051 ("do not declare visible instance fields"), and the rasterizer's hot-path
+      structs — Edge, TextureVarying, MaterialVarying, ShaderLight, LinearColor — expose
+      public fields on purpose: they are read per pixel, and a property is an accessor the
+      inliner has to be trusted to remove. It also wants PostProcessStack renamed for
+      ending in "Stack" and the Shadows namespace renamed for colliding with a VB keyword.
+      Turning the level up would mean suppressing more rules than it enabled.
+    -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Product>SoftEngine</Product>
+    <Authors>Hilthon</Authors>
+    <Copyright>Copyright (c) Hilthon</Copyright>
+    <RepositoryUrl>https://github.com/HilthonTT/SoftEngine</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <!--
+    Warnings are errors on the build server and stay warnings on a developer's
+    machine. The repository builds clean today, so the gate costs nothing to hold —
+    but failing somebody's local build halfway through a change they are still
+    writing is how a warning gate gets switched off for good.
+
+    ContinuousIntegrationBuild also normalizes the file paths baked into the
+    assembly, which is what makes two builds of the same commit produce the same
+    bytes.
+  -->
+  <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+</Project>

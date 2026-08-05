@@ -21,13 +21,13 @@ public sealed class WireFramePainter : IPainter
 
         var (t0, t1, t2) = (vertexBuffer.GetVertex(t.I0), vertexBuffer.GetVertex(t.I1), vertexBuffer.GetVertex(t.I2));
 
-        Vector4 l0p0 = t0.Proj; 
+        Vector4 l0p0 = t0.Proj;
         Vector4 l0p1 = t1.Proj;
 
-        Vector4 l1p0 = t1.Proj; 
+        Vector4 l1p0 = t1.Proj;
         Vector4 l1p1 = t2.Proj;
 
-        Vector4 l2p0 = t0.Proj; 
+        Vector4 l2p0 = t0.Proj;
         Vector4 l2p1 = t2.Proj;
 
         bool l0 = _liangBarskyClipping.Clip(ref l0p0, ref l0p1);

@@ -1,7 +1,6 @@
 ﻿using SoftEngine.Core.Animation;
 using SoftEngine.Core.Baking;
 using SoftEngine.Core.Diagnostics;
-using SoftEngine.Gpu;
 using SoftEngine.Core.Editing;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Gltf;
@@ -19,6 +18,7 @@ using SoftEngine.Core.Scenes.Graph;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.Core.Scenes.Serialization;
+using SoftEngine.Gpu;
 using SoftEngine.WinForms.Cameras;
 using SoftEngine.WinForms.Controls;
 using SoftEngine.WinForms.Debugging;
@@ -162,7 +162,7 @@ public sealed partial class MainScreen : Form
             {
                 return;
             }
-            panel3D1.Painter = new ClassicPainter(); 
+            panel3D1.Painter = new ClassicPainter();
             panel3D1.Invalidate();
         };
         rdbFlatShading.CheckedChanged += (s, e) =>
@@ -171,7 +171,7 @@ public sealed partial class MainScreen : Form
             {
                 return;
             }
-            panel3D1.Painter = new FlatPainter(); 
+            panel3D1.Painter = new FlatPainter();
             panel3D1.Invalidate();
         };
         rdbGouraudShading.CheckedChanged += (s, e) =>
@@ -335,6 +335,11 @@ public sealed partial class MainScreen : Form
         InitializeGizmo();
 
         InitializeDebugger();
+
+        // Last, because it restores the window and the panel layout over whatever the designer
+        // and the wiring above left behind — and because the sidebar sections it builds have to
+        // exist before a saved workspace can roll any of them up.
+        InitializeWorkspace();
 
         _ = PrepareWorldAsync("skull");
     }
@@ -1030,6 +1035,8 @@ public sealed partial class MainScreen : Form
 
             _scenePath = dialog.FileName;
             lblCurrentModel.Text = Path.GetFileName(dialog.FileName);
+
+            RememberRecentFile(dialog.FileName);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException)
         {
@@ -1088,11 +1095,20 @@ public sealed partial class MainScreen : Form
             return;
         }
 
+        await LoadSceneAsync(dialog.FileName);
+    }
+
+    /// <summary>
+    /// Opens a scene document by path, wherever the path came from — the dialog above, the recent
+    /// list, or a file dropped on the window.
+    /// </summary>
+    private async Task LoadSceneAsync(string path)
+    {
         SceneDocument document;
 
         try
         {
-            document = SceneSerializer.Load(dialog.FileName);
+            document = SceneSerializer.Load(path);
         }
         catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -1139,8 +1155,10 @@ public sealed partial class MainScreen : Form
 
         ApplyScene(document);
 
-        _scenePath = dialog.FileName;
-        lblCurrentModel.Text = Path.GetFileName(dialog.FileName);
+        _scenePath = path;
+        lblCurrentModel.Text = Path.GetFileName(path);
+
+        RememberRecentFile(path);
     }
 
     /// <summary>
@@ -1746,6 +1764,11 @@ public sealed partial class MainScreen : Form
     {
         _currentDemoId = string.Empty;
         _modelPath = path;
+
+        // Recorded on the attempt rather than on the result. A file that fails to import is still
+        // one somebody went and found, and the recent list is the shortest way back to it after
+        // whatever went wrong has been dealt with.
+        RememberRecentFile(path);
 
         return PrepareWorldCoreAsync(progress => BuildWorldFromFile(path, progress), Path.GetFileName(path));
     }
@@ -2423,7 +2446,7 @@ public sealed partial class MainScreen : Form
             case "littletown":
             {
                 world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.6f, -1f, -0.8f) });
-                var d = 10; 
+                var d = 10;
                 var s = 2;
                 for (var x = -d; x <= d; x += s)
                 {
@@ -2443,7 +2466,7 @@ public sealed partial class MainScreen : Form
             case "bigtown":
             {
                 world.Lights.Add(new DirectionalLight { Direction = new Vector3(-0.6f, -1f, -0.8f) });
-                var d = 200; 
+                var d = 200;
                 var s = 2;
                 for (var x = -d; x <= d; x += s)
                 {
@@ -2725,8 +2748,8 @@ public sealed partial class MainScreen : Form
 
             case "cubes":
             {
-                var d = 20; 
-                var s = 2; 
+                var d = 20;
+                var s = 2;
                 var r = new Random();
                 for (int x = -d; x <= d; x += s)
                 {

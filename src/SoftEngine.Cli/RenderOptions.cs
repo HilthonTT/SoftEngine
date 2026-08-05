@@ -1,7 +1,7 @@
-using System.Globalization;
-using System.Numerics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Gpu;
+using System.Globalization;
+using System.Numerics;
 
 namespace SoftEngine.Cli;
 
@@ -179,25 +179,25 @@ internal sealed class RenderOptions
                     break;
 
                 case "--filter" or "--filtering":
+                {
+                    var name = Next(args, ref i, options, arg);
+
+                    if (name is null)
                     {
-                        var name = Next(args, ref i, options, arg);
-
-                        if (name is null)
-                        {
-                            break;
-                        }
-
-                        if (TryParseFiltering(name, out _))
-                        {
-                            options.Filtering = name;
-                        }
-                        else
-                        {
-                            options.Errors.Add($"unknown texture filter '{name}' — expected nearest, bilinear or trilinear");
-                        }
+                        break;
                     }
 
-                    break;
+                    if (TryParseFiltering(name, out _))
+                    {
+                        options.Filtering = name;
+                    }
+                    else
+                    {
+                        options.Errors.Add($"unknown texture filter '{name}' — expected nearest, bilinear or trilinear");
+                    }
+                }
+
+                break;
 
                 case "--ss" or "--supersample":
                     options.SuperSampling = Int(args, ref i, options, arg, options.SuperSampling);
@@ -304,25 +304,25 @@ internal sealed class RenderOptions
                     break;
 
                 case "--backend":
+                {
+                    var name = Next(args, ref i, options, arg);
+
+                    if (name is null)
                     {
-                        var name = Next(args, ref i, options, arg);
-
-                        if (name is null)
-                        {
-                            break;
-                        }
-
-                        if (RenderBackends.TryParse(name, out var backend))
-                        {
-                            options.Backend = backend;
-                        }
-                        else
-                        {
-                            options.Errors.Add($"unknown backend '{name}' — expected auto, cpu, gpu or trace");
-                        }
+                        break;
                     }
 
-                    break;
+                    if (RenderBackends.TryParse(name, out var backend))
+                    {
+                        options.Backend = backend;
+                    }
+                    else
+                    {
+                        options.Errors.Add($"unknown backend '{name}' — expected auto, cpu, gpu or trace");
+                    }
+                }
+
+                break;
 
                 case "--gpu":
                     options.Backend = RenderBackend.Gpu;

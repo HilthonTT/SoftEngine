@@ -2,7 +2,6 @@ using Silk.NET.OpenGL;
 using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
-using Texture = SoftEngine.Core.Geometry.Texture;
 using SoftEngine.Core.Gizmos;
 using SoftEngine.Core.Pipeline;
 using SoftEngine.Core.Pipeline.Culling;
@@ -10,11 +9,12 @@ using SoftEngine.Core.Pipeline.Debugging;
 using SoftEngine.Core.Pipeline.PostProcess;
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Scenes;
-using FogMode = SoftEngine.Core.Scenes.FogMode;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.Core.Shading;
 using System.Numerics;
+using FogMode = SoftEngine.Core.Scenes.FogMode;
+using Texture = SoftEngine.Core.Geometry.Texture;
 
 namespace SoftEngine.Gpu;
 

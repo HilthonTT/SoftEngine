@@ -1,4 +1,4 @@
-﻿﻿using SoftEngine.Core.Diagnostics;
+﻿using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Pipeline.PostProcess;
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Scenes;

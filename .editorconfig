@@ -8,8 +8,12 @@
 
 root = true
 
+# `charset` is deliberately absent for C#. Visual Studio writes .cs files with a
+# UTF-8 BOM and other editors write them without one, so pinning either value puts
+# `dotnet format` in a fight with somebody's editor over a byte nobody can see —
+# and Roslyn reads both forms as UTF-8 regardless.
+
 [*]
-charset = utf-8
 end_of_line = crlf
 indent_style = space
 indent_size = 4
@@ -131,6 +135,12 @@ csharp_new_line_before_members_in_anonymous_types = true
 csharp_new_line_between_query_expression_clauses = true
 
 csharp_indent_case_contents = true
+
+# A `case` whose body is a braced block does not indent the block again under the
+# label. The repository was split on this — `MainScreen` and `TransformGizmo` wrote
+# it flat, `RenderOptions` indented — and this is both the .NET default and what the
+# larger two already did, so the odd file out was normalized rather than the rule
+# bent around it.
 csharp_indent_case_contents_when_block = false
 csharp_indent_switch_labels = true
 csharp_indent_labels = one_less_than_current

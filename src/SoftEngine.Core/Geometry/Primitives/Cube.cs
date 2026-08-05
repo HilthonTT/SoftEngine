@@ -5,7 +5,7 @@ namespace SoftEngine.Core.Geometry.Primitives;
 
 public sealed class Cube : Mesh
 {
-    private static readonly int[] _indices = 
+    private static readonly int[] _indices =
     [
         0, 1, 2,
         2, 3, 0,
@@ -21,7 +21,7 @@ public sealed class Cube : Mesh
         6, 5, 4
     ];
 
-    private static readonly Vector3[] _vertices = 
+    private static readonly Vector3[] _vertices =
     [
         new Vector3(1, 1, 1) - new Vector3(.5f, .5f, .5f),
         new Vector3(0, 1, 1) - new Vector3(.5f, .5f, .5f),
@@ -33,7 +33,7 @@ public sealed class Cube : Mesh
         new Vector3(0, 0, 0) - new Vector3(.5f, .5f, .5f),
     ];
 
-    private static readonly ColorRGB[] _triangleColors = 
+    private static readonly ColorRGB[] _triangleColors =
     [
         ColorRGB.Red,
         ColorRGB.Red,

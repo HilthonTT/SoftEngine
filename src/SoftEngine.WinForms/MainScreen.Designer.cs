@@ -93,6 +93,8 @@ public sealed partial class MainScreen
         mnuLoadModel = new ToolStripMenuItem();
         mnuOpenModel = new ToolStripMenuItem();
         mnuOpenScene = new ToolStripMenuItem();
+        mnuOpenRecent = new ToolStripMenuItem();
+        mnuClearRecent = new ToolStripMenuItem();
         mnuSaveScene = new ToolStripMenuItem();
         mnuScreenshot = new ToolStripMenuItem();
         mnuExit = new ToolStripMenuItem();
@@ -101,6 +103,14 @@ public sealed partial class MainScreen
         mnuRedo = new ToolStripMenuItem();
         mnuSnap = new ToolStripMenuItem();
         mnuView = new ToolStripMenuItem();
+        mnuLayout = new ToolStripMenuItem();
+        mnuLayoutViewer = new ToolStripMenuItem();
+        mnuLayoutDebugger = new ToolStripMenuItem();
+        mnuFocusViewport = new ToolStripMenuItem();
+        mnuSidebar = new ToolStripMenuItem();
+        mnuSectionDisplay = new ToolStripMenuItem();
+        mnuSectionShading = new ToolStripMenuItem();
+        mnuSectionPost = new ToolStripMenuItem();
         mnuRenderedBy = new ToolStripMenuItem();
         mnuRenderCpu = new ToolStripMenuItem();
         mnuRenderGpu = new ToolStripMenuItem();
@@ -130,6 +140,10 @@ public sealed partial class MainScreen
         mnuZoomOut = new ToolStripMenuItem();
         mnuZoomActual = new ToolStripMenuItem();
         mnuClearPixel = new ToolStripMenuItem();
+        mnuHelp = new ToolStripMenuItem();
+        mnuShortcuts = new ToolStripMenuItem();
+        mnuProjectPage = new ToolStripMenuItem();
+        mnuAbout = new ToolStripMenuItem();
         statusStrip = new StatusStrip();
         lblZoomStatus = new ToolStripStatusLabel();
         lblPixelStatus = new ToolStripStatusLabel();
@@ -226,7 +240,7 @@ public sealed partial class MainScreen
         tlpSidebar.RowStyles.Add(new RowStyle());
         tlpSidebar.RowStyles.Add(new RowStyle());
         tlpSidebar.RowStyles.Add(new RowStyle());
-        tlpSidebar.Size = new Size(273, 1233);
+        tlpSidebar.Size = new Size(273, 1348);
         tlpSidebar.TabIndex = 0;
         // 
         // lblTitle
@@ -316,7 +330,7 @@ public sealed partial class MainScreen
         flpDisplay.Location = new Point(16, 170);
         flpDisplay.Margin = new Padding(0);
         flpDisplay.Name = "flpDisplay";
-        flpDisplay.Size = new Size(178, 465);
+        flpDisplay.Size = new Size(178, 580);
         flpDisplay.TabIndex = 4;
         flpDisplay.WrapContents = false;
         // 
@@ -379,8 +393,8 @@ public sealed partial class MainScreen
         // chkAnimate
         // 
         chkAnimate.AutoSize = true;
-        chkAnimate.Checked = true;
         chkAnimate.CheckState = CheckState.Checked;
+        chkAnimate.Checked = true;
         chkAnimate.Location = new Point(2, 127);
         chkAnimate.Margin = new Padding(2, 2, 0, 2);
         chkAnimate.Name = "chkAnimate";
@@ -464,23 +478,25 @@ public sealed partial class MainScreen
         btnPanorama.Text = "Load panorama…";
         toolTip1.SetToolTip(btnPanorama, "Open a Radiance .hdr or an image to surround and light the scene with");
         btnPanorama.UseVisualStyleBackColor = false;
-        //
+        // 
         // chkBakedLight
-        //
+        // 
         chkBakedLight.AutoSize = true;
         chkBakedLight.Enabled = false;
+        chkBakedLight.Location = new Point(18, 317);
         chkBakedLight.Margin = new Padding(18, 2, 0, 2);
         chkBakedLight.Name = "chkBakedLight";
-        chkBakedLight.Size = new Size(109, 21);
+        chkBakedLight.Size = new Size(114, 21);
         chkBakedLight.TabIndex = 11;
         chkBakedLight.Text = "No baked light";
         toolTip1.SetToolTip(chkBakedLight, "Light the scene with the baked probes instead of the environment's ambient");
         chkBakedLight.UseVisualStyleBackColor = true;
-        //
+        // 
         // btnBake
-        //
+        // 
         btnBake.AutoSize = true;
         btnBake.FlatStyle = FlatStyle.Flat;
+        btnBake.Location = new Point(18, 342);
         btnBake.Margin = new Padding(18, 2, 0, 6);
         btnBake.MinimumSize = new Size(0, 32);
         btnBake.Name = "btnBake";
@@ -489,11 +505,11 @@ public sealed partial class MainScreen
         btnBake.Text = "Bake indirect light";
         toolTip1.SetToolTip(btnBake, "Trace the scene's bounce light into a grid of probes (software rasterizer only)");
         btnBake.UseVisualStyleBackColor = false;
-        //
+        // 
         // chkGammaCorrect
         // 
         chkGammaCorrect.AutoSize = true;
-        chkGammaCorrect.Location = new Point(2, 317);
+        chkGammaCorrect.Location = new Point(2, 382);
         chkGammaCorrect.Margin = new Padding(2, 2, 0, 2);
         chkGammaCorrect.Name = "chkGammaCorrect";
         chkGammaCorrect.Size = new Size(147, 21);
@@ -505,7 +521,7 @@ public sealed partial class MainScreen
         // chkHighDynamicRange
         // 
         chkHighDynamicRange.AutoSize = true;
-        chkHighDynamicRange.Location = new Point(2, 342);
+        chkHighDynamicRange.Location = new Point(2, 407);
         chkHighDynamicRange.Margin = new Padding(2, 2, 0, 2);
         chkHighDynamicRange.Name = "chkHighDynamicRange";
         chkHighDynamicRange.Size = new Size(92, 21);
@@ -517,7 +533,7 @@ public sealed partial class MainScreen
         // chkTextureFiltering
         // 
         chkTextureFiltering.AutoSize = true;
-        chkTextureFiltering.Location = new Point(2, 367);
+        chkTextureFiltering.Location = new Point(2, 432);
         chkTextureFiltering.Margin = new Padding(2, 2, 0, 2);
         chkTextureFiltering.Name = "chkTextureFiltering";
         chkTextureFiltering.Size = new Size(117, 21);
@@ -525,23 +541,23 @@ public sealed partial class MainScreen
         chkTextureFiltering.Text = "Texture filtering";
         toolTip1.SetToolTip(chkTextureFiltering, "Bilinear filtering with mip-mapping (Textured shading)");
         chkTextureFiltering.UseVisualStyleBackColor = true;
-        //
+        // 
         // chkTrilinear
-        //
+        // 
         chkTrilinear.AutoSize = true;
-        chkTrilinear.Location = new Point(2, 392);
+        chkTrilinear.Location = new Point(14, 457);
         chkTrilinear.Margin = new Padding(14, 2, 0, 2);
         chkTrilinear.Name = "chkTrilinear";
-        chkTrilinear.Size = new Size(117, 21);
+        chkTrilinear.Size = new Size(73, 21);
         chkTrilinear.TabIndex = 15;
         chkTrilinear.Text = "Trilinear";
         toolTip1.SetToolTip(chkTrilinear, "Blend the two mip levels a surface falls between, instead of stepping from one to the next");
         chkTrilinear.UseVisualStyleBackColor = true;
-        //
+        // 
         // chkSuperSampling
         // 
         chkSuperSampling.AutoSize = true;
-        chkSuperSampling.Location = new Point(2, 392);
+        chkSuperSampling.Location = new Point(2, 482);
         chkSuperSampling.Margin = new Padding(2, 2, 0, 2);
         chkSuperSampling.Name = "chkSuperSampling";
         chkSuperSampling.Size = new Size(123, 21);
@@ -553,7 +569,7 @@ public sealed partial class MainScreen
         // chkTemporalAntiAliasing
         // 
         chkTemporalAntiAliasing.AutoSize = true;
-        chkTemporalAntiAliasing.Location = new Point(2, 417);
+        chkTemporalAntiAliasing.Location = new Point(2, 507);
         chkTemporalAntiAliasing.Margin = new Padding(2, 2, 0, 2);
         chkTemporalAntiAliasing.Name = "chkTemporalAntiAliasing";
         chkTemporalAntiAliasing.Size = new Size(102, 21);
@@ -565,7 +581,7 @@ public sealed partial class MainScreen
         // chkMotionBlur
         // 
         chkMotionBlur.AutoSize = true;
-        chkMotionBlur.Location = new Point(2, 442);
+        chkMotionBlur.Location = new Point(2, 532);
         chkMotionBlur.Margin = new Padding(2, 2, 0, 2);
         chkMotionBlur.Name = "chkMotionBlur";
         chkMotionBlur.Size = new Size(96, 21);
@@ -577,10 +593,10 @@ public sealed partial class MainScreen
         // chkOrderIndependentTransparency
         // 
         chkOrderIndependentTransparency.AutoSize = true;
-        chkOrderIndependentTransparency.Location = new Point(2, 467);
+        chkOrderIndependentTransparency.Location = new Point(2, 557);
         chkOrderIndependentTransparency.Margin = new Padding(2, 2, 0, 2);
         chkOrderIndependentTransparency.Name = "chkOrderIndependentTransparency";
-        chkOrderIndependentTransparency.Size = new Size(140, 21);
+        chkOrderIndependentTransparency.Size = new Size(112, 21);
         chkOrderIndependentTransparency.TabIndex = 19;
         chkOrderIndependentTransparency.Text = "Per-pixel glass";
         toolTip1.SetToolTip(chkOrderIndependentTransparency, "Resolve transparency per pixel instead of by sorting the transparent triangles — correct where glass intersects glass, and where a small pane straddles a large one. Costs storage for the fragments.");
@@ -590,7 +606,7 @@ public sealed partial class MainScreen
         // 
         lblShadingHeader.AutoSize = true;
         lblShadingHeader.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
-        lblShadingHeader.Location = new Point(18, 645);
+        lblShadingHeader.Location = new Point(18, 760);
         lblShadingHeader.Margin = new Padding(2, 10, 0, 6);
         lblShadingHeader.Name = "lblShadingHeader";
         lblShadingHeader.Size = new Size(57, 13);
@@ -610,7 +626,7 @@ public sealed partial class MainScreen
         flpShading.Controls.Add(rdbMaterialShading);
         flpShading.Controls.Add(rdbPbrShading);
         flpShading.FlowDirection = FlowDirection.TopDown;
-        flpShading.Location = new Point(16, 664);
+        flpShading.Location = new Point(16, 779);
         flpShading.Margin = new Padding(0);
         flpShading.Name = "flpShading";
         flpShading.Size = new Size(122, 200);
@@ -719,7 +735,7 @@ public sealed partial class MainScreen
         // 
         lblPostHeader.AutoSize = true;
         lblPostHeader.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
-        lblPostHeader.Location = new Point(18, 874);
+        lblPostHeader.Location = new Point(18, 989);
         lblPostHeader.Margin = new Padding(2, 10, 0, 6);
         lblPostHeader.Name = "lblPostHeader";
         lblPostHeader.Size = new Size(105, 13);
@@ -736,7 +752,7 @@ public sealed partial class MainScreen
         flpPost.Controls.Add(chkFxaa);
         flpPost.Controls.Add(chkVignette);
         flpPost.FlowDirection = FlowDirection.TopDown;
-        flpPost.Location = new Point(16, 893);
+        flpPost.Location = new Point(16, 1008);
         flpPost.Margin = new Padding(0);
         flpPost.Name = "flpPost";
         flpPost.Size = new Size(135, 125);
@@ -807,7 +823,7 @@ public sealed partial class MainScreen
         // 
         lblBufferHeader.AutoSize = true;
         lblBufferHeader.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
-        lblBufferHeader.Location = new Point(18, 1028);
+        lblBufferHeader.Location = new Point(18, 1143);
         lblBufferHeader.Margin = new Padding(2, 10, 0, 6);
         lblBufferHeader.Name = "lblBufferHeader";
         lblBufferHeader.Size = new Size(77, 13);
@@ -819,7 +835,7 @@ public sealed partial class MainScreen
         cboBufferView.Dock = DockStyle.Fill;
         cboBufferView.DropDownStyle = ComboBoxStyle.DropDownList;
         cboBufferView.FlatStyle = FlatStyle.Flat;
-        cboBufferView.Location = new Point(16, 1047);
+        cboBufferView.Location = new Point(16, 1162);
         cboBufferView.Margin = new Padding(0, 0, 0, 6);
         cboBufferView.Name = "cboBufferView";
         cboBufferView.Size = new Size(241, 25);
@@ -830,7 +846,7 @@ public sealed partial class MainScreen
         // 
         lblCascadeHeader.AutoSize = true;
         lblCascadeHeader.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
-        lblCascadeHeader.Location = new Point(18, 1086);
+        lblCascadeHeader.Location = new Point(18, 1201);
         lblCascadeHeader.Margin = new Padding(2, 10, 0, 6);
         lblCascadeHeader.Name = "lblCascadeHeader";
         lblCascadeHeader.Size = new Size(115, 13);
@@ -842,7 +858,7 @@ public sealed partial class MainScreen
         cboCascades.Dock = DockStyle.Fill;
         cboCascades.DropDownStyle = ComboBoxStyle.DropDownList;
         cboCascades.FlatStyle = FlatStyle.Flat;
-        cboCascades.Location = new Point(16, 1105);
+        cboCascades.Location = new Point(16, 1220);
         cboCascades.Margin = new Padding(0, 0, 0, 6);
         cboCascades.Name = "cboCascades";
         cboCascades.Size = new Size(241, 25);
@@ -853,7 +869,7 @@ public sealed partial class MainScreen
         // 
         lblGizmoHeader.AutoSize = true;
         lblGizmoHeader.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
-        lblGizmoHeader.Location = new Point(18, 1144);
+        lblGizmoHeader.Location = new Point(18, 1259);
         lblGizmoHeader.Margin = new Padding(2, 10, 0, 6);
         lblGizmoHeader.Name = "lblGizmoHeader";
         lblGizmoHeader.Size = new Size(115, 13);
@@ -865,7 +881,7 @@ public sealed partial class MainScreen
         cboGizmo.Dock = DockStyle.Fill;
         cboGizmo.DropDownStyle = ComboBoxStyle.DropDownList;
         cboGizmo.FlatStyle = FlatStyle.Flat;
-        cboGizmo.Location = new Point(16, 1163);
+        cboGizmo.Location = new Point(16, 1278);
         cboGizmo.Margin = new Padding(0, 0, 0, 6);
         cboGizmo.Name = "cboGizmo";
         cboGizmo.Size = new Size(241, 25);
@@ -875,7 +891,7 @@ public sealed partial class MainScreen
         // chkSnap
         // 
         chkSnap.AutoSize = true;
-        chkSnap.Location = new Point(18, 1192);
+        chkSnap.Location = new Point(18, 1307);
         chkSnap.Margin = new Padding(2, 0, 0, 8);
         chkSnap.Name = "chkSnap";
         chkSnap.Size = new Size(100, 21);
@@ -890,7 +906,7 @@ public sealed partial class MainScreen
         pnlViewport.Location = new Point(0, 0);
         pnlViewport.Name = "pnlViewport";
         pnlViewport.Padding = new Padding(10);
-        pnlViewport.Size = new Size(864, 502);
+        pnlViewport.Size = new Size(862, 500);
         pnlViewport.TabIndex = 1;
         // 
         // panel3D1
@@ -900,13 +916,13 @@ public sealed partial class MainScreen
         panel3D1.Location = new Point(10, 10);
         panel3D1.Margin = new Padding(0);
         panel3D1.Name = "panel3D1";
-        panel3D1.Size = new Size(844, 482);
+        panel3D1.Size = new Size(842, 480);
         panel3D1.TabIndex = 0;
         // 
         // menuStrip
         // 
         menuStrip.ImageScalingSize = new Size(24, 24);
-        menuStrip.Items.AddRange(new ToolStripItem[] { mnuFile, mnuEdit, mnuView });
+        menuStrip.Items.AddRange(new ToolStripItem[] { mnuFile, mnuEdit, mnuView, mnuHelp });
         menuStrip.Location = new Point(0, 0);
         menuStrip.Name = "menuStrip";
         menuStrip.Size = new Size(1546, 24);
@@ -914,7 +930,7 @@ public sealed partial class MainScreen
         // 
         // mnuFile
         // 
-        mnuFile.DropDownItems.AddRange(new ToolStripItem[] { mnuLoadModel, mnuOpenModel, mnuOpenScene, mnuSaveScene, mnuScreenshot, mnuExit });
+        mnuFile.DropDownItems.AddRange(new ToolStripItem[] { mnuLoadModel, mnuOpenModel, mnuOpenScene, mnuOpenRecent, mnuSaveScene, mnuScreenshot, mnuExit });
         mnuFile.Name = "mnuFile";
         mnuFile.Size = new Size(37, 20);
         mnuFile.Text = "&File";
@@ -938,6 +954,19 @@ public sealed partial class MainScreen
         mnuOpenScene.Name = "mnuOpenScene";
         mnuOpenScene.Size = new Size(211, 22);
         mnuOpenScene.Text = "Open sc&ene…";
+        // 
+        // mnuOpenRecent
+        // 
+        mnuOpenRecent.DropDownItems.AddRange(new ToolStripItem[] { mnuClearRecent });
+        mnuOpenRecent.Name = "mnuOpenRecent";
+        mnuOpenRecent.Size = new Size(211, 22);
+        mnuOpenRecent.Text = "Open &recent";
+        // 
+        // mnuClearRecent
+        // 
+        mnuClearRecent.Name = "mnuClearRecent";
+        mnuClearRecent.Size = new Size(141, 22);
+        mnuClearRecent.Text = "&Clear this list";
         // 
         // mnuSaveScene
         // 
@@ -990,10 +1019,68 @@ public sealed partial class MainScreen
         // 
         // mnuView
         // 
-        mnuView.DropDownItems.AddRange(new ToolStripItem[] { mnuRenderedBy, mnuPixelHistory, mnuObjectTable, mnuEventList, mnuStatsOverlay, mnuRecordEvents, mnuFrameHistory, mnuAxisViews, mnuZoomIn, mnuZoomOut, mnuZoomActual, mnuClearPixel });
+        mnuView.DropDownItems.AddRange(new ToolStripItem[] { mnuLayout, mnuSidebar, mnuRenderedBy, mnuPixelHistory, mnuObjectTable, mnuEventList, mnuStatsOverlay, mnuRecordEvents, mnuFrameHistory, mnuAxisViews, mnuZoomIn, mnuZoomOut, mnuZoomActual, mnuClearPixel });
         mnuView.Name = "mnuView";
         mnuView.Size = new Size(44, 20);
         mnuView.Text = "&View";
+        // 
+        // mnuLayout
+        // 
+        mnuLayout.DropDownItems.AddRange(new ToolStripItem[] { mnuLayoutViewer, mnuLayoutDebugger, mnuFocusViewport });
+        mnuLayout.Name = "mnuLayout";
+        mnuLayout.Size = new Size(222, 22);
+        mnuLayout.Text = "&Layout";
+        // 
+        // mnuLayoutViewer
+        // 
+        mnuLayoutViewer.Name = "mnuLayoutViewer";
+        mnuLayoutViewer.Size = new Size(206, 22);
+        mnuLayoutViewer.Text = "&Viewer — just the picture";
+        mnuLayoutViewer.ToolTipText = "Close the three debugger panels and give the space to the viewport.";
+        // 
+        // mnuLayoutDebugger
+        // 
+        mnuLayoutDebugger.Name = "mnuLayoutDebugger";
+        mnuLayoutDebugger.Size = new Size(206, 22);
+        mnuLayoutDebugger.Text = "&Debugger — every panel";
+        mnuLayoutDebugger.ToolTipText = "Open the pixel history, the object table and the event list.";
+        // 
+        // mnuFocusViewport
+        // 
+        mnuFocusViewport.CheckOnClick = true;
+        mnuFocusViewport.Name = "mnuFocusViewport";
+        mnuFocusViewport.ShortcutKeys = Keys.F11;
+        mnuFocusViewport.Size = new Size(206, 22);
+        mnuFocusViewport.Text = "&Focus the viewport";
+        mnuFocusViewport.ToolTipText = "Hide the sidebar and the panels. Press again to put them back where they were.";
+        // 
+        // mnuSidebar
+        // 
+        mnuSidebar.DropDownItems.AddRange(new ToolStripItem[] { mnuSectionDisplay, mnuSectionShading, mnuSectionPost });
+        mnuSidebar.Name = "mnuSidebar";
+        mnuSidebar.Size = new Size(222, 22);
+        mnuSidebar.Text = "&Sidebar sections";
+        // 
+        // mnuSectionDisplay
+        // 
+        mnuSectionDisplay.CheckOnClick = true;
+        mnuSectionDisplay.Name = "mnuSectionDisplay";
+        mnuSectionDisplay.Size = new Size(159, 22);
+        mnuSectionDisplay.Text = "&Display";
+        // 
+        // mnuSectionShading
+        // 
+        mnuSectionShading.CheckOnClick = true;
+        mnuSectionShading.Name = "mnuSectionShading";
+        mnuSectionShading.Size = new Size(159, 22);
+        mnuSectionShading.Text = "&Shading";
+        // 
+        // mnuSectionPost
+        // 
+        mnuSectionPost.CheckOnClick = true;
+        mnuSectionPost.Name = "mnuSectionPost";
+        mnuSectionPost.Size = new Size(159, 22);
+        mnuSectionPost.Text = "&Post-processing";
         // 
         // mnuRenderedBy
         // 
@@ -1004,8 +1091,8 @@ public sealed partial class MainScreen
         // 
         // mnuRenderCpu
         // 
-        mnuRenderCpu.Checked = true;
         mnuRenderCpu.CheckState = CheckState.Checked;
+        mnuRenderCpu.Checked = true;
         mnuRenderCpu.Name = "mnuRenderCpu";
         mnuRenderCpu.Size = new Size(210, 22);
         mnuRenderCpu.Text = "&CPU — software rasterizer";
@@ -1027,45 +1114,45 @@ public sealed partial class MainScreen
         // 
         // mnuPixelHistory
         // 
-        mnuPixelHistory.Checked = true;
         mnuPixelHistory.CheckOnClick = true;
         mnuPixelHistory.CheckState = CheckState.Checked;
+        mnuPixelHistory.Checked = true;
         mnuPixelHistory.Name = "mnuPixelHistory";
         mnuPixelHistory.Size = new Size(222, 22);
         mnuPixelHistory.Text = "&Pixel History";
         // 
         // mnuObjectTable
         // 
-        mnuObjectTable.Checked = true;
         mnuObjectTable.CheckOnClick = true;
         mnuObjectTable.CheckState = CheckState.Checked;
+        mnuObjectTable.Checked = true;
         mnuObjectTable.Name = "mnuObjectTable";
         mnuObjectTable.Size = new Size(222, 22);
         mnuObjectTable.Text = "Graphics &Object Table";
         // 
         // mnuEventList
         // 
-        mnuEventList.Checked = true;
         mnuEventList.CheckOnClick = true;
         mnuEventList.CheckState = CheckState.Checked;
+        mnuEventList.Checked = true;
         mnuEventList.Name = "mnuEventList";
         mnuEventList.Size = new Size(222, 22);
         mnuEventList.Text = "Graphics &Event List";
         // 
         // mnuStatsOverlay
         // 
-        mnuStatsOverlay.Checked = true;
         mnuStatsOverlay.CheckOnClick = true;
         mnuStatsOverlay.CheckState = CheckState.Checked;
+        mnuStatsOverlay.Checked = true;
         mnuStatsOverlay.Name = "mnuStatsOverlay";
         mnuStatsOverlay.Size = new Size(222, 22);
         mnuStatsOverlay.Text = "&Stats overlay";
         // 
         // mnuRecordEvents
         // 
-        mnuRecordEvents.Checked = true;
         mnuRecordEvents.CheckOnClick = true;
         mnuRecordEvents.CheckState = CheckState.Checked;
+        mnuRecordEvents.Checked = true;
         mnuRecordEvents.Name = "mnuRecordEvents";
         mnuRecordEvents.Size = new Size(222, 22);
         mnuRecordEvents.Text = "&Record graphics events";
@@ -1209,13 +1296,40 @@ public sealed partial class MainScreen
         mnuClearPixel.Size = new Size(222, 22);
         mnuClearPixel.Text = "&Clear pixel selection";
         // 
+        // mnuHelp
+        // 
+        mnuHelp.DropDownItems.AddRange(new ToolStripItem[] { mnuShortcuts, mnuProjectPage, mnuAbout });
+        mnuHelp.Name = "mnuHelp";
+        mnuHelp.Size = new Size(44, 20);
+        mnuHelp.Text = "&Help";
+        // 
+        // mnuShortcuts
+        // 
+        mnuShortcuts.Name = "mnuShortcuts";
+        mnuShortcuts.ShortcutKeys = Keys.F1;
+        mnuShortcuts.Size = new Size(214, 22);
+        mnuShortcuts.Text = "&Keyboard and mouse…";
+        mnuShortcuts.ToolTipText = "Every binding, including the ones with no menu item.";
+        // 
+        // mnuProjectPage
+        // 
+        mnuProjectPage.Name = "mnuProjectPage";
+        mnuProjectPage.Size = new Size(214, 22);
+        mnuProjectPage.Text = "SoftEngine on &GitHub";
+        // 
+        // mnuAbout
+        // 
+        mnuAbout.Name = "mnuAbout";
+        mnuAbout.Size = new Size(214, 22);
+        mnuAbout.Text = "&About SoftEngine";
+        // 
         // statusStrip
         // 
         statusStrip.ImageScalingSize = new Size(24, 24);
         statusStrip.Items.AddRange(new ToolStripItem[] { lblZoomStatus, lblPixelStatus, lblScreenshotHint, lblBackendStatus, lblCameraStatus, lblFrameStatus });
-        statusStrip.Location = new Point(0, 502);
+        statusStrip.Location = new Point(0, 500);
         statusStrip.Name = "statusStrip";
-        statusStrip.Size = new Size(864, 32);
+        statusStrip.Size = new Size(862, 32);
         statusStrip.SizingGrip = false;
         statusStrip.TabIndex = 11;
         // 
@@ -1337,7 +1451,7 @@ public sealed partial class MainScreen
         splitRight.Panel2.Controls.Add(eventListPanel);
         splitRight.Panel2MinSize = 120;
         splitRight.Size = new Size(1250, 812);
-        splitRight.SplitterDistance = 864;
+        splitRight.SplitterDistance = 862;
         splitRight.SplitterWidth = 6;
         splitRight.TabIndex = 1;
         // 
@@ -1359,8 +1473,8 @@ public sealed partial class MainScreen
         // 
         splitCenter.Panel2.Controls.Add(objectTablePanel);
         splitCenter.Panel2MinSize = 80;
-        splitCenter.Size = new Size(864, 812);
-        splitCenter.SplitterDistance = 534;
+        splitCenter.Size = new Size(862, 812);
+        splitCenter.SplitterDistance = 532;
         splitCenter.SplitterWidth = 6;
         splitCenter.TabIndex = 0;
         // 
@@ -1370,7 +1484,7 @@ public sealed partial class MainScreen
         objectTablePanel.Dock = DockStyle.Fill;
         objectTablePanel.Location = new Point(0, 0);
         objectTablePanel.Name = "objectTablePanel";
-        objectTablePanel.Size = new Size(864, 272);
+        objectTablePanel.Size = new Size(862, 274);
         objectTablePanel.TabIndex = 0;
         // 
         // eventListPanel
@@ -1379,7 +1493,7 @@ public sealed partial class MainScreen
         eventListPanel.Dock = DockStyle.Fill;
         eventListPanel.Location = new Point(0, 0);
         eventListPanel.Name = "eventListPanel";
-        eventListPanel.Size = new Size(380, 812);
+        eventListPanel.Size = new Size(382, 812);
         eventListPanel.TabIndex = 0;
         // 
         // tmrDebugRefresh
@@ -1531,11 +1645,27 @@ public sealed partial class MainScreen
     private ToolStripMenuItem mnuTurnY;
     private ToolStripMenuItem mnuTurnZ;
     private ToolStripMenuItem mnuOpenScene;
+    private ToolStripMenuItem mnuOpenRecent;
+    private ToolStripMenuItem mnuClearRecent;
     private ToolStripMenuItem mnuSaveScene;
     private ToolStripMenuItem mnuEdit;
     private ToolStripMenuItem mnuUndo;
     private ToolStripMenuItem mnuRedo;
     private ToolStripMenuItem mnuSnap;
+
+    private ToolStripMenuItem mnuLayout;
+    private ToolStripMenuItem mnuLayoutViewer;
+    private ToolStripMenuItem mnuLayoutDebugger;
+    private ToolStripMenuItem mnuFocusViewport;
+    private ToolStripMenuItem mnuSidebar;
+    private ToolStripMenuItem mnuSectionDisplay;
+    private ToolStripMenuItem mnuSectionShading;
+    private ToolStripMenuItem mnuSectionPost;
+
+    private ToolStripMenuItem mnuHelp;
+    private ToolStripMenuItem mnuShortcuts;
+    private ToolStripMenuItem mnuProjectPage;
+    private ToolStripMenuItem mnuAbout;
 
     private StatusStrip statusStrip;
     private ToolStripStatusLabel lblZoomStatus;

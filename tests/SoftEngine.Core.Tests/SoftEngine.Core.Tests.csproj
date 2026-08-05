@@ -5,6 +5,21 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+
+    <!--
+      The golden-image suite resolves its baselines through [CallerFilePath] so that a
+      re-record rewrites the PNGs in the working tree rather than in the output directory.
+      ContinuousIntegrationBuild — which Directory.Build.props turns on for CI — implies
+      DeterministicSourcePaths, and that rewrites [CallerFilePath] to "/_/tests/...".
+
+      The failure mode is worse than a broken build. The suite treats a missing baseline as
+      "write it and fail", so on a build server it would write a whole fresh set of baselines
+      outside the repository, fail once, and then *pass* on any re-run — comparing renders
+      against images it had generated itself moments earlier. A green suite checking nothing.
+
+      Determinism is worth having for the assemblies that ship; it is not worth having here.
+    -->
+    <DeterministicSourcePaths>false</DeterministicSourcePaths>
   </PropertyGroup>
 
   <ItemGroup>

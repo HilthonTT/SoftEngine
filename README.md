@@ -1,5 +1,10 @@
 # SoftEngine
 
+[![CI](https://github.com/HilthonTT/SoftEngine/actions/workflows/ci.yml/badge.svg)](https://github.com/HilthonTT/SoftEngine/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/HilthonTT/SoftEngine/actions/workflows/codeql.yml/badge.svg)](https://github.com/HilthonTT/SoftEngine/actions/workflows/codeql.yml)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/download)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A **software 3D rasterizer** in C#. The whole pipeline — transforms, culling, clipping, scanline
 rasterization, z-buffering and shading — runs on the CPU with no graphics-API dependency. A
 WinForms front-end renders live into a bitmap; a CLI renders headlessly to PNG; an OpenGL backend
@@ -563,17 +568,41 @@ with JPEG maps renders untextured and the program says how many it skipped.
 | **Ctrl+S** | Save the scene as JSON (**File ▸ Open scene…** brings it back) |
 | **Ctrl+← / Ctrl+→** | Step through kept frames |
 | **F12** | Save the view as a PNG |
+| **F11** | Focus the viewport — hide the sidebar and the panels, press again to put them back |
+| **F1** | The full keyboard and mouse reference |
+
+There are about thirty bindings and only a third of them are menu items — the numpad axis views,
+the X/Y/Z turns, the WASD fly and every mouse gesture live in the viewport's own key handler.
+**Help ▸ Keyboard and mouse** (**F1**) is the list. A control nobody can discover is a control
+nobody has.
 
 Plus **Load model…** (bundled demos or a file from disk), **Bake indirect light** (and the checkbox
 that decides whether the frame uses it), shading radios, buffer view, cascade count, gizmo mode,
 display and post-processing checkboxes, and a stats overlay reporting triangle counts, pixel counts
 and per-frame timing.
 
+**Dropping a file on the window** opens it, by extension: `.obj`/`.dae`/`.gltf`/`.glb` as a model,
+`.json` as a scene, `.hdr`/`.pic` and ordinary images as a panorama. **File ▸ Open recent** keeps
+the last ten, with anything that has since moved greyed out and saying so rather than quietly
+disappearing.
+
+The sidebar is taller than its pane by design — there are a lot of switches — so the **DISPLAY**,
+**SHADING** and **POST-PROCESSING** headings roll their sections up when clicked (also under
+**View ▸ Sidebar sections**, since a label cannot take keyboard focus). **View ▸ Layout** opens or
+closes all three debugger panels at once.
+
 **View ▸ Rendered by** picks CPU, GPU or path tracer, and the choice is remembered in
 `%APPDATA%\SoftEngine\viewer.json` — what settled, not what was asked for, so a machine whose driver
 has gone missing does not probe for an OpenGL context on every launch. With nothing saved it still
 opens on the CPU: the viewer is a demonstration of a software rasterizer, and defaulting to the
 graphics card would quietly show you something else.
+
+That file also holds the window's position and size, which panels were open, where the splitters
+were, which sidebar sections were rolled up, and the recent list. A saved splitter distance that
+does not fit the window it is reopened in is **dropped rather than clamped** — it was measured
+against a geometry this window does not have, and pinning it to the nearest edge produces the worst
+arrangement available rather than the closest one. Nothing in there may throw: a corrupt or
+unreadable preferences file means "use the defaults", never a viewer that will not start.
 
 ## Graphics debugger
 
@@ -864,6 +893,21 @@ Measured at 1280×720 on twenty threads, best of thirty frames.
 - A deferred or visibility-buffer path, so SSAO could darken the ambient term alone.
 - Testing occluders against each other, by building the pyramid front to back.
 - A JPEG decoder for the headless renderer.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The short version: `dotnet format SoftEngine.slnx
+--verify-no-changes`, `dotnet build`, `dotnet test`, and — because this is a renderer — say which
+world and shading mode you looked at, with a screenshot for anything that changes the picture.
+
+CI builds Debug and Release on Windows with warnings as errors, runs the 738 tests, checks
+formatting against [`.editorconfig`](.editorconfig), and uploads golden-image `.diff.png` artifacts
+when an image test fails. If your change moves a golden baseline, re-record it deliberately
+(`SOFTENGINE_UPDATE_GOLDEN=1 dotnet test`) and **say so in the pull request** — a silently updated
+baseline is the one thing that makes that suite worthless.
+
+Security reports go through [private advisories](SECURITY.md), not public issues. The file parsers
+— glTF, Collada, OBJ, PNG, Radiance HDR — are where the real attack surface is.
 
 ## Credits
 

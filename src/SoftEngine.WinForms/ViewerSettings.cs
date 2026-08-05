@@ -34,9 +34,9 @@ internal sealed class ViewerSettings
         // Names rather than numbers. The file is small enough to read, and somebody who opens it
         // should find "Gpu" instead of a 1 whose meaning lives in an enum's declaration order —
         // which then cannot be reordered without silently changing what old files mean.
-        Converters = 
-        { 
-            new JsonStringEnumConverter() 
+        Converters =
+        {
+            new JsonStringEnumConverter()
         },
     };
 
@@ -49,6 +49,67 @@ internal sealed class ViewerSettings
     /// different statement, and it is the one this file makes.
     /// </summary>
     public RenderBackend Backend { get; set; } = RenderBackend.Cpu;
+
+    /// <summary>Where the window was, or null until it has been anywhere.</summary>
+    public WindowPlacement? Window { get; set; }
+
+    /// <summary>Which panels were open and how the space between them was divided.</summary>
+    public WorkspaceLayout? Workspace { get; set; }
+
+    /// <summary>
+    /// Models and scenes opened by path, newest first.
+    ///
+    /// Only files: the bundled worlds are already one click away in the picker, and putting them
+    /// here would push the thing you actually went looking for off the end of the list.
+    /// </summary>
+    /// <remarks>
+    /// The setter coalesces because a hand-edited file containing <c>"RecentFiles": null</c> would
+    /// otherwise deserialize straight over the initializer and leave every use of this list one
+    /// dereference away from taking the application down. Everything else here is nullable on
+    /// purpose; this one is a collection, and "absent" and "empty" are the same answer.
+    /// </remarks>
+    public List<string> RecentFiles
+    {
+        get => _recentFiles;
+        set => _recentFiles = value ?? [];
+    }
+
+    private List<string> _recentFiles = [];
+
+    /// <summary>How many entries the recent list keeps before the oldest falls off.</summary>
+    public const int MaxRecentFiles = 10;
+
+    /// <summary>
+    /// Moves a path to the front of the recent list, or puts it there. Returns whether the list
+    /// changed, so a caller can skip rewriting the file and rebuilding the menu when it did not.
+    /// </summary>
+    public bool RememberRecentFile(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        // Paths are compared case-insensitively because this is Windows and "Skull.dae" and
+        // "skull.dae" are the same file — two entries for one model is a list that looks broken.
+        var wasFirst = RecentFiles.Count > 0 &&
+                       string.Equals(RecentFiles[0], path, StringComparison.OrdinalIgnoreCase);
+
+        if (wasFirst)
+        {
+            return false;
+        }
+
+        RecentFiles.RemoveAll(existing => string.Equals(existing, path, StringComparison.OrdinalIgnoreCase));
+        RecentFiles.Insert(0, path);
+
+        if (RecentFiles.Count > MaxRecentFiles)
+        {
+            RecentFiles.RemoveRange(MaxRecentFiles, RecentFiles.Count - MaxRecentFiles);
+        }
+
+        return true;
+    }
 
     /// <summary>The settings on disk, or fresh defaults when there are none to be had.</summary>
     public static ViewerSettings Load()

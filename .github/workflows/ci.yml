@@ -11,9 +11,19 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Nothing here writes to the repository. Declaring it explicitly is what stops a
+# compromised action inheriting the token's default write scope.
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
 jobs:
   build:
-    name: Build (${{ matrix.configuration }})
+    name: Build & test (${{ matrix.configuration }})
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -27,13 +37,60 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
+
+      # Keyed on the project files, since those are what pin the package versions.
+      # Without lock files there is nothing more precise to hash.
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', 'global.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
 
       - name: Restore
         run: dotnet restore SoftEngine.slnx
 
+      # GITHUB_ACTIONS is already set, which is what turns on TreatWarningsAsErrors
+      # and ContinuousIntegrationBuild in Directory.Build.props.
       - name: Build
         run: dotnet build SoftEngine.slnx --configuration ${{ matrix.configuration }} --no-restore
 
       - name: Test
-        run: dotnet test SoftEngine.slnx --configuration ${{ matrix.configuration }} --no-build --verbosity normal
+        run: >
+          dotnet test SoftEngine.slnx
+          --configuration ${{ matrix.configuration }}
+          --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory ${{ github.workspace }}/artifacts/test-results
+
+      # Golden-image failures write .actual.png and .diff.png next to the baselines.
+      # Those are the whole diagnosis for a rendering regression, and they are the one
+      # thing you cannot reconstruct from a log after the runner is gone.
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.configuration }}
+          path: |
+            artifacts/test-results/**/*.trx
+            tests/SoftEngine.Core.Tests/Golden/Artifacts/**
+          if-no-files-found: ignore
+          retention-days: 14
+
+  format:
+    name: Format
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Verify formatting
+        run: dotnet format SoftEngine.slnx --verify-no-changes --severity warn

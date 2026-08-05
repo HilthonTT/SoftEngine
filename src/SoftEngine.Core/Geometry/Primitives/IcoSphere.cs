@@ -9,7 +9,7 @@ public sealed class IcoSphere : Mesh
     {
     }
 
-    public IcoSphere(int recursionLevel) 
+    public IcoSphere(int recursionLevel)
         : this(new Sphere(recursionLevel))
     {
     }

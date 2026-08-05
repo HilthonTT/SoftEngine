@@ -17,8 +17,8 @@ namespace SoftEngine.Benchmarks;
 /// about. Built fresh per run so a measurement never inherits another one's warmed buffers.
 /// </summary>
 internal sealed class BenchmarkScene(
-    string name, 
-    string description, 
+    string name,
+    string description,
     Func<int, int, (Renderer Renderer, Scene Scene, IPainter Painter)> build)
 {
     public string Name { get; } = name;
