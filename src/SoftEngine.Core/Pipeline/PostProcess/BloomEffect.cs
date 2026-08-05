@@ -121,7 +121,7 @@ public sealed class BloomEffect : IPostEffect
         var width = _width;
         var threshold = MathF.Max(0f, Threshold);
 
-        var blockArea = 1f / (downsample * downsample);
+        var blockArea = 1f / (downsample * (float)downsample);
 
         Parallel.For(0, _height, y =>
         {
