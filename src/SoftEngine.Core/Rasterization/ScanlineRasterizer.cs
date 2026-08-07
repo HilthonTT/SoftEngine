@@ -258,6 +258,12 @@ public static class ScanlineRasterizer
         var recordMips = surface.IsRecordingMipLevels;
         var mipLevel = state.MipLevel;
 
+        // Hoisted for the same reason, and separately: the mip-level view is open on the
+        // frames somebody is looking at it, while reflectance is recorded on every frame the
+        // reflection pass is enabled. They are never on together by accident.
+        var recordReflectance = surface.IsRecordingReflectance;
+        var reflectance = state.PackedReflectance;
+
         var x = xStart;
 
         // A span shorter than one vector cannot fill a block, and asking costs a call and a
@@ -269,7 +275,8 @@ public static class ScanlineRasterizer
         {
             x = VectorSpan(
                 surface, y, xStart, xEnd, sx, sw, ew, sv, ev, invSpan, dz, zBase,
-                shader, state, recordMips, mipLevel, ref drawn, ref behindZ);
+                shader, state, recordMips, mipLevel, recordReflectance, reflectance,
+                ref drawn, ref behindZ);
         }
 
         // Runs entirely behind the z-buffer are rejected a vector at a time here too, so that
@@ -341,6 +348,11 @@ public static class ScanlineRasterizer
                 {
                     surface.RecordMipLevel(x, y, mipLevel);
                 }
+
+                if (recordReflectance)
+                {
+                    surface.RecordReflectance(x, y, reflectance);
+                }
             }
             else
             {
@@ -386,6 +398,8 @@ public static class ScanlineRasterizer
         in RasterState state,
         bool recordMips,
         int mipLevel,
+        bool recordReflectance,
+        uint reflectance,
         ref int drawn,
         ref int behindZ)
         where TVarying : struct, IVarying<TVarying>
@@ -478,6 +492,11 @@ public static class ScanlineRasterizer
                     if (recordMips)
                     {
                         surface.RecordMipLevel(x + lane, y, mipLevel);
+                    }
+
+                    if (recordReflectance)
+                    {
+                        surface.RecordReflectance(x + lane, y, reflectance);
                     }
                 }
                 else

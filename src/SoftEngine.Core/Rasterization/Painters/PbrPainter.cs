@@ -196,6 +196,28 @@ public sealed class PbrPainter(ILight? light = null, float ambient = 0.12f) : Li
             tile);
     }
 
+    /// <summary>
+    /// The metallic-roughness reading of what a surface reflects, matching what
+    /// <see cref="PbrShader"/> computes per pixel: a dielectric's flat 4%, or a metal's albedo.
+    ///
+    /// <para>
+    /// A mesh with no material takes the painter's defaults, which make it a dielectric — so
+    /// the albedo the base colour would have contributed is multiplied by a zero metalness and
+    /// never read. That is why this can use the material's own <c>Diffuse</c> rather than the
+    /// per-triangle colour <see cref="DrawTriangle"/> falls back to: the two only differ where
+    /// there is no material, and where there is no material the albedo does not matter.
+    /// </para>
+    /// </summary>
+    protected override SurfaceReflectance ReflectanceFor(IMesh mesh)
+    {
+        var material = mesh.Material;
+
+        return SurfaceReflectance.FromMetallic(
+            material?.Diffuse ?? ColorRGB.Gray,
+            material?.Metallic ?? DefaultMetallic,
+            material?.Roughness ?? DefaultRoughness);
+    }
+
     /// <summary>Binds one map at the mip level this triangle's screen footprint calls for.</summary>
     private TextureSampler Bind(
         Texture? texture,

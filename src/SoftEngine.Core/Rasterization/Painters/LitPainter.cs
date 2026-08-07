@@ -105,8 +105,29 @@ public abstract class LitPainter(ILight? light, float ambient) : IPainter
         return _ambientCube;
     }
 
-    /// <summary>The frame's fog state combined with a mesh's opacity, for the rasterizer.</summary>
-    protected RasterState StateFor(IMesh mesh) => _fogState.WithOpacity(mesh.Opacity);
+    /// <summary>
+    /// The frame's fog state combined with a mesh's opacity and with what its surface does to
+    /// a reflection, for the rasterizer.
+    /// </summary>
+    protected RasterState StateFor(IMesh mesh) =>
+        _fogState.WithOpacity(mesh.Opacity).WithReflectance(ReflectanceFor(mesh));
+
+    /// <summary>
+    /// What a mesh's surface reflects, recorded per pixel for the screen-space reflection
+    /// pass. The Blinn-Phong reading by default — specular strength as F0, shininess inverted
+    /// into a roughness — which is what every painter here shades by except the physically
+    /// based one, and that one overrides it.
+    ///
+    /// <para>
+    /// It is answered even by painters that draw no specular highlight of their own, such as
+    /// <see cref="FlatPainter"/>. A reflection is a property of the surface, not of the
+    /// approximation being used to light it, and the alternative — reflections that appear
+    /// when you switch shading mode — would read as a bug in the mode rather than as a limit
+    /// of the model.
+    /// </para>
+    /// </summary>
+    protected virtual SurfaceReflectance ReflectanceFor(IMesh mesh) =>
+        SurfaceReflectance.FromMaterial(mesh.Material);
 
     protected virtual void PrepareCore(Scene scene)
     {

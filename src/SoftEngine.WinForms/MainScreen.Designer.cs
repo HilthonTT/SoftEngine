@@ -73,6 +73,7 @@ public sealed partial class MainScreen
         rdbPbrShading = new RadioButton();
         lblPostHeader = new Label();
         flpPost = new FlowLayoutPanel();
+        chkReflections = new CheckBox();
         chkSsao = new CheckBox();
         chkBloom = new CheckBox();
         chkToneMap = new CheckBox();
@@ -748,6 +749,7 @@ public sealed partial class MainScreen
         // 
         flpPost.AutoSize = true;
         flpPost.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        flpPost.Controls.Add(chkReflections);
         flpPost.Controls.Add(chkSsao);
         flpPost.Controls.Add(chkBloom);
         flpPost.Controls.Add(chkToneMap);
@@ -757,30 +759,42 @@ public sealed partial class MainScreen
         flpPost.Location = new Point(16, 1008);
         flpPost.Margin = new Padding(0);
         flpPost.Name = "flpPost";
-        flpPost.Size = new Size(135, 125);
+        flpPost.Size = new Size(135, 150);
         flpPost.TabIndex = 8;
         flpPost.WrapContents = false;
-        // 
+        //
+        // chkReflections
+        //
+        chkReflections.AutoSize = true;
+        chkReflections.Location = new Point(2, 2);
+        chkReflections.Margin = new Padding(2, 2, 0, 2);
+        chkReflections.Name = "chkReflections";
+        chkReflections.Size = new Size(101, 21);
+        chkReflections.TabIndex = 0;
+        chkReflections.Text = "Reflections";
+        toolTip1.SetToolTip(chkReflections, "Reflect the scene in glossy and metallic surfaces (CPU only)");
+        chkReflections.UseVisualStyleBackColor = true;
+        //
         // chkSsao
-        // 
+        //
         chkSsao.AutoSize = true;
-        chkSsao.Location = new Point(2, 2);
+        chkSsao.Location = new Point(2, 27);
         chkSsao.Margin = new Padding(2, 2, 0, 2);
         chkSsao.Name = "chkSsao";
         chkSsao.Size = new Size(133, 21);
-        chkSsao.TabIndex = 0;
+        chkSsao.TabIndex = 1;
         chkSsao.Text = "Ambient occlusion";
         toolTip1.SetToolTip(chkSsao, "Darken creases and contact points, from the depth buffer");
         chkSsao.UseVisualStyleBackColor = true;
-        // 
+        //
         // chkBloom
-        // 
+        //
         chkBloom.AutoSize = true;
-        chkBloom.Location = new Point(2, 27);
+        chkBloom.Location = new Point(2, 52);
         chkBloom.Margin = new Padding(2, 2, 0, 2);
         chkBloom.Name = "chkBloom";
         chkBloom.Size = new Size(64, 21);
-        chkBloom.TabIndex = 1;
+        chkBloom.TabIndex = 2;
         chkBloom.Text = "Bloom";
         toolTip1.SetToolTip(chkBloom, "Bleed light out of the brightest parts of the image");
         chkBloom.UseVisualStyleBackColor = true;
@@ -788,11 +802,11 @@ public sealed partial class MainScreen
         // chkToneMap
         // 
         chkToneMap.AutoSize = true;
-        chkToneMap.Location = new Point(2, 52);
+        chkToneMap.Location = new Point(2, 77);
         chkToneMap.Margin = new Padding(2, 2, 0, 2);
         chkToneMap.Name = "chkToneMap";
         chkToneMap.Size = new Size(85, 21);
-        chkToneMap.TabIndex = 2;
+        chkToneMap.TabIndex = 3;
         chkToneMap.Text = "Tone map";
         toolTip1.SetToolTip(chkToneMap, "Exposure and an ACES filmic curve instead of a hard clip");
         chkToneMap.UseVisualStyleBackColor = true;
@@ -800,11 +814,11 @@ public sealed partial class MainScreen
         // chkFxaa
         // 
         chkFxaa.AutoSize = true;
-        chkFxaa.Location = new Point(2, 77);
+        chkFxaa.Location = new Point(2, 102);
         chkFxaa.Margin = new Padding(2, 2, 0, 2);
         chkFxaa.Name = "chkFxaa";
         chkFxaa.Size = new Size(57, 21);
-        chkFxaa.TabIndex = 3;
+        chkFxaa.TabIndex = 4;
         chkFxaa.Text = "FXAA";
         toolTip1.SetToolTip(chkFxaa, "Smooth stair-stepped edges after rasterization");
         chkFxaa.UseVisualStyleBackColor = true;
@@ -812,11 +826,11 @@ public sealed partial class MainScreen
         // chkVignette
         // 
         chkVignette.AutoSize = true;
-        chkVignette.Location = new Point(2, 102);
+        chkVignette.Location = new Point(2, 127);
         chkVignette.Margin = new Padding(2, 2, 0, 2);
         chkVignette.Name = "chkVignette";
         chkVignette.Size = new Size(75, 21);
-        chkVignette.TabIndex = 4;
+        chkVignette.TabIndex = 5;
         chkVignette.Text = "Vignette";
         toolTip1.SetToolTip(chkVignette, "Darken the frame toward its corners");
         chkVignette.UseVisualStyleBackColor = true;
@@ -1618,6 +1632,7 @@ public sealed partial class MainScreen
     private CheckBox chkFxaa;
     private CheckBox chkVignette;
     private CheckBox chkSsao;
+    private CheckBox chkReflections;
     private Panel pnlViewport;
     private Panel3D panel3D1;
     private ToolTip toolTip1;

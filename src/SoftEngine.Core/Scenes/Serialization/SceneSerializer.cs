@@ -258,6 +258,21 @@ public static class SceneSerializer
 
         var state = new PostState();
 
+        if (post.Find<SsrEffect>() is { } ssr)
+        {
+            state.Ssr = new SsrState
+            {
+                Enabled = ssr.Enabled,
+                Strength = ssr.Strength,
+                MaxSteps = ssr.MaxSteps,
+                MaxDistance = ssr.MaxDistance,
+                Thickness = ssr.Thickness,
+                MaxRoughness = ssr.MaxRoughness,
+                BlurRadius = ssr.BlurRadius,
+                EdgeFade = ssr.EdgeFade,
+            };
+        }
+
         if (post.Find<SsaoEffect>() is { } ssao)
         {
             state.Ssao = new SsaoState
@@ -522,6 +537,18 @@ public static class SceneSerializer
         if (state is null || post is null)
         {
             return;
+        }
+
+        if (state.Ssr is { } r && post.Find<SsrEffect>() is { } ssr)
+        {
+            ssr.Enabled = r.Enabled;
+            ssr.Strength = r.Strength;
+            ssr.MaxSteps = r.MaxSteps;
+            ssr.MaxDistance = r.MaxDistance;
+            ssr.Thickness = r.Thickness;
+            ssr.MaxRoughness = r.MaxRoughness;
+            ssr.BlurRadius = r.BlurRadius;
+            ssr.EdgeFade = r.EdgeFade;
         }
 
         if (state.Ssao is { } s && post.Find<SsaoEffect>() is { } ssao)

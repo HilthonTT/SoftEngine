@@ -1288,6 +1288,7 @@ public sealed partial class MainScreen : Form
 
         if (document.Post is { } post)
         {
+            chkReflections.Checked = post.Ssr?.Enabled ?? chkReflections.Checked;
             chkSsao.Checked = post.Ssao?.Enabled ?? chkSsao.Checked;
             chkBloom.Checked = post.Bloom?.Enabled ?? chkBloom.Checked;
             chkToneMap.Checked = post.ToneMap?.Enabled ?? chkToneMap.Checked;
@@ -1644,6 +1645,7 @@ public sealed partial class MainScreen : Form
     /// <summary>Points each post-processing checkbox at its effect in the viewport's stack.</summary>
     private void InitializePostProcessing()
     {
+        Bind(chkReflections, panel3D1.PostProcess.Find<SsrEffect>());
         Bind(chkSsao, panel3D1.PostProcess.Find<SsaoEffect>());
         Bind(chkBloom, panel3D1.PostProcess.Find<BloomEffect>());
         Bind(chkToneMap, panel3D1.PostProcess.Find<ToneMapEffect>());
@@ -2070,6 +2072,25 @@ public sealed partial class MainScreen : Form
     }
 
     /// <summary>
+    /// Scales the reflection march to the world just loaded, for the same reason and from the
+    /// same reference: how far a reflected ray may travel and how thick the depth buffer's one
+    /// recorded layer is taken to be are both world-space distances, and a march tuned to a
+    /// skull walks off the end of an elephant in three steps.
+    /// </summary>
+    private void ApplyReflections()
+    {
+        if (_applyingScene || panel3D1.PostProcess.Find<SsrEffect>() is not { } ssr)
+        {
+            return;
+        }
+
+        var reference = panel3D1.ReferenceDistance;
+
+        ssr.MaxDistance = reference > 0f ? reference : 40f;
+        ssr.Thickness = ssr.MaxDistance * 0.04f;
+    }
+
+    /// <summary>
     /// True from the moment a load is asked for until its world is in the scene.
     ///
     /// <para>
@@ -2131,6 +2152,7 @@ public sealed partial class MainScreen : Form
             ApplySky(setup.World);
 
             ApplyAmbientOcclusion();
+            ApplyReflections();
 
             // The grid a drag snaps to is measured in the world's own units, so it is scaled to
             // the world the same way the fog distances and the occlusion radius are.

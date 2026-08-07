@@ -285,6 +285,8 @@ public sealed class RenderState
 
 public sealed class PostState
 {
+    public SsrState? Ssr { get; set; }
+
     public SsaoState? Ssao { get; set; }
 
     public BloomState? Bloom { get; set; }
@@ -294,6 +296,27 @@ public sealed class PostState
     public FxaaState? Fxaa { get; set; }
 
     public VignetteState? Vignette { get; set; }
+}
+
+public sealed class SsrState
+{
+    public bool Enabled { get; set; }
+
+    public float Strength { get; set; } = 1f;
+
+    public int MaxSteps { get; set; } = 64;
+
+    /// <summary>A world-space distance, and so the number that must be scaled to the scene.</summary>
+    public float MaxDistance { get; set; } = 40f;
+
+    /// <summary>Also world-space: how thick the depth buffer's one recorded layer is taken to be.</summary>
+    public float Thickness { get; set; } = 1.5f;
+
+    public float MaxRoughness { get; set; } = 0.6f;
+
+    public int BlurRadius { get; set; } = 3;
+
+    public float EdgeFade { get; set; } = 0.15f;
 }
 
 public sealed class SsaoState

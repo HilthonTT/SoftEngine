@@ -116,7 +116,12 @@ static int Render(RenderOptions options)
     // light in six uniforms, which is a cube and not a grid. So "pick a backend for me" must not
     // pick the one that would quietly ignore what was asked for; an explicit --gpu still gets what
     // it asked for, and is told what it costs.
-    var requested = options.Bake && options.Backend == RenderBackend.Automatic
+    // Screen-space reflections need the same treatment for the same reason: they read a
+    // per-pixel record of what each surface is made of, and only the software rasterizer
+    // writes one.
+    var reflects = options.Post.Contains("ssr");
+
+    var requested = (options.Bake || reflects) && options.Backend == RenderBackend.Automatic
         ? RenderBackend.Cpu
         : options.Backend;
 
@@ -134,6 +139,14 @@ static int Render(RenderOptions options)
             ? "softengine: the path tracer computes indirect light as it goes — nothing to bake."
             : "softengine: this backend holds its ambient light as six values and cannot read a " +
               "volume; the frame will be lit by the environment instead.");
+    }
+
+    if (reflects && renderer is not Renderer)
+    {
+        Console.Error.WriteLine(renderer is PathTracer
+            ? "softengine: the path tracer reflects the scene as it goes — --post ssr adds nothing."
+            : "softengine: this backend records nothing about its surfaces, so --post ssr has " +
+              "nothing to reflect with; the frame keeps its environment reflections only.");
     }
 
     // Said before the render rather than after it, so a fallback explains the frame time that
@@ -265,11 +278,21 @@ static int Render(RenderOptions options)
         ssao.Bias = ssao.Radius * 0.04f;
     }
 
+    if (post.Find<SsrEffect>() is { } ssr)
+    {
+        // World-space too, and for the same reason: how far a reflected ray may travel, and
+        // how thick the depth buffer's one recorded layer is taken to be, are both distances
+        // in the scene rather than fractions of the frame.
+        ssr.MaxDistance = loaded.Radius * 2f;
+        ssr.Thickness = loaded.Radius * 0.08f;
+    }
+
     foreach (var name in options.Post)
     {
         var effect = name.ToLowerInvariant() switch
         {
-            "ssao" => post.Find<SsaoEffect>() as IPostEffect,
+            "ssr" => post.Find<SsrEffect>() as IPostEffect,
+            "ssao" => post.Find<SsaoEffect>(),
             "bloom" => post.Find<BloomEffect>(),
             "tonemap" => post.Find<ToneMapEffect>(),
             "fxaa" => post.Find<FxaaEffect>(),

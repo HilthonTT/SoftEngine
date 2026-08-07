@@ -27,7 +27,18 @@ public readonly struct RasterState
     // set a level on describes.
     private readonly int _mipLevelPlusOne;
 
-    private RasterState(float transparency, byte fogMode, float fogA, float fogB, LinearColor fogColor, int mipLevelPlusOne)
+    // Packed SurfaceReflectance. Needs no offset: zero already means "reflects nothing", which
+    // is both the default and what a matte material gives.
+    private readonly uint _reflectance;
+
+    private RasterState(
+        float transparency,
+        byte fogMode,
+        float fogA,
+        float fogB,
+        LinearColor fogColor,
+        int mipLevelPlusOne,
+        uint reflectance)
     {
         _transparency = transparency;
         _fogMode = fogMode;
@@ -35,6 +46,7 @@ public readonly struct RasterState
         _fogB = fogB;
         _fogColor = fogColor;
         _mipLevelPlusOne = mipLevelPlusOne;
+        _reflectance = reflectance;
     }
 
     /// <summary>Builds the fog part from a scene; opacity is applied per mesh via <see cref="WithOpacity"/>.</summary>
@@ -50,15 +62,15 @@ public readonly struct RasterState
         if (fog.Mode == FogMode.Linear)
         {
             var invRange = 1f / MathF.Max(fog.End - fog.Start, 1e-6f);
-            return new RasterState(0f, FogLinear, fog.End * invRange, -invRange, fog.Color, 0);
+            return new RasterState(0f, FogLinear, fog.End * invRange, -invRange, fog.Color, 0, 0u);
         }
 
-        return new RasterState(0f, FogExponential, MathF.Max(fog.Density, 0f), 0f, fog.Color, 0);
+        return new RasterState(0f, FogExponential, MathF.Max(fog.Density, 0f), 0f, fog.Color, 0, 0u);
     }
 
     /// <summary>The same fog with a mesh's opacity; 1 keeps the state opaque.</summary>
     public RasterState WithOpacity(float opacity) =>
-        new(1f - System.Math.Clamp(opacity, 0f, 1f), _fogMode, _fogA, _fogB, _fogColor, _mipLevelPlusOne);
+        new(1f - System.Math.Clamp(opacity, 0f, 1f), _fogMode, _fogA, _fogB, _fogColor, _mipLevelPlusOne, _reflectance);
 
     /// <summary>
     /// The same state, tagged with the mip level this triangle's textures are sampled from —
@@ -71,10 +83,33 @@ public readonly struct RasterState
     /// rather than as level 0.
     /// </summary>
     public RasterState WithMipLevel(int level) =>
-        new(_transparency, _fogMode, _fogA, _fogB, _fogColor, System.Math.Max(level, 0) + 1);
+        new(_transparency, _fogMode, _fogA, _fogB, _fogColor, System.Math.Max(level, 0) + 1, _reflectance);
 
     /// <summary>The mip level a write from this state samples, or -1 where there is no texture.</summary>
     public int MipLevel => _mipLevelPlusOne - 1;
+
+    /// <summary>
+    /// The same state, tagged with what this triangle's surface does to a reflection, for
+    /// <see cref="Pipeline.PostProcess.SsrEffect"/> to read back per pixel.
+    ///
+    /// <para>
+    /// It rides here, per triangle, for the same reason the mip level does: the rasterizer is
+    /// the only thing that knows which pixel a write landed on, and the value is a property of
+    /// the material rather than of the pixel. That is also its limit — a metallic or specular
+    /// <em>map</em> varies across a triangle and this does not, so a surface whose gloss is
+    /// painted on reflects at its material's average rather than per texel. Carrying it per
+    /// pixel would mean the pixel shader writing a second output, which is the deferred path
+    /// this deliberately is not.
+    /// </para>
+    /// </summary>
+    public RasterState WithReflectance(SurfaceReflectance reflectance) =>
+        new(_transparency, _fogMode, _fogA, _fogB, _fogColor, _mipLevelPlusOne, reflectance.Packed);
+
+    /// <summary>What a write from this state reflects; <see cref="SurfaceReflectance.None"/> by default.</summary>
+    public SurfaceReflectance Reflectance => SurfaceReflectance.FromPacked(_reflectance);
+
+    /// <summary>The packed reflectance, for the rasterizer's per-pixel record.</summary>
+    public uint PackedReflectance => _reflectance;
 
     public bool IsOpaque => _transparency == 0f;
 

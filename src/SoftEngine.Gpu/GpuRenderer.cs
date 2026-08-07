@@ -224,6 +224,15 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         // this frame's.
         surface.SetMipLevelRecording(false);
 
+        // And the same for the reflection pass's surface channel, for the same reason and with
+        // the same consequence: the backend's fragment shaders write one target, so nothing
+        // here records what a surface reflects, and the stack's reflection effect finds no
+        // reflectance and leaves the frame alone. A GPU frame therefore keeps the environment
+        // reflection its shaders applied and gains no screen-space one — which is a real
+        // difference between the backends, and a smaller lie than reflecting this frame's
+        // geometry through the last CPU frame's materials.
+        surface.SetReflectanceRecording(false);
+
         if (projection.IsOrthographic)
         {
             surface.SetLinearDepthRange();

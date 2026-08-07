@@ -224,6 +224,7 @@ conversion at both ends, so effects only ever see linear float RGB.
 
 | Effect | What it does |
 | --- | --- |
+| **Reflections** | Marches each reflective pixel's reflected ray through the depth buffer and blends in what it hits. See [below](#reflections). |
 | **SSAO** | Reconstructs position and normal per pixel from the depth buffer, samples a hemisphere, darkens by the occluded fraction. |
 | **Bloom** | Bright-pass and blur at quarter resolution, added back — a wide blur for a sixteenth of the samples. |
 | **Tone map** | Exposure plus Reinhard or ACES, so values above white roll off. |
@@ -234,6 +235,75 @@ Effects that need depth declare `NeedsDepth`, and the stack then reads the z-buf
 *view-space distance* — a screen-space radius is in world units, so it needs the distance rather
 than something merely monotonic in it. Two honest SSAO limits: it only knows what is on screen, and
 it multiplies the finished image, so it darkens direct light along with ambient.
+
+## Reflections
+
+![Screen-space reflections](docs/screenshots/reflections.png)
+
+The physically-based path has always reflected the *environment* — a prefiltered cube map sampled
+per roughness — so a metal here was never black. What a cube map cannot know is that there is a red
+block two metres away. [`SsrEffect`](src/SoftEngine.Core/Pipeline/PostProcess/SsrEffect.cs) answers
+only that: the local scene, and only where the local scene is on screen.
+
+**It needs one thing the image does not contain.** A pixel's colour says what a surface ended up
+looking like, not whether it was a mirror or a brick. Every other screen-space effect here reads
+depth alone, and depth is enough for them, because occlusion and blur are properties of *where* a
+surface is. A reflection is a property of what it is made of, so the rasterizer records one:
+
+```
+SurfaceReflectance  →  F0 (three bytes) + roughness (one byte), packed in a uint
+```
+
+F0 is carried **per channel** because for a metal it is both quantities a reflection needs. A
+dielectric's F0 is a colourless four percent; a metal's is its albedo, which is why gold reflects a
+white wall as gold. One channel would have made every metal a mirror the colour of whatever it was
+looking at. The alternative — carrying albedo separately — is the deferred path the roadmap wants,
+and this is deliberately not that: it is a G-buffer with two fields, written per drawn pixel exactly
+the way [the mip-level view's channel](#buffer-views) is, and allocated only when something asks.
+
+It rides on `RasterState`, so it is **per triangle**. That is its limit: a metallic or specular
+*map* varies across a surface and this does not, so a gloss that was painted on reflects at its
+material's average rather than per texel.
+
+**It replaces rather than adds.** The pixel already holds that surface's environment reflection at
+full Fresnel weight, so adding a scene reflection would light it twice. The composite blends toward
+what the ray found by the same weight the shader used — Schlick per channel, `F0 + (1 - F0)(1 -
+cos θ)⁵` — which is as close as a forward renderer gets to *"the local scene was nearer than the
+sky, so use it instead"*. Where the march finds nothing the weight is zero, and the frame is exactly
+the one this engine drew before there was a reflection pass. That is the whole failure story: the
+degenerate case of this feature is the previous release.
+
+Three decisions worth the words:
+
+**The march is uniform in view space, not screen space.** A screen-space march is the more accurate
+of the two — it samples every pixel the ray crosses exactly once. This one oversamples what is near
+and can step over what is far. It is done this way because `Thickness`, the test that decides what a
+hit *is*, is a world-space distance, and against a screen-space march its meaning would drift along
+the ray. A wrong hit is worse than a missed one here: a missed reflection leaves the surface as the
+shader drew it, and a wrong one draws the wrong thing.
+
+**`Thickness` cannot be tight.** The depth buffer is a front surface with no thickness. A ray
+passing *behind* a foreground object is reported as much nearer for every remaining step, which is
+indistinguishable from a hit if the only test is "is the scene in front of the ray". The thickness
+bounds it — beyond this the ray is behind something rather than touching it.
+
+**Rough surfaces are cut, not approximated.** Past `MaxRoughness` a surface takes no screen-space
+reflection at all. A rough surface reflects a wide cone, and a cone resolved from one ray per pixel
+is noise; the prefiltered environment is convolved for exactly this case and gives the better of the
+two answers. Below the cut, the reflection buffer is blurred by a per-pixel radius — not separable,
+because the radius varies, which is why it is capped at a few pixels rather than scaled to the full
+cone.
+
+Two traps already paid for. A ray must start **along the normal**, not along itself: the first
+sample of a ray leaving a surface at a grazing angle lands back on the surface it left, and the
+depth buffer says "yes, something is here" — every glancing reflection would be of the reflector.
+And the hit must be **bisected** within the step that crossed it, or the reflected image is
+quantized to the march's step size and reads as bands.
+
+The GPU backend records nothing here — its fragment shaders write one target — so it calls
+`SetReflectanceRecording(false)` and the pass finds no reflectance and leaves the frame alone,
+exactly as it does for the mip-level channel. A GPU frame keeps its environment reflections and
+gains no screen-space ones. The path tracer needs none of this: it reflects the scene by tracing it.
 
 ## Transparency
 
@@ -796,6 +866,10 @@ occlusion culling ≈**1.6×** on the scene built around it, vectorized spans **
   traversal loop.
 - More than one shadow-casting light, which needs a depth buffer and a pass per light.
 - Morph targets, the one part of glTF's animation the importer reads past.
-- A deferred or visibility-buffer path, so SSAO could darken the ambient term alone.
+- A deferred or visibility-buffer path, so SSAO could darken the ambient term alone — and so
+  [reflectance](#reflections) could be recorded per texel instead of per triangle, which is the one
+  thing standing between a painted-on gloss map and a reflection that follows it.
+- Reflections on transparent surfaces, which resolve after the opaque pass the reflection channel is
+  written by, and so currently reflect nothing.
 - Testing occluders against each other, by building the pyramid front to back.
 - A JPEG decoder for the headless renderer.

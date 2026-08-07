@@ -29,6 +29,8 @@ a reference.
 - **Cascaded shadow maps**, SSAO, and an environment cube map as both skybox and ambient — loadable
   from a Radiance `.hdr` panorama that keeps its range.
 - **Baked indirect light**: the path tracer measured into a grid of probes the rasterizer reads.
+- **Screen-space reflections** of the local scene, over the environment reflection the shader
+  already applies — tinted per channel, so a gold surface reflects a white wall as gold.
 - Materials: albedo, normal, specular, metallic-roughness and emissive maps, plus **alpha cutouts**.
 - **Scene graph**, keyframed **animation** with clip **blending**, and linear-blend **skinning**.
 - Post-process stack: bloom, tone mapping, FXAA, vignette. Supersampling, **TAA** and **motion blur**.
@@ -41,12 +43,16 @@ a reference.
 | :--: | :--: |
 | Shadow mapping | Normal mapping — only the left cube has a normal map |
 
+![Screen-space reflections](docs/screenshots/reflections.png)
+
+*Screen-space reflections: the blocks are reflected in a polished floor, each in its own colour.*
+
 ## Build & run
 
 ```bash
 dotnet build SoftEngine.slnx
 dotnet run --project src/SoftEngine.WinForms                  # interactive viewer
-dotnet test tests/SoftEngine.Core.Tests                       # 775 tests
+dotnet test tests/SoftEngine.Core.Tests                       # 796 tests
 dotnet run -c Release --project bench/SoftEngine.Benchmarks   # Release, or you measure the debugger
 ```
 
@@ -154,7 +160,7 @@ tests/SoftEngine.Core.Tests/   # xUnit suite, and Golden/ image baselines
 
 ## Testing
 
-`dotnet test tests/SoftEngine.Core.Tests` — **775 tests**. Alongside the unit tests, seventeen
+`dotnet test tests/SoftEngine.Core.Tests` — **796 tests**. Alongside the unit tests, eighteen
 generated scenes are rendered headless at 320×180 and compared against committed PNG baselines, so a
 change that alters the picture shows up in the diff as a picture. `SOFTENGINE_UPDATE_GOLDEN=1` is the
 only way to re-record one, and a failing run drops the actual frame and a diff image beside the

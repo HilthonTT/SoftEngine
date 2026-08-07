@@ -19,5 +19,13 @@ public interface IPostEffect
     /// </summary>
     bool NeedsDepth => false;
 
+    /// <summary>
+    /// Whether the effect reads <see cref="PostProcessTarget.Reflectance"/>. Unlike depth,
+    /// which the frame produced anyway, reflectance is only recorded because something asked:
+    /// the answer here is what turns the rasterizer's per-pixel record on, so it has to be
+    /// true before the frame is drawn rather than by the time the stack runs.
+    /// </summary>
+    bool NeedsReflectance => false;
+
     void Apply(PostProcessTarget target);
 }

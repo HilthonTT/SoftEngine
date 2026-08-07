@@ -443,6 +443,61 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
                 b.Painter = new PhongPainter();
             }),
 
+        new("screen-space-reflections",
+            "coloured blocks over a polished floor that reflects them",
+            b =>
+            {
+                // Saturated and distinct, because the floor reflects them: a reflection that
+                // lost its tint, or picked up the wrong block, is a different picture rather
+                // than a slightly different one. On the material, like the sphere grid above —
+                // this painter reads the triangle colours only when a material says nothing,
+                // and every mesh carries one.
+                b.Meshes.Add(Block(new Vector3(-1.15f, -0.35f, -0.2f), 0.6f, new ColorRGB(214, 62, 54)));
+                b.Meshes.Add(Block(new Vector3(0.15f, -0.5f, 0.5f), 0.45f, new ColorRGB(74, 186, 96)));
+                b.Meshes.Add(Block(new Vector3(1.3f, -0.25f, -0.35f), 0.7f, new ColorRGB(72, 118, 214)));
+
+                static Mesh Block(Vector3 position, float half, ColorRGB color)
+                {
+                    var cube = Cube(position, half, color);
+
+                    cube.Material.Diffuse = color;
+                    cube.Material.Roughness = 0.65f;
+
+                    return cube;
+                }
+
+                var floor = Ground(7f, -0.95f, new ColorRGB(176, 178, 184));
+
+                floor.Material.Diffuse = new ColorRGB(176, 178, 184);
+                floor.Material.Metallic = 1f;
+                floor.Material.Roughness = 0.1f;
+
+                b.Meshes.Add(floor);
+                b.Lights.Add(Sun(1.1f));
+
+                var stack = PostProcessStack.CreateDefault();
+                var ssr = stack.Find<SsrEffect>()!;
+                ssr.Enabled = true;
+                ssr.MaxDistance = 12f;
+                ssr.Thickness = 0.35f;
+
+                b.Renderer.PostProcess = stack;
+
+                // With a sky, so the frame shows both halves of what a reflective surface does
+                // here: the environment the shader already gave it, and the local scene this
+                // pass marches for. Without one the floor would be black wherever a ray missed,
+                // which makes a missed ray look like a working one.
+                b.Scene.Environment = SkyBox.Gradient(SunDirection, resolution: 32);
+                b.Scene.HighDynamicRange = true;
+                b.Scene.GammaCorrect = true;
+
+                // Low and close to the floor: a reflection is a grazing-angle phenomenon, and
+                // a camera looking down at it would test the four percent rather than the
+                // ninety.
+                b.Scene.Camera = Look(new Vector3(0f, -0.35f, 4.4f), new Vector3(0f, -0.5f, -0.5f));
+                b.Painter = new PbrPainter();
+            }),
+
         new("exponential-fog",
             "a receding row of cubes dissolving into fog",
             b =>

@@ -1,4 +1,5 @@
 using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Shading;
 using System.Numerics;
 
 namespace SoftEngine.Core.Pipeline.PostProcess;
@@ -23,6 +24,7 @@ public sealed class PostProcessTarget
     private float[] _color = [];
     private float[] _scratch = [];
     private float[] _viewDepth = [];
+    private uint[] _reflectance = [];
 
     public int Width { get; private set; }
 
@@ -45,6 +47,22 @@ public sealed class PostProcessTarget
 
     /// <summary>Whether <see cref="ViewDepth"/> and <see cref="ViewPositionAt"/> are meaningful this frame.</summary>
     public bool HasDepth { get; private set; }
+
+    /// <summary>
+    /// Packed <see cref="SurfaceReflectance"/> at every pixel, or an empty array when the
+    /// frame recorded none. Zero is a surface that reflects nothing, which is also what
+    /// background reads as.
+    /// </summary>
+    public uint[] Reflectance => _reflectance;
+
+    /// <summary>Whether <see cref="Reflectance"/> describes this frame's surfaces.</summary>
+    public bool HasReflectance { get; private set; }
+
+    /// <summary>What the surface drawn at a pixel does to a reflection.</summary>
+    public SurfaceReflectance ReflectanceAt(int x, int y) =>
+        HasReflectance && (uint)x < (uint)Width && (uint)y < (uint)Height
+            ? SurfaceReflectance.FromPacked(_reflectance[x + y * Width])
+            : SurfaceReflectance.None;
 
     /// <summary>How far a view-space unit at unit distance stretches across the screen, per axis.</summary>
     public float ProjectionScaleX { get; private set; } = 1f;
@@ -69,6 +87,7 @@ public sealed class PostProcessTarget
         Width = width;
         Height = height;
         HasDepth = false;
+        HasReflectance = false;
 
         var length = width * height * 3;
         if (_color.Length >= length)
@@ -94,6 +113,20 @@ public sealed class PostProcessTarget
         HasDepth = true;
 
         return _viewDepth;
+    }
+
+    /// <summary>Reserves the reflectance buffer and marks it as describing this frame.</summary>
+    internal uint[] PrepareReflectance()
+    {
+        var count = Width * Height;
+        if (_reflectance.Length < count)
+        {
+            _reflectance = new uint[count];
+        }
+
+        HasReflectance = true;
+
+        return _reflectance;
     }
 
     /// <summary>Copies the image into <see cref="Scratch"/>, so an effect can read the original while it writes.</summary>

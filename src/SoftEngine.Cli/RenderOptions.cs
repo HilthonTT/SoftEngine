@@ -495,7 +495,7 @@ internal sealed class RenderOptions
 
         foreach (var effect in options.Post)
         {
-            if (effect is not ("ssao" or "bloom" or "tonemap" or "fxaa" or "vignette"))
+            if (effect is not ("ssr" or "ssao" or "bloom" or "tonemap" or "fxaa" or "vignette"))
             {
                 options.Errors.Add($"unknown post effect '{effect}'");
             }
@@ -684,7 +684,10 @@ internal sealed class RenderOptions
                   --filter <mode>   texture filtering: nearest, bilinear (default), or
                                     trilinear, which blends the two mip levels a surface
                                     falls between instead of stepping between them
-                  --post <list>     comma-separated: ssao, bloom, tonemap, fxaa, vignette
+                  --post <list>     comma-separated: ssr, ssao, bloom, tonemap, fxaa,
+                                    vignette. ssr reflects the scene in the surfaces that
+                                    reflect it, and needs the cpu backend to record what
+                                    each one is made of
                   --shadows         render a shadow map from the scene's first light
                   --cascades <n>    shadows fitted to n slices of the view distance, 1-4
                   --no-sky          leave the background cleared instead of drawing a sky

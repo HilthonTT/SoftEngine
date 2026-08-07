@@ -42,16 +42,24 @@ public sealed class PostProcessStack
     public bool HasEffects => EnabledCount > 0;
 
     /// <summary>
-    /// The stack in the order effects are normally composed: ambient occlusion darkens the
-    /// creases, bloom gathers the bright parts of what is left, tone mapping compresses the
-    /// result, anti-aliasing runs on the final contrast, and the vignette shades the frame
-    /// last. All five start disabled.
+    /// The stack in the order effects are normally composed: reflections finish the shading,
+    /// ambient occlusion darkens the creases, bloom gathers the bright parts of what is left,
+    /// tone mapping compresses the result, anti-aliasing runs on the final contrast, and the
+    /// vignette shades the frame last. All six start disabled.
     /// </summary>
     public static PostProcessStack CreateDefault()
     {
         var stack = new PostProcessStack();
 
-        // Occlusion goes first: it darkens the lighting, and everything after it — what
+        // Reflections go first because they are not really a post-process: they are the part
+        // of the shading a forward rasterizer cannot do in the shader, deferred to the only
+        // point where the rest of the frame exists to be reflected. Everything after this
+        // should treat what it produced as scene light — which is exactly what putting it
+        // before occlusion buys, since a mirror lying at the bottom of a crease is in shadow
+        // like anything else down there.
+        stack.Effects.Add(new SsrEffect());
+
+        // Occlusion goes next: it darkens the lighting, and everything after it — what
         // blooms, what the tone-map compresses — should be reacting to the darkened result
         // rather than to light the scene never actually received.
         stack.Effects.Add(new SsaoEffect());
@@ -92,6 +100,26 @@ public sealed class PostProcessStack
         }
     }
 
+    /// <summary>
+    /// Whether any enabled effect reads the per-pixel reflectance the rasterizer can record.
+    /// Asked by the renderer <em>before</em> the frame is drawn — see
+    /// <see cref="IPostEffect.NeedsReflectance"/>.
+    /// </summary>
+    public bool NeedsReflectance
+    {
+        get
+        {
+            foreach (var effect in Effects)
+            {
+                if (effect is { Enabled: true, NeedsReflectance: true })
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
     /// <summary>Runs every enabled effect over <paramref name="surface"/>, in order, in place.</summary>
     public void Apply(FrameBuffer surface) => Apply(surface, null);
 
@@ -120,6 +148,11 @@ public sealed class PostProcessStack
             var matrix = projection.ProjectionMatrix(surface.Width, surface.Height);
 
             surface.ReadViewDepth(_target.PrepareDepth(matrix.M11, matrix.M22));
+        }
+
+        if (NeedsReflectance && surface.IsRecordingReflectance)
+        {
+            surface.ReadReflectance(_target.PrepareReflectance());
         }
 
         if (surface.IsHighDynamicRange)

@@ -180,6 +180,10 @@ public sealed class Renderer : IRenderer
         surface.SetOverdrawCounting(rendererSettings.DebugView == DebugView.Overdraw);
         surface.SetMipLevelRecording(rendererSettings.DebugView == DebugView.MipLevel);
 
+        // Asked of the stack now rather than when it runs: the reflection pass reads a channel
+        // only the fill can write, so the decision has to be made before a triangle is drawn.
+        surface.SetReflectanceRecording(PostProcess?.NeedsReflectance ?? false);
+
         // Match the depth buffer to the projection's clip planes for this frame. A parallel
         // projection carries its depth in z rather than w, so it needs the other mapping.
         if (projection.IsOrthographic)

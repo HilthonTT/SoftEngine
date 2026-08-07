@@ -41,6 +41,12 @@ public sealed class FrameBuffer(int width, int height)
     private sbyte[] _mipLevels = [];
     private bool _recordMips;
 
+    // Packed SurfaceReflectance per pixel — what the surface drawn there does to a reflection,
+    // zero where nothing reflective was drawn. Allocated only while something is going to read
+    // it back, which in practice means the screen-space reflection pass is enabled.
+    private uint[] _reflectance = [];
+    private bool _recordReflectance;
+
     public RenderStats? Stats { get; set; }
 
     public int[] Screen { get; set; } = new int[width * height];
@@ -235,6 +241,86 @@ public sealed class FrameBuffer(int width, int height)
     }
 
     /// <summary>
+    /// Whether what each drawn pixel's surface does to a reflection is recorded, for
+    /// <see cref="Pipeline.PostProcess.SsrEffect"/>.
+    ///
+    /// <para>
+    /// The finished image cannot answer it. A pixel's colour says what the surface ended up
+    /// looking like, not whether it was a mirror or a brick — and a reflection pass that
+    /// guessed would either mirror the whole frame or nothing in it. This is the one channel
+    /// the rasterizer keeps that describes the <em>surface</em> rather than the picture, and
+    /// it is off unless something is going to read it, because it is four bytes a pixel and a
+    /// branch per write to fill.
+    /// </para>
+    /// </summary>
+    public void SetReflectanceRecording(bool enabled)
+    {
+        _recordReflectance = enabled;
+
+        if (!enabled)
+        {
+            return;
+        }
+
+        var count = Width * Height;
+
+        if (_reflectance.Length < count)
+        {
+            _reflectance = new uint[count];
+        }
+    }
+
+    /// <summary>Whether <see cref="Reflectance"/> holds this frame's surfaces.</summary>
+    public bool IsRecordingReflectance => _recordReflectance;
+
+    /// <summary>
+    /// Packed <see cref="SurfaceReflectance"/> at each pixel, row-major, zero where nothing
+    /// reflective was drawn — or an empty span when recording is off.
+    /// </summary>
+    public ReadOnlySpan<uint> Reflectance =>
+        _recordReflectance ? _reflectance.AsSpan(0, Width * Height) : ReadOnlySpan<uint>.Empty;
+
+    /// <summary>
+    /// Records what the surface written at (x, y) reflects. Called by the rasterizer only for
+    /// writes that landed, and only while recording — the caller hoists
+    /// <see cref="IsRecordingReflectance"/> out of its pixel loop rather than paying a call per
+    /// pixel to be told nothing is listening.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void RecordReflectance(int x, int y, uint packed)
+    {
+        if (_recordReflectance)
+        {
+            _reflectance[x + y * Width] = packed;
+        }
+    }
+
+    /// <summary>
+    /// Copies this frame's reflectance into <paramref name="destination"/>, or fills it with
+    /// zero — a frame of surfaces that reflect nothing — when none was recorded.
+    /// </summary>
+    public void ReadReflectance(uint[] destination)
+    {
+        ArgumentNullException.ThrowIfNull(destination, nameof(destination));
+
+        var count = Width * Height;
+
+        if (destination.Length < count)
+        {
+            throw new ArgumentException($"Expected room for {count} pixels, got {destination.Length}.", nameof(destination));
+        }
+
+        if (_recordReflectance)
+        {
+            _reflectance.AsSpan(0, count).CopyTo(destination);
+        }
+        else
+        {
+            destination.AsSpan(0, count).Clear();
+        }
+    }
+
+    /// <summary>
     /// Defines the depth mapping from the active projection's clip planes. Device depth is 0 at
     /// <paramref name="zNear"/> and 1 at <paramref name="zFar"/>, and stays linear in 1/w so it
     /// interpolates correctly in screen space. Call once per frame before rasterizing.
@@ -372,6 +458,14 @@ public sealed class FrameBuffer(int width, int height)
             }
         }
 
+        if (_recordReflectance)
+        {
+            if (_reflectance.Length < pixels)
+            {
+                _reflectance = new uint[pixels];
+            }
+        }
+
         // Every one of these is a sweep of megabytes — at 1080p the depth buffer alone is
         // 8 MB — and a single thread clearing them cannot saturate the memory controller.
         // Splitting into bands of rows does, and the bands are disjoint, so nothing needs
@@ -439,6 +533,13 @@ public sealed class FrameBuffer(int width, int height)
             // and a cleared zero would report every background pixel as a full-resolution
             // texture.
             _mipLevels.AsSpan(from, count).Fill(-1);
+        }
+
+        if (_recordReflectance)
+        {
+            // Zero is "reflects nothing", which is the right answer for background and for
+            // every pixel a matte surface is about to be drawn on.
+            _reflectance.AsSpan(from, count).Clear();
         }
 
         _zBuffer.AsSpan(from, count).Fill(DepthResolution);
