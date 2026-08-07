@@ -99,6 +99,8 @@ public sealed partial class MainScreen
         mnuScreenshot = new ToolStripMenuItem();
         mnuExit = new ToolStripMenuItem();
         mnuEdit = new ToolStripMenuItem();
+        mnuAdd = new ToolStripMenuItem();
+        mnuDelete = new ToolStripMenuItem();
         mnuUndo = new ToolStripMenuItem();
         mnuRedo = new ToolStripMenuItem();
         mnuSnap = new ToolStripMenuItem();
@@ -990,13 +992,25 @@ public sealed partial class MainScreen
         // 
         // mnuEdit
         // 
-        mnuEdit.DropDownItems.AddRange(new ToolStripItem[] { mnuUndo, mnuRedo, mnuSnap });
+        mnuEdit.DropDownItems.AddRange(new ToolStripItem[] { mnuAdd, mnuDelete, mnuUndo, mnuRedo, mnuSnap });
         mnuEdit.Name = "mnuEdit";
         mnuEdit.Size = new Size(39, 20);
         mnuEdit.Text = "&Edit";
-        // 
+        //
+        // mnuAdd
+        //
+        mnuAdd.Name = "mnuAdd";
+        mnuAdd.Size = new Size(257, 22);
+        mnuAdd.Text = "&Add mesh (Shift+A in the viewport)";
+        //
+        // mnuDelete
+        //
+        mnuDelete.Name = "mnuDelete";
+        mnuDelete.Size = new Size(257, 22);
+        mnuDelete.Text = "&Delete selected mesh (X)";
+        //
         // mnuUndo
-        // 
+        //
         mnuUndo.Name = "mnuUndo";
         mnuUndo.ShortcutKeys = Keys.Control | Keys.Z;
         mnuUndo.Size = new Size(257, 22);
@@ -1649,6 +1663,8 @@ public sealed partial class MainScreen
     private ToolStripMenuItem mnuClearRecent;
     private ToolStripMenuItem mnuSaveScene;
     private ToolStripMenuItem mnuEdit;
+    private ToolStripMenuItem mnuAdd;
+    private ToolStripMenuItem mnuDelete;
     private ToolStripMenuItem mnuUndo;
     private ToolStripMenuItem mnuRedo;
     private ToolStripMenuItem mnuSnap;

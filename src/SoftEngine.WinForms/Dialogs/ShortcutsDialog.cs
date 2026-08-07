@@ -53,10 +53,23 @@ internal sealed class ShortcutsDialog : Form
 
         new("Picking and editing", [
             ("Left-click", "Probe the pixel and pick the mesh under it"),
-            ("Esc", "Clear the pixel selection"),
+            ("Esc", "Clear the selection — and hand S and X back to the camera"),
+            ("Shift+A", "Add a primitive at the centre of the view — plane, cube, sphere…"),
             ("Drag a gizmo handle", "Move, turn or stretch the picked mesh"),
-            ("Ctrl+Z / Ctrl+Y", "Undo / redo a drag — the Edit menu names the edit"),
-            ("Ctrl+G", "Snap drags to a grid: whole units, 15°, tenths of scale"),
+            ("Ctrl+Z / Ctrl+Y", "Undo / redo an edit — the Edit menu names it"),
+            ("Ctrl+G", "Snap edits to a grid: whole units, 15°, tenths of scale"),
+        ]),
+
+        // Worth its own section because of the rule at the top of it: two of these keys mean
+        // something else entirely when nothing is selected, and that is the only thing about
+        // them a reader has to be told rather than left to discover.
+        new("With a mesh selected", [
+            ("G", "Move it with the cursor — no handle to grab"),
+            ("S", "Scale it with the cursor (S flies the camera back when nothing is selected)"),
+            ("X · Del", "Delete it (X turns the view when nothing is selected)"),
+            ("X / Y / Z", "During a G or S: press the gesture flat against that world axis"),
+            ("Click · Enter", "Confirm the move or scale"),
+            ("Esc · right-click", "Put it back where it was"),
         ]),
 
         new("Files", [

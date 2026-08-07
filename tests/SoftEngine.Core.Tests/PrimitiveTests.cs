@@ -1,4 +1,5 @@
 using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Pipeline;
@@ -25,6 +26,7 @@ public class PrimitiveTests
     private static Mesh Make(string primitive) => primitive switch
     {
         "plane" => new PlaneMesh(2f, 3f, 4, 5),
+        "box" => new Box(2f, 3f, 4f),
         "sphere" => new UvSphere(Radius, 24, 16),
         "cylinder" => new Cylinder(1f, 2f, 24),
         "cone" => new Cone(1f, 2f, 24),
@@ -35,6 +37,7 @@ public class PrimitiveTests
     /// <summary>The analytic volume of each closed primitive, which its triangles should nearly enclose.</summary>
     private static double ExactVolume(string primitive) => primitive switch
     {
+        "box" => 2d * 3d * 4d,
         "sphere" => 4d / 3d * System.Math.PI * System.Math.Pow(Radius, 3),
         "cylinder" => System.Math.PI * 1d * 1d * 2d,
         "cone" => System.Math.PI * 1d * 1d * 2d / 3d,
@@ -44,6 +47,7 @@ public class PrimitiveTests
 
     [Theory]
     [InlineData("plane")]
+    [InlineData("box")]
     [InlineData("sphere")]
     [InlineData("cylinder")]
     [InlineData("cone")]
@@ -58,6 +62,7 @@ public class PrimitiveTests
 
     [Theory]
     [InlineData("plane")]
+    [InlineData("box")]
     [InlineData("sphere")]
     [InlineData("cylinder")]
     [InlineData("cone")]
@@ -77,6 +82,7 @@ public class PrimitiveTests
 
     [Theory]
     [InlineData("plane")]
+    [InlineData("box")]
     [InlineData("sphere")]
     [InlineData("cylinder")]
     [InlineData("cone")]
@@ -106,6 +112,7 @@ public class PrimitiveTests
     /// index: the UV seam duplicates a whole column of vertices that stand in the same place.
     /// </summary>
     [Theory]
+    [InlineData("box")]
     [InlineData("sphere")]
     [InlineData("cylinder")]
     [InlineData("cone")]
@@ -139,6 +146,7 @@ public class PrimitiveTests
     /// corner or two off a curve, hence the tolerance.
     /// </summary>
     [Theory]
+    [InlineData("box")]
     [InlineData("sphere")]
     [InlineData("cylinder")]
     [InlineData("cone")]
@@ -160,6 +168,7 @@ public class PrimitiveTests
 
     [Theory]
     [InlineData("plane")]
+    [InlineData("box")]
     [InlineData("sphere")]
     [InlineData("cylinder")]
     [InlineData("cone")]
@@ -241,7 +250,91 @@ public class PrimitiveTests
         Assert.NotNull(new UvSphere().TexCoords);
     }
 
+    /// <summary>
+    /// The reason a box cannot be eight vertices: a corner belongs to three faces at right angles,
+    /// and one vertex holds one normal. Six separate quads is what buys the hard edge — and the
+    /// per-face UV square that goes with it.
+    /// </summary>
+    [Fact]
+    public void Box_GivesEveryFaceItsOwnCornersAndOneFlatNormal()
+    {
+        var box = new Box(2f, 3f, 4f);
+
+        Assert.Equal(24, box.Vertices.Length);
+        Assert.Equal(12, box.Triangles.Length);
+
+        // Six normals, one per face, each a signed unit axis — nothing averaged across an edge.
+        Assert.Equal(6, box.NormVertices.Distinct().Count());
+        Assert.All(box.NormVertices, normal => Assert.Equal(1f, MathF.Abs(normal.X) + MathF.Abs(normal.Y) + MathF.Abs(normal.Z), 4));
+    }
+
+    /// <summary>
+    /// <see cref="Cube"/>'s colours live in a static array every instance shares, so filling one
+    /// cube's recolours the lot. A box added to somebody's scene has to be its own object.
+    /// </summary>
+    [Fact]
+    public void Box_OwnsItsTriangleColours()
+    {
+        var first = new Box();
+        var second = new Box();
+
+        Array.Fill(first.TriangleColors, ColorRGB.Red);
+
+        Assert.All(second.TriangleColors, color => Assert.Equal(ColorRGB.Gray, color));
+    }
+
+    /// <summary>
+    /// The size convention the factory exists to impose: whatever the shape, it reaches the size
+    /// asked for along its widest axis and no further — which is what lets a menu offer all of
+    /// them without one arriving twice the size of the next.
+    /// </summary>
     [Theory]
+    [InlineData(PrimitiveShape.Plane)]
+    [InlineData(PrimitiveShape.Box)]
+    [InlineData(PrimitiveShape.UvSphere)]
+    [InlineData(PrimitiveShape.IcoSphere)]
+    [InlineData(PrimitiveShape.Cylinder)]
+    [InlineData(PrimitiveShape.Cone)]
+    [InlineData(PrimitiveShape.Torus)]
+    public void PrimitiveFactory_BuildsEveryShapeToTheSameHalfExtent(PrimitiveShape shape)
+    {
+        const float Size = 2.5f;
+
+        var mesh = PrimitiveFactory.Create(shape, Size);
+        var widest = mesh.Vertices.Max(vertex => MathF.Max(MathF.Abs(vertex.X), MathF.Max(MathF.Abs(vertex.Y), MathF.Abs(vertex.Z))));
+
+        // The flat-sided shapes hit it exactly; a tessellated curve falls a chord's depth short.
+        Assert.InRange(widest, Size * 0.99f, Size * 1.0001f);
+    }
+
+    [Fact]
+    public void PrimitiveFactory_SizeOfZero_StillBuildsSomething() =>
+        Assert.NotEmpty(PrimitiveFactory.Create(PrimitiveShape.Cone, 0f).Triangles);
+
+    /// <summary>
+    /// The radius <see cref="IcoSphere"/> gained for the factory's sake multiplies the generated
+    /// unit-sphere points, and multiplying a float by one is exact — so every caller that predates
+    /// it gets back the same geometry it always did, down to the bit. The committed golden images
+    /// are the reason that has to be exact rather than merely close.
+    /// </summary>
+    [Fact]
+    public void IcoSphere_DefaultRadius_LeavesTheUnitSphereBitIdentical()
+    {
+        Assert.Equal(new IcoSphere(3).Vertices, new IcoSphere(3, 1f).Vertices);
+        Assert.All(new IcoSphere(3).Vertices, vertex => Assert.Equal(1f, vertex.Length(), 6));
+    }
+
+    [Fact]
+    public void IcoSphere_Radius_ScalesTheSphereWithoutMovingItsCentre()
+    {
+        var sphere = new IcoSphere(2, 4f);
+
+        Assert.All(sphere.Vertices, vertex => Assert.Equal(4f, vertex.Length(), 4));
+        Assert.Equal(4f, sphere.BoundingRadius, 4);
+    }
+
+    [Theory]
+    [InlineData("box", 2.6926f)]
     [InlineData("sphere", Radius)]
     [InlineData("cylinder", 1.4142f)]
     [InlineData("cone", 1.4142f)]
@@ -255,6 +348,7 @@ public class PrimitiveTests
     /// of the solid the visible one, so the surface that survives is measurably further away.
     /// </summary>
     [Theory]
+    [InlineData("box")]
     [InlineData("sphere")]
     [InlineData("cylinder")]
     [InlineData("cone")]

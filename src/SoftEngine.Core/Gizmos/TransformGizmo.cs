@@ -185,7 +185,7 @@ public sealed class TransformGizmo
         {
             case GizmoMode.Translate:
             {
-                if (!ClosestOnAxis(ray, origin, direction, out var parameter))
+                if (!GizmoMath.ClosestOnAxis(ray, origin, direction, out var parameter))
                 {
                     return;
                 }
@@ -206,13 +206,13 @@ public sealed class TransformGizmo
                 // The handles point along the world axes, but a parented mesh's Position is an
                 // offset in its node's space — so the world-space delta is carried back through
                 // the parent before it is applied.
-                target.Position = _startState.Position + ToLocal(target, direction * offset);
+                target.Position = _startState.Position + GizmoMath.ToLocal(target, direction * offset);
                 break;
             }
 
             case GizmoMode.Scale:
             {
-                if (!ClosestOnAxis(ray, origin, direction, out var parameter))
+                if (!GizmoMath.ClosestOnAxis(ray, origin, direction, out var parameter))
                 {
                     return;
                 }
@@ -242,7 +242,7 @@ public sealed class TransformGizmo
 
                 // Shortest way round, so a drag across the seam at ±π does not spin the mesh
                 // most of a turn the other way.
-                var delta = Wrap(angle - _grabParameter);
+                var delta = GizmoMath.Wrap(angle - _grabParameter);
 
                 target.Rotation = ActiveAxis switch
                 {
@@ -392,7 +392,7 @@ public sealed class TransformGizmo
         parameter = 0f;
         distance = float.PositiveInfinity;
 
-        if (!Closest(ray, origin, direction, out parameter, out var alongRay))
+        if (!GizmoMath.Closest(ray, origin, direction, out parameter, out var alongRay))
         {
             return false;
         }
@@ -426,7 +426,7 @@ public sealed class TransformGizmo
         angle = 0f;
         distance = float.PositiveInfinity;
 
-        if (!PlanePoint(ray, origin, axis, out var point, out var alongRay) || alongRay <= 0f)
+        if (!GizmoMath.PlanePoint(ray, origin, axis, out var point, out var alongRay) || alongRay <= 0f)
         {
             return false;
         }
@@ -438,15 +438,11 @@ public sealed class TransformGizmo
             return false;
         }
 
-        angle = Angle(point - origin, axis);
+        angle = GizmoMath.Angle(point - origin, axis);
         distance = alongRay;
 
         return true;
     }
-
-    /// <summary>The distance along an axis of the point on it nearest to the ray.</summary>
-    private static bool ClosestOnAxis(in Ray ray, Vector3 origin, Vector3 direction, out float parameter) =>
-        Closest(ray, origin, direction, out parameter, out _);
 
     /// <summary>
     /// The angle around an axis of the point where the ray crosses the plane the axis is
@@ -457,7 +453,7 @@ public sealed class TransformGizmo
     {
         angle = 0f;
 
-        if (!PlanePoint(ray, origin, axis, out var point, out _))
+        if (!GizmoMath.PlanePoint(ray, origin, axis, out var point, out _))
         {
             return false;
         }
@@ -470,99 +466,7 @@ public sealed class TransformGizmo
             return false;
         }
 
-        angle = Angle(offset, axis);
+        angle = GizmoMath.Angle(offset, axis);
         return true;
-    }
-
-    /// <summary>
-    /// The classic line-to-line closest approach. It degenerates when the two are parallel —
-    /// which here means looking straight down the handle, where there is no drag direction to
-    /// read anyway, so the caller is told to leave the mesh alone rather than given a number.
-    /// </summary>
-    private static bool Closest(in Ray ray, Vector3 origin, Vector3 direction, out float onAxis, out float onRay)
-    {
-        onAxis = 0f;
-        onRay = 0f;
-
-        var between = origin - ray.Origin;
-
-        var dd = Vector3.Dot(ray.Direction, ray.Direction);
-        var da = Vector3.Dot(ray.Direction, direction);
-        var aa = Vector3.Dot(direction, direction);
-
-        var determinant = dd * aa - da * da;
-
-        if (MathF.Abs(determinant) < 1e-7f || dd < 1e-12f)
-        {
-            return false;
-        }
-
-        var db = Vector3.Dot(ray.Direction, between);
-        var ab = Vector3.Dot(direction, between);
-
-        onRay = (aa * db - da * ab) / determinant;
-        onAxis = (da * db - dd * ab) / determinant;
-
-        return true;
-    }
-
-    /// <summary>Where the ray crosses the plane through a point with a given normal.</summary>
-    private static bool PlanePoint(in Ray ray, Vector3 origin, Vector3 normal, out Vector3 point, out float alongRay)
-    {
-        point = Vector3.Zero;
-        alongRay = 0f;
-
-        var denominator = Vector3.Dot(ray.Direction, normal);
-
-        // Edge-on: the ray runs along the plane and either misses it or lies in it, and the
-        // ring's angle would be meaningless either way.
-        if (MathF.Abs(denominator) < 1e-4f)
-        {
-            return false;
-        }
-
-        alongRay = Vector3.Dot(origin - ray.Origin, normal) / denominator;
-        point = ray.Origin + ray.Direction * alongRay;
-
-        return true;
-    }
-
-    /// <summary>An angle around an axis, measured in a basis built from the axis itself.</summary>
-    private static float Angle(Vector3 offset, Vector3 axis)
-    {
-        var reference = MathF.Abs(axis.X) < 0.9f ? Vector3.UnitX : Vector3.UnitY;
-
-        var u = Vector3.Normalize(Vector3.Cross(axis, reference));
-        var v = Vector3.Cross(axis, u);
-
-        return MathF.Atan2(Vector3.Dot(offset, v), Vector3.Dot(offset, u));
-    }
-
-    private static float Wrap(float angle)
-    {
-        while (angle > MathF.PI)
-        {
-            angle -= MathF.Tau;
-        }
-
-        while (angle < -MathF.PI)
-        {
-            angle += MathF.Tau;
-        }
-
-        return angle;
-    }
-
-    /// <summary>Carries a world-space offset into the space the mesh's own Position lives in.</summary>
-    private static Vector3 ToLocal(IMesh mesh, Vector3 worldDelta)
-    {
-        if (mesh.Parent is not { } parent)
-        {
-            return worldDelta;
-        }
-
-        return Matrix4x4.Invert(parent.WorldMatrix, out var inverse)
-            ? Vector3.TransformNormal(worldDelta, inverse)
-            : worldDelta;
     }
 }

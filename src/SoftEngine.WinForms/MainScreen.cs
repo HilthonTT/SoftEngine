@@ -849,7 +849,12 @@ public sealed partial class MainScreen : Form
             {
                 var objectId = SceneObjectIds.Mesh(world.Lights.Count, hit.MeshIndex);
 
-                picked = $"  ·  picked obj:{objectId} ({hit.Mesh.GetType().Name}) tri:{hit.TriangleIndex} at {hit.Distance:0.##}";
+                // A selection made without a ray — adding a primitive, or an undo putting one
+                // back — names no triangle, and reporting "tri:-1 at 0" would read as a pick that
+                // went wrong rather than as one that was never cast.
+                var where = hit.TriangleIndex >= 0 ? $" tri:{hit.TriangleIndex} at {hit.Distance:0.##}" : string.Empty;
+
+                picked = $"  ·  picked obj:{objectId} ({hit.Mesh.GetType().Name}){where}";
             }
 
             lblPixelStatus.Text =
@@ -860,9 +865,21 @@ public sealed partial class MainScreen : Form
             lblPixelStatus.Text = "Selected pixel: none — click the viewport to probe and pick one";
         }
 
+        // Only ever offered for something that is there to delete.
+        mnuDelete.Enabled = panel3D1.Picked is not null;
+
+        // A modal gesture has no handle on screen to show what it is doing, so the status bar is
+        // the whole of its feedback — what it is, which axis it is pressed against, and the two
+        // keys that end it. Ahead of the gizmo's own line because only one of them ever runs.
+        if (_transform is { IsActive: true })
+        {
+            lblPixelStatus.Text =
+                $"{_transform.Describe()}  ·  X / Y / Z to constrain  ·  click or Enter to confirm, Esc to cancel";
+        }
+
         // A drag has to say what it did in numbers as well as in pixels: eyeballing a mesh
         // into place is exactly the case where you then want to know where "place" was.
-        if (_gizmo is { IsActive: true, Target: { } target })
+        else if (_gizmo is { IsActive: true, Target: { } target })
         {
             var what = _gizmo.Mode switch
             {
@@ -1508,14 +1525,29 @@ public sealed partial class MainScreen : Form
 
         _history.Changed += (s, e) => UpdateEditMenu();
 
-        mnuUndo.Click += (s, e) => StepHistory(_history.Undo());
-        mnuRedo.Click += (s, e) => StepHistory(_history.Redo());
+        // The gesture goes first. Ctrl+Z is a menu shortcut and so is dispatched before the
+        // viewport's own key handling, which means it arrives even mid-drag — and undoing onto a
+        // mesh that a half-finished gesture is still writing to would leave the history's version
+        // of the transform and the mesh's disagreeing.
+        mnuUndo.Click += (s, e) =>
+        {
+            panel3D1.CancelTransform();
+            StepHistory(_history.Undo());
+        };
+
+        mnuRedo.Click += (s, e) =>
+        {
+            panel3D1.CancelTransform();
+            StepHistory(_history.Redo());
+        };
 
         // Two controls for one setting, because they answer different questions: the sidebar
         // checkbox is next to the gizmo selector and so is where you look for it, and the menu
         // item is where the keyboard shortcut can live.
         chkSnap.CheckedChanged += (s, e) => ApplySnapping(chkSnap.Checked);
         mnuSnap.CheckedChanged += (s, e) => ApplySnapping(mnuSnap.Checked);
+
+        InitializePrimitives();
 
         UpdateEditMenu();
     }
@@ -1539,20 +1571,29 @@ public sealed partial class MainScreen : Form
     }
 
     /// <summary>
-    /// Follows an undo or a redo: the mesh it moved becomes the selection, so the handles are on
-    /// the thing that just changed rather than wherever they were left. Nothing happens when the
+    /// Follows an undo or a redo: the mesh it changed becomes the selection, so the handles are on
+    /// the thing that just moved rather than wherever they were left. Nothing happens when the
     /// stack was empty, which is the case the menu items are greyed out for anyway.
     /// </summary>
     private void StepHistory(IEditCommand? command)
     {
-        if (command is null)
+        switch (command)
         {
-            return;
-        }
+            case null:
+                return;
 
-        if (command is TransformEdit edit)
-        {
-            _gizmo.Target = edit.Mesh;
+            case TransformEdit edit:
+                _gizmo.Target = edit.Mesh;
+                break;
+
+            // A mesh that has just left the world cannot stay selected: the pick addresses it by
+            // its position in the world's mesh list, and that position now holds something else
+            // or nothing at all. Reselecting one that has come back is the same rule the other
+            // way round — either way the selection ends up on what the step changed.
+            case MeshListEdit list:
+                panel3D1.SelectMesh(list.Mesh);
+                panel3D1.ResetTemporalHistory();
+                break;
         }
 
         UpdateStatus();

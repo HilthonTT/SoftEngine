@@ -78,6 +78,20 @@ public sealed class ArcBallCamera : ICamera
     }
 
     /// <summary>
+    /// The world point the view is centred on: what an orbit turns about, and what the middle of
+    /// the viewport is looking at.
+    ///
+    /// <para>
+    /// Everything inside this class carries the pivot as a depth in view space, which is all that
+    /// turning and panning need. This is the same point in the world, which is what anything
+    /// <em>placed</em> there needs instead — an object added to the scene belongs where the view
+    /// is pointed, not at an origin that a pan may have left off screen.
+    /// </para>
+    /// </summary>
+    public Vector3 Pivot =>
+        Vector3.Transform(new Vector3(0, 0, _pivotDepth) - _position, Quaternion.Inverse(Rotation));
+
+    /// <summary>
     /// The vertical field of view of the scene's projection, in radians. Panning solves for
     /// the world distance a pixel covers at the pivot's depth, which only comes out at 1:1
     /// while this matches what the scene is rendered with.

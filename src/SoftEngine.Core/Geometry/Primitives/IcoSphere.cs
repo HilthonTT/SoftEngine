@@ -4,13 +4,18 @@ namespace SoftEngine.Core.Geometry.Primitives;
 
 public sealed class IcoSphere : Mesh
 {
-    private IcoSphere(Sphere sphere)
-        : base([.. sphere.Points], [.. sphere.Faces])
+    private IcoSphere(Sphere sphere, float radius)
+        : base([.. sphere.Points.Select(point => point * radius)], [.. sphere.Faces])
     {
     }
 
-    public IcoSphere(int recursionLevel)
-        : this(new Sphere(recursionLevel))
+    /// <param name="recursionLevel">How many times each face of the icosahedron is split in four.</param>
+    /// <param name="radius">
+    /// Radius of the sphere. The generated points are on the unit sphere and are scaled by this,
+    /// so the default multiplies by one — exactly, in floating point — and leaves them untouched.
+    /// </param>
+    public IcoSphere(int recursionLevel, float radius = 1f)
+        : this(new Sphere(recursionLevel), radius)
     {
     }
 
