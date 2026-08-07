@@ -16,7 +16,7 @@ namespace SoftEngine.Core.Geometry;
 ///
 /// One <see cref="IMesh"/> is emitted per material actually used, so each mesh carries a
 /// single diffuse colour and texture — matching the one-texture-per-mesh model of the engine.
-/// Decoding the texture image is delegated to <paramref name="textureLoader"/> so this stays
+/// Decoding the texture image is delegated to the caller's <c>textureLoader</c> so this stays
 /// platform-neutral (the Core has no image codec of its own).
 /// </summary>
 public static class ObjImporter

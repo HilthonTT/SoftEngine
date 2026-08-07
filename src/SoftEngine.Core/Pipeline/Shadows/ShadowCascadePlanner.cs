@@ -287,7 +287,7 @@ public sealed class ShadowCascadePlanner
             var worldMatrix = mesh.WorldMatrix;
 
             var meshCenter = Vector3.Transform(Vector3.Zero, worldMatrix);
-            var meshRadius = mesh.BoundingRadius * MeshExtensions.MaxScale(worldMatrix);
+            var meshRadius = mesh.WorldBoundingRadius(worldMatrix);
 
             if (float.IsNaN(meshRadius) || float.IsInfinity(meshRadius))
             {

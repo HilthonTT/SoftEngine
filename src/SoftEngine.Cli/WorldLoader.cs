@@ -76,7 +76,7 @@ internal static class WorldLoader
             // The world matrix and its largest axis scale, not the mesh's own Scale: a mesh
             // hanging off a node inherits everything that node's transform does, and the three
             // other places in this engine that size a bounding sphere agree on exactly this.
-            var reach = mesh.BoundingRadius * MeshExtensions.MaxScale(mesh.WorldMatrix);
+            var reach = mesh.WorldBoundingRadius();
 
             if (!float.IsFinite(reach))
             {
@@ -106,7 +106,7 @@ internal static class WorldLoader
 
         foreach (var mesh in world.Meshes)
         {
-            var reach = mesh.BoundingRadius * MeshExtensions.MaxScale(mesh.WorldMatrix);
+            var reach = mesh.WorldBoundingRadius();
 
             if (float.IsFinite(reach))
             {

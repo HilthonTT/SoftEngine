@@ -73,7 +73,7 @@ public readonly struct TextureSampler
     public ColorRGB Sample(Vector2 uv) => Sample(uv.X, uv.Y);
 
     /// <summary>
-    /// The alpha channel alone, in [0, 1], at the same texel <see cref="Sample"/> would read.
+    /// The alpha channel alone, in [0, 1], at the same texel <see cref="Sample(Vector2)"/> would read.
     /// One when no texture is bound, so an absent mask covers everything.
     ///
     /// It is its own method rather than a channel of the sampled colour because

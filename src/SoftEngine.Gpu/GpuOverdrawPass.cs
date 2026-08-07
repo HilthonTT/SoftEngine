@@ -45,7 +45,7 @@ public sealed class GpuOverdrawPass : IDisposable
     }
 
     /// <summary>
-    /// Draws <paramref name="geometry"/> into the counter target and hands the totals to
+    /// Draws the frame's geometry into the counter target and hands the totals to
     /// <paramref name="surface"/>. <paramref name="draw"/> is invoked once with the program
     /// bound and is expected to issue the frame's draws, setting the model-view-projection
     /// uniform per mesh.

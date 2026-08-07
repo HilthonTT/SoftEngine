@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Animation;
+using SoftEngine.Core.Animation;
 using SoftEngine.Core.Baking;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Editing;
@@ -2882,7 +2882,7 @@ public sealed partial class MainScreen : Form
         var radius = 0f;
         foreach (var mesh in world.Meshes)
         {
-            var scaled = mesh.BoundingRadius * MeshExtensions.MaxScale(mesh.WorldMatrix);
+            var scaled = mesh.WorldBoundingRadius();
 
             if (float.IsFinite(scaled))
             {

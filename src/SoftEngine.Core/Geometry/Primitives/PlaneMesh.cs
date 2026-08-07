@@ -4,8 +4,8 @@ namespace SoftEngine.Core.Geometry.Primitives;
 
 /// <summary>
 /// A flat grid in the XZ plane facing +Y — the ground every test scene and benchmark used to
-/// hand-roll four vertices at a time. Subdivide it (<paramref name="columns"/> /
-/// <paramref name="rows"/>) when the surface needs vertices for a shader to interpolate across:
+/// hand-roll four vertices at a time. Subdivide it (<c>columns</c> / <c>rows</c>) when the surface
+/// needs vertices for a shader to interpolate across:
 /// a two-triangle floor has nothing for per-vertex lighting or a vertex-lit fog to work with.
 /// For a wall or a billboard, rotate it — a plane facing the camera is this one turned -90°
 /// about X.

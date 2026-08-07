@@ -67,12 +67,34 @@ public static class MeshExtensions
     /// it is meant to contain, and every test that trusts it rejects a mesh that is really
     /// there: the frustum cull drops it from the frame, the shadow pass sizes the light's
     /// projection too small for it, and a ray passes straight through it.
+    ///
+    /// <para>
+    /// Every consumer has to agree about this number or they contradict each other about which
+    /// meshes exist, so they all come through here rather than each writing the multiply out.
+    /// </para>
     /// </summary>
     public static float WorldBoundingRadius(this IMesh mesh)
     {
         ArgumentNullException.ThrowIfNull(mesh, nameof(mesh));
 
-        return mesh.BoundingRadius * MaxScale(mesh.WorldMatrix);
+        return mesh.WorldBoundingRadius(mesh.WorldMatrix);
+    }
+
+    /// <summary>
+    /// The same radius for a caller that has already composed the mesh's world matrix.
+    ///
+    /// <para>
+    /// Which every per-frame one has: <see cref="IMesh.WorldMatrix"/> builds three matrices and
+    /// walks the parent chain, and the cull, the shadow pass and the picker each need the matrix
+    /// itself as well as the radius. This overload is what lets them share the helper without
+    /// paying for it twice per mesh per frame.
+    /// </para>
+    /// </summary>
+    public static float WorldBoundingRadius(this IMesh mesh, in Matrix4x4 worldMatrix)
+    {
+        ArgumentNullException.ThrowIfNull(mesh, nameof(mesh));
+
+        return mesh.BoundingRadius * MaxScale(worldMatrix);
     }
 
     /// <summary>

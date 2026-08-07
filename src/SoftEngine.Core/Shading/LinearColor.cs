@@ -3,7 +3,6 @@ using System.Runtime.CompilerServices;
 
 namespace SoftEngine.Core.Shading;
 
-[method: MethodImpl(MethodImplOptions.AggressiveInlining)]
 /// <summary>
 /// A colour in linear light, three floats per channel, with no upper bound.
 ///
@@ -20,6 +19,7 @@ namespace SoftEngine.Core.Shading;
 /// no HDR range to give — a solid colour, a raw texel — still compiles and still lands in
 /// the right space. The round trip through the two lookup tables is stable to the byte.
 /// </summary>
+[method: MethodImpl(MethodImplOptions.AggressiveInlining)]
 public readonly struct LinearColor(float r, float g, float b)
 {
     public readonly float R = r;

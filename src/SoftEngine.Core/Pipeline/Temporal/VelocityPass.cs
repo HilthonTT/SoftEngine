@@ -13,7 +13,7 @@ namespace SoftEngine.Core.Pipeline.Temporal;
 /// <para>
 /// A separate pass rather than a varying carried by the main one, and that is a deliberate trade. A
 /// varying would be free of a second traversal but would have to be threaded through every
-/// <see cref="Rasterization.IVarying"/>, every painter and every shader, whether or not anything
+/// <see cref="Rasterization.IVarying{T}"/>, every painter and every shader, whether or not anything
 /// temporal is switched on — nine painters paying for a feature two of them can use. A pass costs a
 /// second transform and fill of the frame's geometry, and costs it only when something asks. The
 /// shadow pass makes the same trade for the same reason.

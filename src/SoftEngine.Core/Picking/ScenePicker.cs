@@ -118,7 +118,7 @@ public static class ScenePicker
             // Reject against the bounding sphere in world space, before paying for the
             // matrix inverse the triangle test needs.
             var center = Vector3.Transform(Vector3.Zero, worldMatrix);
-            var radius = mesh.BoundingRadius * MeshExtensions.MaxScale(worldMatrix);
+            var radius = mesh.WorldBoundingRadius(worldMatrix);
 
             if (!ray.IntersectsSphere(center, radius, out var approach) || approach > nearestDistance)
             {

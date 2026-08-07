@@ -455,13 +455,12 @@ static int Render(RenderOptions options)
 static bool IsSceneDocument(string path) =>
     Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase);
 
-/// <summary>
-/// One frame's path: the output name with a four-digit index before its extension.
-///
-/// Zero-padded and fixed-width because every tool that reads a sequence — ffmpeg, an image viewer's
-/// "open as animation", a shell glob — sorts the names as text, and <c>frame.10.png</c> sorts before
-/// <c>frame.2.png</c>.
-/// </summary>
+// One frame's path: the output name with a four-digit index before its extension.
+//
+// Zero-padded and fixed-width because every tool that reads a sequence — ffmpeg, an image viewer's
+// "open as animation", a shell glob — sorts the names as text, and frame.10.png sorts before
+// frame.2.png. (A plain comment rather than an XML one: a local function in a top-level program is
+// not something the compiler will attach documentation to.)
 static string Numbered(string output, int frame)
 {
     var directory = Path.GetDirectoryName(output);

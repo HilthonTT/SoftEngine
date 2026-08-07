@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Gizmos;
@@ -331,7 +331,7 @@ public sealed class Renderer : IRenderer
             // Sized off the world matrix rather than the mesh's own Scale: the centre below
             // already follows the whole scene-graph chain, and a radius that did not would
             // cull a mesh hanging off a scaled node while it is still on screen.
-            var radius = mesh.BoundingRadius * MeshExtensions.MaxScale(worldMatrix);
+            var radius = mesh.WorldBoundingRadius(worldMatrix);
             if (float.IsFinite(radius))
             {
                 var viewCenter = Vector3.Transform(Vector3.Zero, modelViewMatrix);

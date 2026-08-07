@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Gizmos;
+using SoftEngine.Core.Gizmos;
 using SoftEngine.Core.Pipeline.Debugging;
 
 namespace SoftEngine.Core.Pipeline;
@@ -45,7 +45,7 @@ public sealed class RendererSettings
     /// On, each transparent fragment is depth-tested and then stored rather than blended, and a
     /// resolve blends every pixel's own list back to front once the pass is over — so the order
     /// is decided per pixel, where it is never ambiguous, and nothing depends on the order the
-    /// triangles were drawn in. It costs the storage (see <see cref="FragmentBuffer"/>, which is
+    /// triangles were drawn in. It costs the storage (see <see cref="Buffers.FragmentBuffer"/>, which is
     /// also where the per-pixel fragment limit lives) and one pass over the covered pixels.
     /// </para>
     ///

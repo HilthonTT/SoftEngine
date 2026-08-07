@@ -482,7 +482,7 @@ public sealed class GpuRenderer : IRenderer, IDisposable
             var modelView = worldMatrix * viewMatrix;
             var viewCenter = Vector3.Transform(Vector3.Zero, modelView);
 
-            var radius = mesh.BoundingRadius * MeshExtensions.MaxScale(worldMatrix);
+            var radius = mesh.WorldBoundingRadius(worldMatrix);
 
             if (float.IsFinite(radius) && Frustum.IsSphereOutside(frustum, viewCenter, radius))
             {
