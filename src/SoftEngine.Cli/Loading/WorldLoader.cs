@@ -1,6 +1,6 @@
 ﻿using SoftEngine.Core.Animation;
-using SoftEngine.Core.Geometry.Import;
 using SoftEngine.Core.Geometry;
+using SoftEngine.Core.Geometry.Import;
 using SoftEngine.Core.Geometry.Import.Gltf;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Lights;

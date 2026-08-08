@@ -1,8 +1,8 @@
 ﻿using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
+using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Rasterization.Shaders;
 using SoftEngine.Core.Rasterization.Varyings;
-using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Textures;
 using System.Numerics;
 

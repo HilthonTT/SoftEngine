@@ -2,8 +2,8 @@
 using SoftEngine.Core.Baking;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Editing;
-using SoftEngine.Core.Geometry.Import;
 using SoftEngine.Core.Geometry;
+using SoftEngine.Core.Geometry.Import;
 using SoftEngine.Core.Geometry.Import.Gltf;
 using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Geometry.Skinning;

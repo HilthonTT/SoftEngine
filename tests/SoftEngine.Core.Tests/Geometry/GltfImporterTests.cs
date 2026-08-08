@@ -1,6 +1,6 @@
 ﻿using SoftEngine.Core.Diagnostics;
-using SoftEngine.Core.Geometry.Import;
 using SoftEngine.Core.Geometry;
+using SoftEngine.Core.Geometry.Import;
 using SoftEngine.Core.Geometry.Import.Gltf;
 using SoftEngine.Core.Textures;
 using System.Numerics;
