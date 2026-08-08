@@ -1,4 +1,4 @@
-using Silk.NET.OpenGL;
+﻿using Silk.NET.OpenGL;
 using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
@@ -12,9 +12,10 @@ using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.Core.Shading;
+using SoftEngine.Core.Textures;
 using System.Numerics;
 using FogMode = SoftEngine.Core.Scenes.FogMode;
-using Texture = SoftEngine.Core.Geometry.Texture;
+using Texture = SoftEngine.Core.Textures.Texture;
 
 namespace SoftEngine.Gpu;
 

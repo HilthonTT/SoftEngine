@@ -1,6 +1,7 @@
-using Silk.NET.OpenGL;
+﻿using Silk.NET.OpenGL;
 using SoftEngine.Core.Geometry;
-using Texture = SoftEngine.Core.Geometry.Texture;
+using SoftEngine.Core.Textures;
+using Texture = SoftEngine.Core.Textures.Texture;
 
 namespace SoftEngine.Gpu;
 

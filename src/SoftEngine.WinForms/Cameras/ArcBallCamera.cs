@@ -1,7 +1,6 @@
 using SoftEngine.Core.Math;
 using SoftEngine.Core.Scenes.Cameras;
-using SoftEngine.WinForms.Extensions;
-using SoftEngine.WinForms.Helpers;
+using SoftEngine.WinForms.Utilities;
 using System.Numerics;
 
 namespace SoftEngine.WinForms.Cameras;

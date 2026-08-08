@@ -140,22 +140,28 @@ src/
 │   ├── Buffers/            # FrameBuffer, velocity, fragments, pooled vertex/world buffers
 │   ├── Diagnostics/        # stats, event log, pixel history, frame captures
 │   ├── Editing/            # undoable edits and the history the tools record into
-│   ├── Geometry/           # IMesh, Material, primitives, OBJ/Collada — Gltf/, Skinning/
+│   ├── Geometry/           # IMesh, Material, triangles, tangents — Import/ Primitives/
+│   │                       #   Skinning/; Import/ holds OBJ, Collada and Gltf/
 │   ├── Gizmos/             # grid, axes, skeleton, drag handles, modal transforms, snapping
 │   ├── Imaging/            # PNG codec, Radiance .hdr reader
 │   ├── Picking/            # ray, intersection, scene picker
 │   ├── Pipeline/           # Renderer, clipping, sky — Culling/ Debugging/ PostProcess/
 │   │                       #   Shadows/ Temporal/
-│   ├── Rasterization/      # scanline filler, painters, shaders, varyings, sampling
+│   ├── Rasterization/      # scanline filler, tiles, sampling — Painters/ Shaders/ Varyings/
 │   ├── Scenes/             # world, camera, projections, lights — Graph/ Serialization/
 │   ├── Shading/            # linear colour, light sets, ambient cube, GGX, BRDF LUT
+│   ├── Textures/           # Texture, filtering, cube maps, equirectangular, procedural sky
 │   └── Tracing/            # path tracer, the integrator it shares with the bake, sampler
 ├── SoftEngine.Gpu/         # OpenGL backend via Silk.NET, and Shaders/
 ├── SoftEngine.Cli/         # headless renderer (net10.0 console)
+│   ├── Options/            # the flags, their parser, their bounds, the usage text
+│   ├── Loading/            # model → world, panorama → cube map, PNG textures
+│   └── Rendering/          # backend choice, framing, post chain, frames, report
 └── SoftEngine.WinForms/    # interactive front-end (net10.0-windows)
 
 bench/SoftEngine.Benchmarks/   # headless frame-time harness
-tests/SoftEngine.Core.Tests/   # xUnit suite, and Golden/ image baselines
+tests/SoftEngine.Core.Tests/   # xUnit suite in folders mirroring the engine, and Golden/
+                               #   image baselines — which stay put, see DESIGN.md § Testing
 ```
 
 ## Testing

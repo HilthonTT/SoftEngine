@@ -1,9 +1,10 @@
-using SoftEngine.Core.Acceleration;
+﻿using SoftEngine.Core.Acceleration;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Picking;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Shading;
+using SoftEngine.Core.Textures;
 using System.Numerics;
 
 namespace SoftEngine.Core.Tracing;

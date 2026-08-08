@@ -1,6 +1,7 @@
 ﻿using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Math;
 using SoftEngine.Core.Scenes.Graph;
+using SoftEngine.Core.Textures;
 using System.Numerics;
 
 namespace SoftEngine.Core.Geometry;

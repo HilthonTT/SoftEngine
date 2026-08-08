@@ -1,3 +1,4 @@
+﻿using SoftEngine.Core.Rasterization.Varyings;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 

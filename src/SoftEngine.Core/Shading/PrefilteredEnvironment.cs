@@ -1,4 +1,5 @@
-using SoftEngine.Core.Geometry;
+﻿using SoftEngine.Core.Geometry;
+using SoftEngine.Core.Textures;
 using System.Numerics;
 
 namespace SoftEngine.Core.Shading;

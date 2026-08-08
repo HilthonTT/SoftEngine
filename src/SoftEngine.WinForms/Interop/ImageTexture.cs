@@ -1,5 +1,6 @@
-using SoftEngine.Core.Geometry;
-using SoftEngine.Core.Geometry.Gltf;
+﻿using SoftEngine.Core.Geometry;
+using SoftEngine.Core.Geometry.Import.Gltf;
+using SoftEngine.Core.Textures;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 

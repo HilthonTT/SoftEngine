@@ -1,4 +1,4 @@
-# SoftEngine — design notes
+﻿# SoftEngine — design notes
 
 Why the renderer is built the way it is. [README.md](README.md) is what it does and how to run it;
 this is the reasoning, the trade-offs, and the traps already paid for.
@@ -93,7 +93,7 @@ light with it — half of a full-intensity channel encodes to about 188, not 128
 
 ![Roughness left to right, metalness bottom to top](docs/screenshots/pbr-spheres.png)
 
-[`PbrShader`](src/SoftEngine.Core/Rasterization/PbrShader.cs) over
+[`PbrShader`](src/SoftEngine.Core/Rasterization/Shaders/PbrShader.cs) over
 [`Ggx`](src/SoftEngine.Core/Shading/Ggx.cs): Trowbridge-Reitz **D**, height-correlated Smith **V**,
 Schlick **F**, with roughness squared into α (the Disney mapping). The environment arrives through
 the split-sum approximation — [`PrefilteredEnvironment`](src/SoftEngine.Core/Shading/PrefilteredEnvironment.cs)
@@ -122,7 +122,7 @@ outline is *not there*. `Material.AlphaCutoff` reads the albedo map's alpha per 
 ordinary opaque pixel, below it nothing at all — no shade, no depth write, no sorting. Zero (the
 default) is no cutout.
 
-- [`CutoutShader`](src/SoftEngine.Core/Rasterization/CutoutShader.cs) *wraps* the shader that would
+- [`CutoutShader`](src/SoftEngine.Core/Rasterization/Shaders/CutoutShader.cs) *wraps* the shader that would
   have coloured the surface, and `IPixelShader.HasAlphaTest` is a `static virtual` — so the fill is
   instantiated over a type that either cuts pixels out or does not, and the test folds away
   entirely in the one that does not. The golden images are unchanged to the bit.
@@ -190,7 +190,7 @@ the GPU backend so the two cannot drift.
 
 ## Environment and ambient
 
-`Scene.Environment` is a [`CubeMap`](src/SoftEngine.Core/Geometry/CubeMap.cs) doing two jobs.
+`Scene.Environment` is a [`CubeMap`](src/SoftEngine.Core/Textures/CubeMap.cs) doing two jobs.
 [`SkyRenderer`](src/SoftEngine.Core/Pipeline/SkyRenderer.cs) draws it behind the scene with no cube
 to rasterize — the direction comes straight from the pixel through the inverse projection, so there
 are no seams and nothing to near-plane clip. It runs *between* the opaque and transparent passes,
@@ -209,7 +209,7 @@ second copy of its faces in linear floats, and `SampleRadiance` returns those wh
 the skybox, `AmbientCube` and the prefilter, while the byte faces stay for thumbnails and GPU
 uploads. Two sources: [`RadianceHdrCodec`](src/SoftEngine.Core/Imaging/RadianceHdrCodec.cs) reads
 `.hdr` (both encodings, `EXPOSURE` divided back out) and
-[`Equirectangular.ToCubeMap`](src/SoftEngine.Core/Geometry/Equirectangular.cs) projects it with
+[`Equirectangular.ToCubeMap`](src/SoftEngine.Core/Textures/Equirectangular.cs) projects it with
 supersampling; or `SkyBox.HighDynamicRangeGradient` builds one procedurally.
 
 The viewer's **Load panorama…** and the CLI's `--env` both take one. The GPU backend uploads only
@@ -456,7 +456,7 @@ clip over 60 nodes with no skin, so a cube per joint makes the hierarchy the mod
 
 ## Importers and primitives
 
-[`GltfImporter`](src/SoftEngine.Core/Geometry/Gltf/GltfImporter.cs) reads `.gltf` (buffers and images
+[`GltfImporter`](src/SoftEngine.Core/Geometry/Import/Gltf/GltfImporter.cs) reads `.gltf` (buffers and images
 beside it or as data URIs) and `.glb`.
 
 | Read | Not read |
@@ -482,9 +482,10 @@ A mesh instanced by several nodes becomes several engine meshes **sharing one ve
 triangle colours are not shared. Decoding images stays out of the Core — the importer resolves an
 image to bytes and the front-end supplies a decoder.
 
-`MeshFactory.ImportColladaScene` returns the same `ImportedScene` type. Collada matrices are
-column-vector and transposed on the way in; the bind shape matrix is folded into the bind pose at
-load. `HackyImportCollada` still returns bare meshes, which is all a static model needs.
+[`ColladaImporter`](src/SoftEngine.Core/Geometry/Import/ColladaImporter.cs) returns the same
+`ImportedScene` type from its `ImportScene`. Collada matrices are column-vector and transposed on the
+way in; the bind shape matrix is folded into the bind pose at load. `HackyImportCollada` still
+returns bare meshes, which is all a static model needs.
 
 ### Primitives
 

@@ -1,5 +1,6 @@
-using SoftEngine.Core.Diagnostics;
+﻿using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
+using SoftEngine.Core.Textures;
 using System.Numerics;
 
 namespace SoftEngine.Core.Rasterization;

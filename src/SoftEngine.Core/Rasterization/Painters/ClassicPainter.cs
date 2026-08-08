@@ -1,6 +1,8 @@
-using SoftEngine.Core.Buffers;
+﻿using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
+using SoftEngine.Core.Rasterization.Shaders;
+using SoftEngine.Core.Rasterization.Varyings;
 using SoftEngine.Core.Scenes;
 
 namespace SoftEngine.Core.Rasterization.Painters;

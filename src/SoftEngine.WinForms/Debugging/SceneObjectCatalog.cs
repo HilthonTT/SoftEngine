@@ -1,8 +1,9 @@
-using SoftEngine.Core.Diagnostics;
+﻿using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Pipeline.PostProcess;
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Scenes;
+using SoftEngine.Core.Textures;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 

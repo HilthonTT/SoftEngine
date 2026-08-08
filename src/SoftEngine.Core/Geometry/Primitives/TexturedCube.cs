@@ -1,4 +1,5 @@
-using SoftEngine.Core.Diagnostics;
+﻿using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Textures;
 using System.Numerics;
 
 namespace SoftEngine.Core.Geometry.Primitives;

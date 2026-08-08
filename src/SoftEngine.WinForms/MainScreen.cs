@@ -1,9 +1,10 @@
-using SoftEngine.Core.Animation;
+﻿using SoftEngine.Core.Animation;
 using SoftEngine.Core.Baking;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Editing;
+using SoftEngine.Core.Geometry.Import;
 using SoftEngine.Core.Geometry;
-using SoftEngine.Core.Geometry.Gltf;
+using SoftEngine.Core.Geometry.Import.Gltf;
 using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Geometry.Skinning;
 using SoftEngine.Core.Gizmos;
@@ -18,6 +19,7 @@ using SoftEngine.Core.Scenes.Graph;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.Core.Scenes.Serialization;
+using SoftEngine.Core.Textures;
 using SoftEngine.Gpu;
 using SoftEngine.WinForms.Cameras;
 using SoftEngine.WinForms.Controls;
@@ -2333,12 +2335,12 @@ public sealed partial class MainScreen : Form
         switch (id)
         {
             case "skull":
-                world.Meshes.AddRange(MeshFactory.HackyImportCollada(ModelPath("skull.dae"), progress));
+                world.Meshes.AddRange(ColladaImporter.HackyImportCollada(ModelPath("skull.dae"), progress));
                 cameraPosition = new Vector3(0, 0, -5);
                 break;
 
             case "parrot":
-                world.Meshes.AddRange(MeshFactory.HackyImportCollada(ModelPath("parrot.dae"), progress));
+                world.Meshes.AddRange(ColladaImporter.HackyImportCollada(ModelPath("parrot.dae"), progress));
                 cameraPosition = new Vector3(0, 0, -500);
 
                 // A warm key and a cool fill from the other side — the classic two-light
@@ -2357,11 +2359,11 @@ public sealed partial class MainScreen : Form
                 break;
 
             case "teapot":
-                world.Meshes.AddRange(MeshFactory.HackyImportCollada(ModelPath("teapot.dae"), progress));
+                world.Meshes.AddRange(ColladaImporter.HackyImportCollada(ModelPath("teapot.dae"), progress));
                 break;
 
             case "elefant":
-                world.Meshes.AddRange(MeshFactory.HackyImportCollada(ModelPath("elefant.dae"), progress));
+                world.Meshes.AddRange(ColladaImporter.HackyImportCollada(ModelPath("elefant.dae"), progress));
                 cameraPosition = new Vector3(0, 0, -1500);
                 projection = new PerspectiveProjection(FieldOfView, .01f, 65535f);
                 world.Lights.Add(new PointLight
@@ -2378,7 +2380,7 @@ public sealed partial class MainScreen : Form
                 break;
 
             case "Juliet":
-                world.Meshes.AddRange(MeshFactory.HackyImportCollada(ModelPath("Juliet.dae"), progress));
+                world.Meshes.AddRange(ColladaImporter.HackyImportCollada(ModelPath("Juliet.dae"), progress));
                 cameraPosition = new Vector3(0, 0, -500);
                 world.Lights.Add(new PointLight { Position = new Vector3(150, 200, 400) });
                 break;
@@ -2416,7 +2418,7 @@ public sealed partial class MainScreen : Form
                 // A real 55,000-vertex skin off a real file — 205 joints, weights painted by
                 // whoever rigged her. The file carries no animation, so the clip that bends
                 // her is generated against the joint names the rig actually uses.
-                var scene = MeshFactory.ImportColladaScene(ModelPath("Juliet.dae"), progress);
+                var scene = ColladaImporter.ImportScene(ModelPath("Juliet.dae"), progress);
 
                 world.Root = scene.Root;
                 world.Meshes.AddRange(scene.Meshes);
@@ -2448,7 +2450,7 @@ public sealed partial class MainScreen : Form
                 // A cube on each joint makes the hierarchy the model. Every cube is placed by
                 // its node and nothing else, which is the scene graph doing its whole job:
                 // move a wing joint and the four cubes below it go with it.
-                var scene = MeshFactory.ImportColladaScene(ModelPath("parrot.dae"), progress);
+                var scene = ColladaImporter.ImportScene(ModelPath("parrot.dae"), progress);
 
                 world.Root = scene.Root;
 
@@ -2890,8 +2892,8 @@ public sealed partial class MainScreen : Form
 
             world.Meshes.AddRange(extension switch
             {
-                ".obj" => ObjImporter.ImportObj(path, progress, ImageTexture.Load),
-                ".dae" => MeshFactory.HackyImportCollada(path, progress),
+                ".obj" => ObjImporter.Import(path, progress, ImageTexture.Load),
+                ".dae" => ColladaImporter.HackyImportCollada(path, progress),
                 _ => throw new NotSupportedException($"Unsupported model format '{extension}'."),
             });
         }

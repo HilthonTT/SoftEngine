@@ -1,7 +1,8 @@
-using SoftEngine.Core.Buffers;
+﻿using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Lights;
+using SoftEngine.Core.Textures;
 
 namespace SoftEngine.Core.Rasterization;
 
@@ -46,7 +47,7 @@ public interface IPainter
     /// graphics card.
     /// </para>
     /// </summary>
-    Geometry.TextureFiltering Filtering => Geometry.TextureFiltering.Bilinear;
+    TextureFiltering Filtering => TextureFiltering.Bilinear;
 
     /// <summary>Whether this painter samples from a mip chain. See <see cref="Filtering"/>.</summary>
     bool UseMipMaps => true;

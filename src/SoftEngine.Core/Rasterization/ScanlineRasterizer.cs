@@ -1,4 +1,6 @@
-using SoftEngine.Core.Buffers;
+﻿using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Rasterization.Shaders;
+using SoftEngine.Core.Rasterization.Varyings;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
