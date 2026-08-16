@@ -7,7 +7,7 @@ using SoftEngine.Core.Scenes.Cameras;
 using SoftEngine.Core.Scenes.Projections;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Scenes;
 
 public class OrthographicProjectionTests
 {

@@ -4,13 +4,15 @@ using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Math;
 using SoftEngine.Core.Picking;
+using SoftEngine.Core.Pipeline;
+using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Cameras;
 using SoftEngine.Core.Scenes.Graph;
 using SoftEngine.Core.Scenes.Projections;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Picking;
 
 public class PickingTests
 {
@@ -320,7 +322,7 @@ public class PickingTests
 
         var scene = SceneWith(left, right);
 
-        new Pipeline.Renderer().Render(scene, new Rasterization.Painters.ClassicPainter());
+        new Renderer().Render(scene, new ClassicPainter());
 
         for (var x = 4; x < Size - 4; x += 4)
         {
@@ -353,12 +355,12 @@ public class PickingTests
     /// <summary>Renders <paramref name="scene"/> with one mesh outlined, and returns the frame.</summary>
     private static int[] RenderWithHighlight(Scene scene, int highlighted)
     {
-        var renderer = new Pipeline.Renderer
+        var renderer = new Renderer
         {
-            Settings = new Pipeline.RendererSettings { HighlightedMesh = highlighted },
+            Settings = new RendererSettings { HighlightedMesh = highlighted },
         };
 
-        renderer.Render(scene, new Rasterization.Painters.ClassicPainter());
+        renderer.Render(scene, new ClassicPainter());
 
         return [.. scene.Surface.Screen];
     }

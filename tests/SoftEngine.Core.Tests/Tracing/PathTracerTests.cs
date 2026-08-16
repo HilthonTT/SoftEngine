@@ -1,8 +1,9 @@
-﻿using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Pipeline;
+using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Cameras;
@@ -13,7 +14,7 @@ using SoftEngine.Core.Textures;
 using SoftEngine.Core.Tracing;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Tracing;
 
 public class PathTracerTests
 {
@@ -377,7 +378,7 @@ public class PathTracerTests
         // The comparison the whole renderer exists for: one bounce of nothing, no environment, a
         // single directional light — the case the rasterizer computes exactly rather than
         // approximating. The two should land on the same brightness.
-        static LinearColor Frame(IRenderer renderer, Rasterization.IPainter? painter)
+        static LinearColor Frame(IRenderer renderer, IPainter? painter)
         {
             var world = new SimpleWorld();
             world.Meshes.Add(Floor(40f, new ColorRGB(200, 160, 120)));

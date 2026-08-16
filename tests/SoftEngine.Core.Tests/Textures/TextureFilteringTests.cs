@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Rasterization.Shaders;
@@ -6,7 +6,7 @@ using SoftEngine.Core.Rasterization.Varyings;
 using SoftEngine.Core.Textures;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Textures;
 
 public class TextureFilteringTests
 {

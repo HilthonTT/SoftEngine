@@ -12,7 +12,7 @@ using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.Core.Tests.Golden;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Pipeline;
 
 public class OcclusionCullingTests
 {

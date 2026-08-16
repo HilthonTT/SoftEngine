@@ -1,10 +1,10 @@
-﻿using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Import;
 using SoftEngine.Core.Textures;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Geometry;
 
 public class ObjImporterTests : IDisposable
 {

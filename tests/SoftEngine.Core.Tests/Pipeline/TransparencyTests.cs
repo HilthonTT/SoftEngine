@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Pipeline;
@@ -8,7 +8,7 @@ using SoftEngine.Core.Scenes.Cameras;
 using SoftEngine.Core.Scenes.Projections;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Pipeline;
 
 public class TransparencyTests
 {

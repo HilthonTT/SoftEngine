@@ -1,7 +1,7 @@
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Tests.Golden;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Golden;
 
 /// <summary>
 /// Renders every <see cref="GoldenScene"/> and compares it against the picture committed for

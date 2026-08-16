@@ -9,7 +9,7 @@ using SoftEngine.Core.Scenes.Cameras;
 using SoftEngine.Core.Scenes.Projections;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Geometry;
 
 /// <summary>
 /// The generated primitives. Three things can go wrong in a parametric surface and only three:

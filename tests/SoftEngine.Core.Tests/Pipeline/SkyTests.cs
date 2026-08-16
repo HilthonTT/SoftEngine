@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Primitives;
@@ -11,7 +11,7 @@ using SoftEngine.Core.Shading;
 using SoftEngine.Core.Textures;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Pipeline;
 
 public class SkyTests
 {

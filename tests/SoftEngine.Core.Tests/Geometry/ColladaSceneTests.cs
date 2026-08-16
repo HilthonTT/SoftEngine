@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Animation;
+using SoftEngine.Core.Animation;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Import;
 using SoftEngine.Core.Geometry.Skinning;
@@ -6,7 +6,7 @@ using SoftEngine.Core.Scenes.Graph;
 using System.Numerics;
 using System.Xml.Linq;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Geometry;
 
 public class ColladaSceneTests
 {

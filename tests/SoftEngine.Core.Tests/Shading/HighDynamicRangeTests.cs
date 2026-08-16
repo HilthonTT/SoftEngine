@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Pipeline.PostProcess;
 using SoftEngine.Core.Rasterization;
@@ -7,7 +7,7 @@ using SoftEngine.Core.Rasterization.Varyings;
 using SoftEngine.Core.Shading;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Shading;
 
 public class HighDynamicRangeTests
 {

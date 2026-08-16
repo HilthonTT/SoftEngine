@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Imaging;
 using SoftEngine.Core.Shading;
@@ -6,7 +6,7 @@ using SoftEngine.Core.Textures;
 using System.Numerics;
 using System.Text;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Textures;
 
 public class HdrEnvironmentTests
 {

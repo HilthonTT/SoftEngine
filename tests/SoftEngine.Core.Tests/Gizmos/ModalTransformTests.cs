@@ -8,7 +8,7 @@ using SoftEngine.Core.Scenes.Cameras;
 using SoftEngine.Core.Scenes.Projections;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Gizmos;
 
 /// <summary>
 /// The keyboard-driven move and scale. It has no handles, so there is nothing to hit-test and

@@ -1,7 +1,7 @@
 using SoftEngine.Core.Imaging;
 using SoftEngine.Core.Tests.Golden;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Golden;
 
 /// <summary>
 /// The harness is code, and a golden-image suite that silently compares nothing is worse than

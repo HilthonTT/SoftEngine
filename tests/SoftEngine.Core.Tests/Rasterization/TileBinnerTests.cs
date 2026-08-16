@@ -1,6 +1,6 @@
 using SoftEngine.Core.Rasterization;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Rasterization;
 
 public class TileBinnerTests
 {

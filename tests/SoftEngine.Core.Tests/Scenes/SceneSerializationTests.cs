@@ -14,7 +14,7 @@ using SoftEngine.Core.Scenes.Serialization;
 using System.Numerics;
 using System.Text.Json;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Scenes;
 
 public class SceneSerializationTests
 {

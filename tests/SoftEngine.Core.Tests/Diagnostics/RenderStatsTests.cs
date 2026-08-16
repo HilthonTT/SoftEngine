@@ -1,6 +1,6 @@
 using SoftEngine.Core.Diagnostics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Diagnostics;
 
 /// <summary>
 /// The pixel counters, which the fill phase adds to from every thread it is running on.

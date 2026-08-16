@@ -1,7 +1,7 @@
 using SoftEngine.Core.Buffers;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Buffers;
 
 public class VerticesTests
 {

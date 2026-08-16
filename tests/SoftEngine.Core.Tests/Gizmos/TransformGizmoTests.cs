@@ -10,7 +10,7 @@ using SoftEngine.Core.Scenes.Graph;
 using SoftEngine.Core.Scenes.Projections;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Gizmos;
 
 public class TransformGizmoTests
 {

@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Pipeline;
@@ -12,7 +12,7 @@ using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.Core.Textures;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Pipeline;
 
 /// <summary>
 /// Alpha-tested (cutout) materials: a texel below the material's cutoff is not drawn, does not

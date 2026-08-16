@@ -2,7 +2,7 @@ using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Scenes.Projections;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Buffers;
 
 /// <summary>
 /// <see cref="FrameBuffer.WriteNormalizedDepth"/> — how a frame rasterized somewhere else
