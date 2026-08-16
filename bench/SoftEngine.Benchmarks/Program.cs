@@ -67,6 +67,8 @@ foreach (var scene in scenes)
             BenchmarkRunner.Run(scene, options.Width, options.Height, options.Frames, options.Warmup, occlusionCulling: false),
         ComparedFeature.VectorizedSpans =>
             BenchmarkRunner.Run(scene, options.Width, options.Height, options.Frames, options.Warmup, vectorizedSpans: false),
+        ComparedFeature.NearestMeshesFirst =>
+            BenchmarkRunner.Run(scene, options.Width, options.Height, options.Frames, options.Warmup, nearestMeshesFirst: false),
         _ => null,
     };
 

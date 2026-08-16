@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Rasterization.Shaders;
 using SoftEngine.Core.Rasterization.Varyings;
 using System.Numerics;
@@ -92,6 +92,14 @@ public static class ScanlineRasterizer
 
         var yMiddle = System.Math.Clamp(FirstCenterAtOrAfter(p1.Y), yStart, yEnd);
 
+        // Pixel counts are accumulated across the whole triangle and handed over once, rather
+        // than once per scanline. The counters are shared by every tile the fill phase is
+        // running in parallel, so what a flush costs is not the addition but the cache line
+        // it takes away from the other workers — and a triangle a few pixels tall used to
+        // pay that several times over for a handful of pixels.
+        var drawn = 0;
+        var behindZ = 0;
+
         // Cross2D tells us which side the middle vertex sits on, which decides
         // whether the long edge p0->p2 is the left or the right boundary.
         if (Cross2D(p0, p1, p2) > 0)
@@ -100,9 +108,9 @@ public static class ScanlineRasterizer
             //    p1        long edge on the left
             //  p2
             HalfTriangle(surface, yStart, yMiddle,
-                new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), new Edge<TVarying>(p0, p1, v0, v1, invW0, invW1), shader, state, tile);
+                new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), new Edge<TVarying>(p0, p1, v0, v1, invW0, invW1), shader, state, tile, ref drawn, ref behindZ);
             HalfTriangle(surface, yMiddle, yEnd,
-                new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), new Edge<TVarying>(p1, p2, v1, v2, invW1, invW2), shader, state, tile);
+                new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), new Edge<TVarying>(p1, p2, v1, v2, invW1, invW2), shader, state, tile, ref drawn, ref behindZ);
         }
         else
         {
@@ -110,10 +118,12 @@ public static class ScanlineRasterizer
             //  p1          long edge on the right
             //    p2
             HalfTriangle(surface, yStart, yMiddle,
-                new Edge<TVarying>(p0, p1, v0, v1, invW0, invW1), new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), shader, state, tile);
+                new Edge<TVarying>(p0, p1, v0, v1, invW0, invW1), new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), shader, state, tile, ref drawn, ref behindZ);
             HalfTriangle(surface, yMiddle, yEnd,
-                new Edge<TVarying>(p1, p2, v1, v2, invW1, invW2), new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), shader, state, tile);
+                new Edge<TVarying>(p1, p2, v1, v2, invW1, invW2), new Edge<TVarying>(p0, p2, v0, v2, invW0, invW2), shader, state, tile, ref drawn, ref behindZ);
         }
+
+        surface.Stats?.AddPixelCounts(drawn, behindZ);
     }
 
     /// <summary>Index of the first pixel whose center (index + 0.5) lies at or after <paramref name="coordinate"/>.</summary>
@@ -178,7 +188,9 @@ public static class ScanlineRasterizer
         in Edge<TVarying> left, in Edge<TVarying> right,
         in TShader shader,
         in RasterState state,
-        in ScreenTile tile)
+        in ScreenTile tile,
+        ref int drawn,
+        ref int behindZ)
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
     {
@@ -212,7 +224,7 @@ public static class ScanlineRasterizer
             var sv = TVarying.Lerp(left.VA, left.VB, gl);
             var ev = TVarying.Lerp(right.VA, right.VB, gr);
 
-            Scanline(surface, y, sx, ex, sz, ez, sw, ew, sv, ev, shader, state, xFloor, xLimit);
+            Scanline(surface, y, sx, ex, sz, ez, sw, ew, sv, ev, shader, state, xFloor, xLimit, ref drawn, ref behindZ);
         }
     }
 
@@ -222,7 +234,9 @@ public static class ScanlineRasterizer
         in TVarying sv, in TVarying ev,
         in TShader shader,
         in RasterState state,
-        int xFloor, int xLimit)
+        int xFloor, int xLimit,
+        ref int drawn,
+        ref int behindZ)
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
     {
@@ -242,11 +256,6 @@ public static class ScanlineRasterizer
         // no longer depends on how many pixels came before it, which is what lets a whole
         // run of them be tested at once below and still agree with this loop exactly.
         var zBase = sz + (0.5f - sx) * dz;
-
-        // Pixel stats are accumulated locally and flushed once per scanline, so parallel
-        // tiles don't contend on the shared counters at every pixel.
-        var drawn = 0;
-        var behindZ = 0;
 
         // While probing, every rejected write must still be shaded so the pixel history
         // can show the colour the depth test discarded; otherwise pixels that fail the
@@ -361,8 +370,6 @@ public static class ScanlineRasterizer
                 behindZ++;
             }
         }
-
-        surface.Stats?.AddPixelCounts(drawn, behindZ);
     }
 
     /// <summary>

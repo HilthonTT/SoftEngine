@@ -1,7 +1,7 @@
 using SoftEngine.Core.Geometry;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Geometry;
 
 /// <summary>
 /// The two flat-array readers every importer funnels its geometry through. Both used to run
@@ -15,7 +15,7 @@ public class MeshExtensionsTests
     [Fact]
     public void BuildTriangleIndices_GroupsIndicesInThrees()
     {
-        var triangles = new[] { 0, 1, 2, 3, 4, 5 }.BuildTriangleIndices();
+        var triangles = new[] { 0, 1, 2, 3, 4, 5 }.BuildTriangleIndices(vertexCount: 6);
 
         Assert.Equal(2, triangles.Length);
         Assert.Equal((0, 1, 2), (triangles[0].I0, triangles[0].I1, triangles[0].I2));
@@ -29,7 +29,7 @@ public class MeshExtensionsTests
     {
         var indices = Enumerable.Range(0, 6 + extra).ToArray();
 
-        var triangles = indices.BuildTriangleIndices();
+        var triangles = indices.BuildTriangleIndices(indices.Length);
 
         Assert.Equal(2, triangles.Length);
         Assert.Equal((3, 4, 5), (triangles[1].I0, triangles[1].I1, triangles[1].I2));
@@ -37,7 +37,27 @@ public class MeshExtensionsTests
 
     [Fact]
     public void BuildTriangleIndices_FewerThanThreeIndices_IsEmpty() =>
-        Assert.Empty(new[] { 0, 1 }.BuildTriangleIndices());
+        Assert.Empty(new[] { 0, 1 }.BuildTriangleIndices(vertexCount: 2));
+
+    /// <summary>
+    /// A face reaching past the vertices it indexes into is dropped, and the faces around it
+    /// still load. The alternative is the whole model failing to open — from inside the mesh
+    /// constructor's own normal calculation, which is where an out-of-range corner used to
+    /// surface, several frames of stack away from the file that carried it.
+    /// </summary>
+    [Theory]
+    [InlineData(6)]
+    [InlineData(-1)]
+    [InlineData(int.MaxValue)]
+    [InlineData(int.MinValue)]
+    public void BuildTriangleIndices_FaceOutsideTheVertices_IsDropped(int outside)
+    {
+        var triangles = new[] { 0, 1, 2, 0, 1, outside, 3, 4, 5 }.BuildTriangleIndices(vertexCount: 6);
+
+        Assert.Equal(2, triangles.Length);
+        Assert.Equal((0, 1, 2), (triangles[0].I0, triangles[0].I1, triangles[0].I2));
+        Assert.Equal((3, 4, 5), (triangles[1].I0, triangles[1].I1, triangles[1].I2));
+    }
 
     [Fact]
     public void BuildVector3s_GroupsFloatsInThrees() =>

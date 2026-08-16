@@ -13,4 +13,7 @@ internal enum ComparedFeature
 
     /// <summary>Filling a span a vector of pixels at a time rather than one at a time.</summary>
     VectorizedSpans,
+
+    /// <summary>Drawing the opaque meshes nearest-first rather than in the order the world holds them.</summary>
+    NearestMeshesFirst,
 }

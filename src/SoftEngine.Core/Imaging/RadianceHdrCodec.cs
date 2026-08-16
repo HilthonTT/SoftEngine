@@ -31,6 +31,31 @@ public static class RadianceHdrCodec
     /// <summary>And no longer than this, since the length is written into two bytes.</summary>
     private const int MaximumRleWidth = 0x7FFF;
 
+    /// <summary>
+    /// The largest image this reader will allocate for, in pixels.
+    ///
+    /// <para>
+    /// The resolution line is text — <c>-Y 8 +X 8</c> for a tiny image, and equally
+    /// <c>-Y 2000000000 +X 2000000000</c> for one that does not exist. Both are twenty-odd
+    /// bytes. Believing the second one means asking for a float array of about ten million
+    /// terabytes, and the failure that produces says nothing about the file: it is an
+    /// overflow, or an out-of-memory, arriving from whichever allocation happened to be first.
+    /// </para>
+    ///
+    /// <para>
+    /// A quarter of a gigapixel, which is four hundred times the largest panorama anybody
+    /// distributes and still bounded — so a real file passes and an invented one is refused by
+    /// name, before a byte is allocated for it.
+    /// </para>
+    /// </summary>
+    public const int MaxPixels = 256 * 1024 * 1024;
+
+    /// <summary>
+    /// The largest width or height accepted, bounding each dimension before they are multiplied
+    /// so the product cannot overflow on its way to being checked against <see cref="MaxPixels"/>.
+    /// </summary>
+    public const int MaxDimension = 65_536;
+
     /// <summary>Reads the image at <paramref name="path"/>.</summary>
     public static HdrImage Load(string path)
     {
@@ -44,10 +69,30 @@ public static class RadianceHdrCodec
     /// Reads an image from a stream, so a caller with the bytes in hand — an embedded resource,
     /// a download — does not have to put them on disk first.
     /// </summary>
+    /// <remarks>
+    /// Every way the data can be malformed — a bad signature, a resolution line naming an image
+    /// nobody could hold, a run that overruns its scanline, a file that simply stops — arrives
+    /// as <see cref="InvalidDataException"/>. Running out of bytes is the one that used to
+    /// arrive as something else, and a truncated download is the most ordinary way for one of
+    /// these files to be wrong.
+    /// </remarks>
+    /// <exception cref="InvalidDataException">The data is not a Radiance image this reader can decode.</exception>
     public static HdrImage Load(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream, nameof(stream));
 
+        try
+        {
+            return Decode(stream);
+        }
+        catch (EndOfStreamException exception)
+        {
+            throw new InvalidDataException("The Radiance image ends before its pixels do.", exception);
+        }
+    }
+
+    private static HdrImage Decode(Stream stream)
+    {
         var reader = new BinaryReader(stream, Encoding.ASCII, leaveOpen: true);
 
         ReadHeader(reader, out var exposure);
@@ -157,6 +202,15 @@ public static class RadianceHdrCodec
             int.TryParse(parts[3], out var width) &&
             width > 0 && height > 0)
         {
+            // Checked here rather than at the allocation, because here is where the numbers
+            // are still attached to the line they came out of and the message can say so.
+            if (width > MaxDimension || height > MaxDimension || (long)width * height > MaxPixels)
+            {
+                throw new InvalidDataException(
+                    $"The Radiance resolution line \"{line}\" declares {width}x{height}, past the " +
+                    $"{MaxDimension:N0} per side and {MaxPixels:N0} total this reader allocates for.");
+            }
+
             return (width, height, parts[0] == "+Y");
         }
 

@@ -165,7 +165,14 @@ public class BufferVisualizerTests
             Surface = new FrameBuffer(Size, Size) { Stats = new RenderStats() },
         };
 
-        RendererFor(DebugView.Overdraw).Render(scene, new GouraudPainter());
+        var renderer = RendererFor(DebugView.Overdraw);
+
+        // In list order, so the far wall is drawn first and the near one is attempted over it.
+        // Sorted nearest-first the second write never happens, which is the optimization
+        // working and not what this test is about.
+        renderer.Settings.NearestMeshesFirst = false;
+
+        renderer.Render(scene, new GouraudPainter());
 
         Assert.True(scene.Surface.IsCountingOverdraw);
 

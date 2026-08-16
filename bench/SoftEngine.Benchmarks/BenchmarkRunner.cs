@@ -23,11 +23,13 @@ internal static class BenchmarkRunner
         int warmup,
         bool hierarchicalZ = true,
         bool occlusionCulling = true,
-        bool vectorizedSpans = true)
+        bool vectorizedSpans = true,
+        bool nearestMeshesFirst = true)
     {
         var (renderer, built, painter) = scene.Build(width, height);
         renderer.Settings.HierarchicalZ = hierarchicalZ;
         renderer.Settings.OcclusionCulling = occlusionCulling;
+        renderer.Settings.NearestMeshesFirst = nearestMeshesFirst;
 
         // A static rather than a renderer setting, so it is set around the run and put back
         // afterwards. Nothing else is rendering — the harness measures one scene at a time.

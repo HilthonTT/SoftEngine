@@ -66,6 +66,12 @@ public sealed class Renderer : IRenderer
     // back at the event that produced it. Grown to the mesh count, reused across frames.
     private int[] _meshDrawEvent = [];
 
+    // The order phase 1 walks the meshes in, and the world matrix it composed for each while
+    // deciding that order. Both are indexed by mesh and reused across frames.
+    private int[] _meshOrder = [];
+    private float[] _meshDepth = [];
+    private Matrix4x4[] _meshWorld = [];
+
     // Reused across frames; rebuilt only when the world stops fitting it.
     private WorldBuffer? _worldBuffer;
 
@@ -304,13 +310,29 @@ public sealed class Renderer : IRenderer
         _visible.Clear();
         _transparent.Clear();
 
-        for (var idxVolume = 0; idxVolume < volumeCount; idxVolume++)
+        // Nearest mesh first, so the opaque fill draws what will still be visible before what
+        // it is about to cover. See NearestFirstMeshOrder for why this is at the mesh and not
+        // at the triangle. Null means draw order, which is what a probed or captured frame
+        // gets: both report what happened in the order it happened.
+        // One mesh has nothing to order against, and the fall-through leaves phase 1 walking
+        // the world exactly as it did before there was an ordering to walk.
+        var meshOrder = volumeCount > 1 && rendererSettings.NearestMeshesFirst &&
+            !surface.IsProbing && !events.IsEnabled
+                ? NearestFirstMeshOrder(meshes, volumeCount, viewMatrix)
+                : null;
+
+        for (var slot = 0; slot < volumeCount; slot++)
         {
+            var idxVolume = meshOrder is null ? slot : meshOrder[slot];
+
             var vbx = worldBuffer.VertexBuffers[idxVolume];
             var mesh = meshes[idxVolume];
             var objectId = meshIdBase + idxVolume;
 
-            var worldMatrix = mesh.WorldMatrix;
+            // Composed from scratch on the unordered path, and read back from the ordering
+            // pass on the other — it walks every mesh's parent chain to place it, and doing
+            // that twice a frame would be most of what the ordering saves.
+            var worldMatrix = meshOrder is null ? mesh.WorldMatrix : _meshWorld[idxVolume];
             var modelViewMatrix = worldMatrix * viewMatrix;
 
             vbx.Mesh = mesh;
@@ -899,6 +921,71 @@ public sealed class Renderer : IRenderer
     /// survived culling. Returns the per-mesh event indices when a pixel is being probed
     /// (the paint phase tags its writes with them), otherwise null.
     /// </summary>
+    /// <summary>
+    /// The mesh indices in nearest-first order, and the world matrix composed for each along
+    /// the way.
+    ///
+    /// <para>
+    /// It is what makes <see cref="RendererSettings.HierarchicalZ"/> worth having on a scene
+    /// nobody authored front to back. A tile rejects triangles against the farthest depth
+    /// already drawn into it, so that bound can only be as near as the nearest thing already
+    /// there: a pass that happens to work backwards fills most of the tile with pixels it is
+    /// about to cover and only tightens the bound once there is nothing left to reject.
+    /// Nearest-first, the surfaces that will still be visible when the tile is finished are
+    /// the ones drawn first, and everything behind them meets a bound that is already final.
+    /// </para>
+    ///
+    /// <para>
+    /// At the mesh and not at the triangle, which was measured and is the whole point. Sorting
+    /// each tile's binned triangles orders the fill perfectly and costs more than it saves
+    /// twice over: the sort itself, and then the fill reading its vertices in depth order out
+    /// of arrays far larger than the cache, which on a dense model is most of the frame's time.
+    /// A mesh keeps its triangles contiguous and in their original order, so the reads stay
+    /// sequential and the sort is over thousands of meshes rather than hundreds of thousands
+    /// of triangle-in-tile pairs.
+    /// </para>
+    ///
+    /// <para>
+    /// It cannot change the picture: the depth test, not the visit order, decides which of two
+    /// opaque surfaces is seen. Transparent meshes are collected into their own list and sorted
+    /// back-to-front afterwards regardless, so what this does to their order is discarded.
+    /// </para>
+    /// </summary>
+    private int[] NearestFirstMeshOrder(List<IMesh> meshes, int meshCount, in Matrix4x4 viewMatrix)
+    {
+        if (_meshOrder.Length < meshCount)
+        {
+            var capacity = System.Math.Max(meshCount, _meshOrder.Length * 2);
+
+            _meshOrder = new int[capacity];
+            _meshDepth = new float[capacity];
+            _meshWorld = new Matrix4x4[capacity];
+        }
+
+        for (var i = 0; i < meshCount; i++)
+        {
+            var worldMatrix = meshes[i].WorldMatrix;
+            _meshWorld[i] = worldMatrix;
+
+            // View-space depth of the mesh's origin, negated. View space is right-handed —
+            // the camera looks down -Z — so the nearest mesh has the *largest* Z, and the
+            // negation is what makes an ascending sort put it first. Sorting the raw Z draws
+            // the scene strictly back to front and costs about half the frame rate on
+            // anything with depth to it, which is the same measurement upside down.
+            //
+            // The centre rather than the nearest point of the bounding sphere: measuring that
+            // means walking the vertices, which is the work this ordering exists to save. A
+            // visit order that is slightly wrong costs a rejection that did not happen, never
+            // a pixel that came out wrong.
+            _meshDepth[i] = -Vector3.Transform(Vector3.Zero, worldMatrix * viewMatrix).Z;
+            _meshOrder[i] = i;
+        }
+
+        _meshDepth.AsSpan(0, meshCount).Sort(_meshOrder.AsSpan(0, meshCount));
+
+        return _meshOrder;
+    }
+
     private int[]? RecordDrawEvents(GraphicsEventLog events, int meshIdBase, int meshCount, bool probing)
     {
         if (!events.IsEnabled && !probing)

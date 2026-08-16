@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 
 namespace SoftEngine.Core.Geometry;
 
@@ -157,12 +157,41 @@ public static class MeshExtensions
         };
     }
 
-    public static Triangle[] BuildTriangleIndices(this int[] indices)
+    /// <summary>
+    /// Groups a flat index list into triangles, dropping any that reach outside the
+    /// <paramref name="vertexCount"/> vertices they are indices into.
+    ///
+    /// <para>
+    /// The count is required rather than optional because the alternative was believing the
+    /// file. An index list comes out of an OBJ or a Collada document, both of which are text a
+    /// person or an exporter wrote, and a face reading <c>f 1 2 900</c> against four vertices
+    /// is a file anybody can produce by hand. Nothing downstream re-checks: the mesh computes
+    /// its vertex normals in its own constructor by indexing straight into the array, so a
+    /// single out-of-range corner used to take the load down with an
+    /// <see cref="IndexOutOfRangeException"/> from inside <see cref="Triangle.CalculateNormal"/>
+    /// — before the model was ever drawn, and naming neither the file nor the face.
+    /// </para>
+    ///
+    /// <para>
+    /// Dropped rather than rejected, which is what the glTF reader already does with the same
+    /// case: a model with three bad faces out of thirty thousand is a model somebody still
+    /// wants to look at, and the faces that are wrong are exactly the ones that would have
+    /// drawn nothing meaningful anyway.
+    /// </para>
+    /// </summary>
+    public static Triangle[] BuildTriangleIndices(this int[] indices, int vertexCount)
     {
         var triangles = new List<Triangle>(indices.Length / 3);
+
         for (var i = 0; i + 2 < indices.Length; i += 3)
         {
-            triangles.Add(new Triangle(indices[i], indices[i + 1], indices[i + 2]));
+            var (a, b, c) = (indices[i], indices[i + 1], indices[i + 2]);
+
+            // Unsigned, so a negative index fails the same comparison the too-large one does.
+            if ((uint)a < (uint)vertexCount && (uint)b < (uint)vertexCount && (uint)c < (uint)vertexCount)
+            {
+                triangles.Add(new Triangle(a, b, c));
+            }
         }
 
         return [.. triangles];

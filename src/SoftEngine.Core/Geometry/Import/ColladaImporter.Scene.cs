@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Animation;
+using SoftEngine.Core.Animation;
 using SoftEngine.Core.Geometry.Skinning;
 using SoftEngine.Core.Scenes.Graph;
 using System.Globalization;
@@ -286,7 +286,7 @@ public static partial class ColladaImporter
 
             meshes.Add(new Mesh(
                 [.. buffers.Vertices],
-                buffers.Indices.ToArray().BuildTriangleIndices(),
+                buffers.Indices.ToArray().BuildTriangleIndices(buffers.Vertices.Count),
                 buffers.Normals.Count == buffers.Vertices.Count && buffers.Normals.Count > 0
                     ? [.. buffers.Normals]
                     : null,

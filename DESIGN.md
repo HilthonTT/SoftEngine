@@ -384,9 +384,29 @@ Three decisions that matter:
 - **A wall's bounding sphere reaches the camera, and that must not disqualify it.** A wall's sphere
   is as wide as its diagonal. Rejecting those throws away the best occluder in most scenes.
 
-Measured ≈**1.6×** on 512 meshes behind a wall, and within noise elsewhere. Two limits: an occluder
+Measured ≈**1.5×** on 512 meshes behind a wall, and within noise elsewhere. Two limits: an occluder
 is never tested against the buffer it helped write, and because level 0 is centre-sampled, a mesh
 visible only through a roughly pixel-wide gap can be culled.
+
+### Nearest meshes first
+
+Hierarchical-Z rejects a triangle against the farthest depth already drawn into its tile, so that
+bound is only ever as near as the nearest thing already there. A pass that happens to work backwards
+fills most of a tile with pixels it is about to cover and tightens the bound at the end, when there
+is nothing left to reject. `NearestMeshesFirst` sorts the mesh list by view depth before phase 1, so
+the surfaces that will still be visible when the tile is finished are the ones drawn first.
+
+**At the mesh and not at the triangle, which is the whole finding.** Sorting each tile's *binned
+triangles* orders the fill perfectly and loses twice over: once for the sort — a hundred thousand
+triangle-in-tile pairs against a few thousand meshes — and again because the fill then reads its
+vertices in depth order out of arrays far larger than the cache. Measured on `dense-model` that cost
+**0.60×**, of which 0.80× was the sort and the rest the lost locality. A mesh keeps its triangles
+contiguous and in their original order, so the reads stay sequential.
+
+It works: on the 4,096-cube scene it takes the pixels actually shaded from 1.11M to **0.50M** and
+raises the coarse-depth rejections eightfold. It is worth about **1.05×** there and nothing
+elsewhere, because that scene turned out not to be shading-bound — which is the next section. Off
+while a frame is probed or captured, where the order things happened in is the thing being reported.
 
 ## Motion, TAA and motion blur
 
@@ -833,6 +853,47 @@ The occlusion pass gets a stronger test: every golden scene is rendered twice, w
 off, and compared at **zero** tolerance. An optimization that decides what not to draw is only
 correct if what is drawn does not change — no count of rejected meshes says that.
 
+### Reading files nobody here wrote
+
+The parsers are the only part of this engine that ever sees bytes written somewhere else, and the
+rest of the suite only ever checks that a **correct** file decodes correctly. That is the easier
+half. A reader can be right about every well-formed file and still be one truncated download away
+from an unhandled exception.
+
+So `ParserFuzzTests` takes a file that works, breaks it — a flipped byte, a length field set to
+`0xFFFFFFFF`, the end cut off, a digit grown into a much larger number, one to three of those
+compounded — and requires the reader to still fail as `InvalidDataException` or
+`NotSupportedException` (or `JsonException` / `XmlException`, since two of these formats *are* a JSON
+and an XML document). What is deliberately **not** accepted is `IndexOutOfRangeException`,
+`OverflowException` or `OutOfMemoryException`: those are the bug rather than the report of one, and a
+suite that tolerated them would pass while the thing it exists to catch went on happening.
+
+Mutations are seeded by their round number, so a failure at round 6,857 is a failure anyone can
+reproduce. The default sweep is 2,000 rounds a reader — a couple of seconds, which is what a test
+everybody runs on every change can cost. `SOFTENGINE_FUZZ_ROUNDS` runs the long version.
+
+It found three, and none of them were in the code anyone would have looked at:
+
+- **A Collada face indexing past its own vertices** surfaced as an `IndexOutOfRangeException` from
+  inside `Mesh`'s constructor, where it computes vertex normals — the model never opened, and the
+  message named neither the file nor the face. The glTF reader had dropped out-of-range faces from
+  the day it was written; `BuildTriangleIndices` now takes the vertex count and does the same for
+  the other two, which is the fix being in one place instead of three.
+- **One non-numeric token in a Collada index array** threw `FormatException` out of
+  `Convert.ChangeType` and took the whole model with it — while the animation half of the *same
+  importer* had always skipped tokens it could not read. The two halves reading one file to two
+  standards was the actual defect.
+- **A corrupt DEFLATE stream in a PNG** threw `ZLibException`. Truncated data was already handled;
+  data that was the wrong length and data that was the wrong *bytes* fail differently inside the
+  decompressor, and only one of them had been thought about.
+
+Alongside those, the three formats that carry their own dimensions — PNG, Radiance HDR, glTF
+accessors — now bound them before allocating. A sixty-byte PNG header can name a hundred-gigapixel
+image, a twenty-byte Radiance resolution line can do the same, and `{"count":2000000000,"type":"MAT4"}`
+is forty characters asking for a hundred and twenty-eight gigabytes of floats — which in `int`
+arithmetic does not even reach the allocation, it wraps negative first. None of them are checks a
+well-formed file ever meets.
+
 ### Benchmarks
 
 ```bash
@@ -843,9 +904,14 @@ dotnet run -c Release --project bench/SoftEngine.Benchmarks -- --compare occlusi
 Seven scenes covering the shapes the renderer is built around, reporting the **median** frame time —
 a desktop frame-time distribution has a long right tail belonging to the scheduler, and one preempted
 frame moves a mean but not a median. Warm-up frames are discarded. `--compare` re-runs each scene
-with one optimization off: hierarchical-Z is worth ≈**4×** on the overdraw scene and ≈1× elsewhere,
-occlusion culling ≈**1.6×** on the scene built around it, vectorized spans **1.16×** on
-`big-triangles` and within noise where spans are a few pixels wide.
+with one optimization off — `hi-z`, `occlusion`, `spans` or `order` — and reports the ratio.
+Hierarchical-Z is worth ≈**2.4×** on the overdraw scene and ≈1× elsewhere, occlusion culling ≈**1.5×**
+on the scene built around it, nearest-meshes-first ≈**1.05×** on the scenes with depth to them.
+
+Those first two numbers used to be larger, and the optimizations did not get worse: the frames they
+are a fraction of got faster, once the contended counter below stopped dominating every one of them.
+A speedup ratio is a statement about the baseline as much as about the change, which is the argument
+for keeping the switch rather than writing the number down and moving on.
 
 **Work the frame no longer does.** Measured at 1280×720 on twenty threads, best of thirty frames.
 
@@ -855,6 +921,29 @@ occlusion culling ≈**1.6×** on the scene built around it, vectorized spans **
 | The clear split into bands of rows, and not clearing a buffer the HDR resolve rewrites anyway | `overdraw` 7.8 → 6.0 ms, `shadows` 7.2 → 5.4 ms |
 | Model-to-view transform split across cores (a pure map); the cull phase around it stays sequential, since the draw list's order matters | `dense-model` 9.2 → 7.9 ms |
 | Vectorized spans: one packed divide instead of eight scalar ones | 1.16× `big-triangles`, 1.08× `shadows` |
+| The pixel counters striped across cache lines and flushed per triangle rather than per scanline — see below | `many-meshes` 14.3 → 4.8 ms, `big-triangles` 4.6 → 2.2 ms |
+
+### The statistics cost more than the rasterizer
+
+`RenderStats` counts two things per pixel: how many were drawn and how many the depth test rejected.
+The fill accumulated them locally and flushed them with `Interlocked.Add` once per **scanline** —
+which reads as careful, and is the single most expensive thing the renderer used to do.
+
+A tile is 32 pixels wide, so a scanline is at most 32 pixels, so a frame of ordinary geometry flushes
+those counters a few hundred thousand times. Every flush from every one of twenty threads landed on
+the same two adjacent `int`s, which is to say the same 64-byte cache line, which then spent the whole
+fill phase bouncing between cores. The cost was never the additions — an uncontended atomic add is
+about twenty cycles — it was that no core could hold the line long enough to do anything else.
+
+Deleting the two calls outright was worth **2.6×** on the 4,096-cube scene, which is how the
+measurement was made: not by guessing which arithmetic was slow, but by removing a line that could
+not possibly be slow and finding the frame time halve. Keeping the counters exact and giving each
+worker a stripe of its own recovers essentially all of it.
+
+The general shape is worth stating, because nothing about the code looked wrong: **a shared counter
+is a shared cache line, and a shared cache line in a parallel inner loop is a lock you did not know
+you took.** Batching alone would not have fixed it — flushing per triangle instead of per scanline is
+worth the last few percent, and striping is worth the rest.
 
 ## Roadmap
 

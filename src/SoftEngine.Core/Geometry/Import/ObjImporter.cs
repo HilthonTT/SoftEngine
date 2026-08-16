@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Textures;
 using System.Globalization;
 using System.Numerics;
@@ -399,7 +399,7 @@ public static class ObjImporter
 
             var mesh = new Mesh(
                 Vertices.ToArray(),
-                Indices.ToArray().BuildTriangleIndices(),
+                Indices.ToArray().BuildTriangleIndices(Vertices.Count),
                 normals,
                 [.. Enumerable.Repeat(diffuse, Indices.Count / 3)]);
 

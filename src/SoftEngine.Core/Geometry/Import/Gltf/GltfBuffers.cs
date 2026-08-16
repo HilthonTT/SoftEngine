@@ -1,4 +1,4 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 using System.Numerics;
 using System.Text;
 
@@ -28,6 +28,26 @@ internal sealed class GltfBuffers
     private const int ComponentUnsignedShort = 5123;
     private const int ComponentUnsignedInt = 5125;
     private const int ComponentFloat = 5126;
+
+    /// <summary>
+    /// The most components one accessor may claim to hold.
+    ///
+    /// <para>
+    /// An accessor's <c>count</c> is a number in the JSON, and the spec allows it to name an
+    /// element that has no bytes behind it: an accessor with no buffer view reads as zeros, so
+    /// the array is sized off the count alone and the file never has to be as large as what it
+    /// asks for. <c>{"count":2000000000,"type":"MAT4"}</c> is forty bytes of text and a
+    /// request for a hundred and twenty-eight gigabytes of floats — and multiplied out in
+    /// <c>int</c> it does not even reach the allocation, it wraps to a negative length first.
+    /// </para>
+    ///
+    /// <para>
+    /// Sixty-four million components is a quarter of a gigabyte of floats, or twenty-one
+    /// million VEC3 positions in one accessor: past any mesh worth rasterizing on a CPU, and
+    /// bounded, which is the point.
+    /// </para>
+    /// </summary>
+    public const int MaxComponents = 64 * 1024 * 1024;
 
     private readonly GltfRoot _root;
     private readonly byte[]?[] _buffers;
@@ -145,12 +165,34 @@ internal sealed class GltfBuffers
             return [];
         }
 
-        var result = new float[accessor.Count * components];
+        var result = new float[ComponentCount(accessor, components)];
 
         Read(accessor, components, result);
         ApplySparse(accessor, components, result);
 
         return result;
+    }
+
+    /// <summary>
+    /// How many components an accessor holds, checked before it is allocated for. See
+    /// <see cref="MaxComponents"/> for what the check is standing between.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The accessor claims more than the reader will hold.</exception>
+    private static int ComponentCount(GltfAccessor accessor, int components)
+    {
+        // In long arithmetic, because the product is exactly what would overflow: a count of
+        // two hundred million with sixteen components per element is past int.MaxValue, and in
+        // int it comes out negative rather than large.
+        var total = (long)accessor.Count * components;
+
+        if (accessor.Count < 0 || total > MaxComponents)
+        {
+            throw new InvalidDataException(
+                $"A glTF accessor declares {accessor.Count:N0} {accessor.Type} elements " +
+                $"({total:N0} components), past the {MaxComponents:N0} this reader will hold.");
+        }
+
+        return (int)total;
     }
 
     public Vector3[] ReadVector3(int? accessorIndex) => Pack3(ReadFloats(accessorIndex));
@@ -209,7 +251,7 @@ internal sealed class GltfBuffers
             return [];
         }
 
-        var result = new int[accessor.Count * components];
+        var result = new int[ComponentCount(accessor, components)];
 
         if (Locate(accessor.BufferView, accessor.ByteOffset, out var data, out var stride))
         {
@@ -218,14 +260,19 @@ internal sealed class GltfBuffers
 
             for (var i = 0; i < accessor.Count; i++)
             {
-                var start = i * element;
+                // Long, because the stride is a number in the JSON like the count is, and the
+                // two multiplied together overflow long before either of them is unreasonable
+                // on its own. In int the offset wraps negative and reads backwards out of the
+                // buffer instead of falling off the end of it, which the bound below catches
+                // and a negative index does not.
+                var start = (long)i * element;
 
                 for (var c = 0; c < components; c++)
                 {
-                    var at = start + c * size;
+                    var at = start + ((long)c * size);
 
-                    result[i * components + c] = at + size <= data.Length
-                        ? ReadInteger(data, at, accessor.ComponentType)
+                    result[i * components + c] = at >= 0 && at + size <= data.Length
+                        ? ReadInteger(data, (int)at, accessor.ComponentType)
                         : 0;
                 }
             }
@@ -276,14 +323,17 @@ internal sealed class GltfBuffers
 
         for (var i = 0; i < accessor.Count; i++)
         {
-            var start = i * element;
+            // Long for the same reason as in ReadIndices: count and stride are both numbers
+            // out of the JSON, and their product overflows an int well before either is
+            // remarkable by itself.
+            var start = (long)i * element;
 
             for (var c = 0; c < components; c++)
             {
-                var at = start + c * size;
+                var at = start + ((long)c * size);
 
-                destination[i * components + c] = at + size <= data.Length
-                    ? ReadComponent(data, at, accessor.ComponentType, accessor.Normalized)
+                destination[i * components + c] = at >= 0 && at + size <= data.Length
+                    ? ReadComponent(data, (int)at, accessor.ComponentType, accessor.Normalized)
                     : 0f;
             }
         }

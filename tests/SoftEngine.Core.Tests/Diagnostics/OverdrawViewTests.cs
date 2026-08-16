@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Buffers;
+using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Gizmos;
@@ -49,6 +49,13 @@ public class OverdrawViewTests
         renderer.Settings.DebugView = DebugView.Overdraw;
         renderer.Settings.HierarchicalZ = hierarchicalZ;
         renderer.Settings.BackFaceCulling = backFaceCulling;
+
+        // These tests are about what draw order costs, so the draw order has to be the one the
+        // list gives — the same reason hierarchical-Z is off unless a test asks for it. Sorting
+        // the meshes nearest-first would make every case below the nearest-first case, which is
+        // exactly what NearestMeshesFirst is for and exactly what these are here to measure
+        // against. Overdraw_NearestMeshesFirst_CostsWhatFrontToBackCosts covers it switched on.
+        renderer.Settings.NearestMeshesFirst = false;
 
         var world = new SimpleWorld
         {
@@ -140,6 +147,46 @@ public class OverdrawViewTests
         other.Render(otherScene, new GouraudPainter());
 
         Assert.Equal(9, CentreCount(otherScene));
+    }
+
+    /// <summary>
+    /// The optimization the two cases above bracket: nine slabs handed over farthest-first
+    /// cost nine writes drawn in list order, and one write once the renderer is allowed to
+    /// reorder them — the same number the nearest-first list costs, because it is the same
+    /// order. That is <see cref="RendererSettings.NearestMeshesFirst"/> doing the only thing
+    /// it claims to do, measured in the units it saves.
+    /// </summary>
+    [Fact]
+    public void Overdraw_NearestMeshesFirst_CostsWhatFrontToBackCosts()
+    {
+        var (renderer, scene) = Slabs(9, nearestFirst: false);
+        renderer.Settings.NearestMeshesFirst = true;
+
+        renderer.Render(scene, new GouraudPainter());
+
+        Assert.Equal(1, CentreCount(scene));
+    }
+
+    /// <summary>
+    /// Reordering the meshes cannot reorder the picture. The same nine slabs drawn both ways
+    /// have to come out pixel for pixel identical: the depth test decides what is seen, and
+    /// the visit order only decides how much of it was drawn and thrown away.
+    /// </summary>
+    [Fact]
+    public void NearestMeshesFirst_DrawsTheSameFrame()
+    {
+        var (ordered, orderedScene) = Slabs(9, nearestFirst: false);
+        ordered.Settings.DebugView = DebugView.Off;
+        ordered.Settings.NearestMeshesFirst = true;
+        ordered.Render(orderedScene, new GouraudPainter());
+
+        var (listOrder, listOrderScene) = Slabs(9, nearestFirst: false);
+        listOrder.Settings.DebugView = DebugView.Off;
+        listOrder.Render(listOrderScene, new GouraudPainter());
+
+        Assert.Equal(
+            listOrderScene.Surface.Screen.ToArray(),
+            orderedScene.Surface.Screen.ToArray());
     }
 
     /// <summary>

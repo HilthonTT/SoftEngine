@@ -16,6 +16,26 @@ public sealed class RendererSettings
     public bool HierarchicalZ { get; set; } = true;
 
     /// <summary>
+    /// Whether the opaque pass visits meshes nearest-first instead of in world order.
+    ///
+    /// <para>
+    /// The companion to <see cref="HierarchicalZ"/>: that one rejects a triangle against the
+    /// farthest depth already drawn into its tile, and this one is what makes that depth near
+    /// enough to reject anything. A scene drawn back to front tightens the bound only once
+    /// there is nothing left to reject; drawn front to back, the bound is final almost
+    /// immediately. Costs a sort of the mesh list, which is thousands of entries in the scenes
+    /// where it is worth anything and one entry in the scenes where it is not.
+    /// </para>
+    ///
+    /// <para>
+    /// It cannot change the picture — the depth test decides what is seen, not the order it
+    /// was asked in — and it is skipped while a frame is being probed or captured, where the
+    /// order things happened in is the thing being reported.
+    /// </para>
+    /// </summary>
+    public bool NearestMeshesFirst { get; set; } = true;
+
+    /// <summary>
     /// Whether the frame rejects whole meshes that are hidden behind other meshes, before any
     /// of their vertices are transformed.
     ///

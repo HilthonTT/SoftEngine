@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Numerics;
 using System.Xml.Linq;
 
@@ -66,7 +66,7 @@ public static partial class ColladaImporter
             // the mesh compute its own instead of indexing out of range while rendering.
             meshes.Add(new Mesh(
                 buffers.Vertices.ToArray(),
-                buffers.Indices.ToArray().BuildTriangleIndices(),
+                buffers.Indices.ToArray().BuildTriangleIndices(buffers.Vertices.Count),
                 buffers.Normals.Count == buffers.Vertices.Count && buffers.Normals.Count > 0
                     ? buffers.Normals.ToArray()
                     : null,
@@ -173,18 +173,43 @@ public static partial class ColladaImporter
         buffers.Indices.AddRange(vertexIndices.Select(index => index + baseVertex));
     }
 
-    /// <summary>The interleaved stream's stride: one lane per declared input offset.</summary>
+    /// <summary>
+    /// The interleaved stream's stride: one lane per declared input offset.
+    ///
+    /// <para>
+    /// Never less than one, whatever the file says. The stride is what <see cref="ExtractLane"/>
+    /// steps by, so a negative offset in the document — which nothing stops an exporter, or a
+    /// corrupt byte, from writing — would make it step backwards through the index list and
+    /// never terminate.
+    /// </para>
+    /// </summary>
     private static int Stride(XElement primitives) =>
-        primitives.Elements(_collada + "input")
-            .Select(input => int.Parse(input.Attribute("offset")?.Value ?? "0"))
-            .DefaultIfEmpty(0)
-            .Max() + 1;
+        System.Math.Max(
+            primitives.Elements(_collada + "input")
+                .Select(input => ParseOffset(input.Attribute("offset")?.Value))
+                .DefaultIfEmpty(0)
+                .Max() + 1,
+            1);
+
+    /// <summary>
+    /// An <c>offset</c> attribute: a lane number into the interleaved index stream, so
+    /// non-negative by construction and zero when the file omits it or writes nonsense.
+    /// </summary>
+    private static int ParseOffset(string? value) =>
+        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var offset) && offset >= 0
+            ? offset
+            : 0;
 
     /// <summary>Picks every <paramref name="stride"/>-th index starting at <paramref name="lane"/>.</summary>
     private static List<int> ExtractLane(List<int> interleaved, int lane, int stride)
     {
+        // Belt and braces against a stride the document talked down to zero or below: Stride
+        // already floors it at one, and a loop that cannot advance is not a thing to leave
+        // reachable by way of one more caller being added later.
+        stride = System.Math.Max(stride, 1);
+
         var laneIndices = new List<int>();
-        for (var i = lane; i < interleaved.Count; i += stride)
+        for (var i = System.Math.Max(lane, 0); i < interleaved.Count; i += stride)
         {
             laneIndices.Add(interleaved[i]);
         }
@@ -259,10 +284,28 @@ public static partial class ColladaImporter
             .FirstOrDefault(i => string.Equals(i.Attribute("semantic")?.Value, semantic));
 
         sourceId = input?.Attribute("source")?.Value?.TrimStart('#');
-        offset = int.Parse(input?.Attribute("offset")?.Value ?? "0");
+        offset = ParseOffset(input?.Attribute("offset")?.Value);
     }
 
-    /// <summary>Splits a whitespace-separated value string into a typed list.</summary>
+    /// <summary>
+    /// Splits a whitespace-separated value string into a typed list, skipping any token that
+    /// is not a number.
+    ///
+    /// <para>
+    /// It used to go through <see cref="Convert.ChangeType(object, Type, IFormatProvider)"/>,
+    /// which throws <see cref="FormatException"/> at the first token it cannot read. That is
+    /// the whole of an index or position array in a Collada file — text, whitespace-separated,
+    /// however the exporter felt like writing it — so one stray character anywhere in a
+    /// million of them took the entire model down, with an exception that names the token and
+    /// nothing else: not the file, not the element, not the mesh.
+    /// </para>
+    ///
+    /// <para>
+    /// Skipping rather than failing, which is what the animation half of this importer has
+    /// always done with the same arrays (see its <c>ParseFloats</c>). The two halves reading
+    /// the same file to different standards was the actual bug; this is them agreeing.
+    /// </para>
+    /// </summary>
     private static List<T> ParseArray<T>(string? value)
     {
         if (value is null)
@@ -270,10 +313,25 @@ public static partial class ColladaImporter
             return [];
         }
 
-        return value
-            .Split([' ', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries)
-            .Select(token => (T)Convert.ChangeType(token, typeof(T), CultureInfo.InvariantCulture))
-            .ToList();
+        var tokens = value.Split([' ', '\n', '\t', '\r'], StringSplitOptions.RemoveEmptyEntries);
+        var result = new List<T>(tokens.Length);
+
+        foreach (var token in tokens)
+        {
+            if (typeof(T) == typeof(int))
+            {
+                if (int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                {
+                    result.Add((T)(object)parsed);
+                }
+            }
+            else if (float.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+            {
+                result.Add((T)(object)parsed);
+            }
+        }
+
+        return result;
     }
 
     /// <summary>The positions, normals and vertex indices accumulated for one mesh.</summary>

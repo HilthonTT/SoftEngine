@@ -87,12 +87,48 @@ public static class PngCodec
         File.WriteAllBytes(path, png.ToArray());
     }
 
+    /// <summary>
+    /// The largest image this decoder will allocate for, in pixels.
+    ///
+    /// <para>
+    /// A PNG's dimensions are two numbers in a thirteen-byte header, and nothing else in the
+    /// file has to agree with them. Sixty bytes can therefore ask for a hundred gigabytes, and
+    /// a decoder that believes the header allocates it before it ever discovers the pixels are
+    /// not there. The limit is the difference between a malformed file failing and a malformed
+    /// file taking the process with it.
+    /// </para>
+    ///
+    /// <para>
+    /// A quarter of a gigapixel: past any frame this renderer produces and past any texture
+    /// worth loading into one, so nothing legitimate ever meets it.
+    /// </para>
+    /// </summary>
+    public const int MaxPixels = 256 * 1024 * 1024;
+
+    /// <summary>
+    /// The largest width or height accepted. Bounding each dimension before they are multiplied
+    /// is what keeps the product from overflowing on its way to being checked against
+    /// <see cref="MaxPixels"/>.
+    /// </summary>
+    public const int MaxDimension = 65_536;
+
     /// <summary>Decodes a PNG written by <see cref="Save"/> back into packed ARGB.</summary>
     /// <remarks>
+    /// <para>
     /// Only the subset <see cref="Save"/> produces is supported — 8-bit RGBA, non-interlaced —
     /// but all five scanline filters are handled, because a file that comes back is one a person
     /// may well have re-saved from an image editor along the way, and those filter properly.
+    /// </para>
+    /// <para>
+    /// Every way the file can be malformed arrives as <see cref="InvalidDataException"/>, and
+    /// every way it can be well-formed but unsupported as <see cref="NotSupportedException"/>.
+    /// Nothing else escapes: the sizes in the header are bounded before anything is allocated
+    /// for them, and every offset the chunk walk produces is checked against the bytes that are
+    /// really there. Catching those two covers the file being wrong in any way at all.
+    /// </para>
     /// </remarks>
+    /// <exception cref="InvalidDataException">The file is not a well-formed PNG.</exception>
+    /// <exception cref="NotSupportedException">It is a PNG this decoder does not read.</exception>
     public static (int[] Pixels, int Width, int Height) Load(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path, nameof(path));
@@ -106,21 +142,45 @@ public static class PngCodec
 
         var width = 0;
         var height = 0;
+        var seenHeader = false;
         var idat = new MemoryStream();
 
         var offset = Signature.Length;
 
         while (offset + 8 <= bytes.Length)
         {
-            var length = (int)BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(offset));
+            // Read unsigned and held as a long until it has been checked. A chunk declaring
+            // 0xFFFFFFFF bytes is four billion as the format defines it and -1 as an int, and
+            // a negative length slices backwards rather than failing.
+            var length = (long)BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(offset));
             var type = Encoding.ASCII.GetString(bytes, offset + 4, 4);
-            var data = bytes.AsSpan(offset + 8, length);
+
+            if (offset + 8 + length > bytes.Length)
+            {
+                throw new InvalidDataException(
+                    $"{path} has a {type} chunk claiming {length} bytes with {bytes.Length - offset - 8} left in the file.");
+            }
+
+            var data = bytes.AsSpan(offset + 8, (int)length);
 
             switch (type)
             {
                 case "IHDR":
-                    width = (int)BinaryPrimitives.ReadUInt32BigEndian(data);
-                    height = (int)BinaryPrimitives.ReadUInt32BigEndian(data[4..]);
+                    // Thirteen bytes exactly, and every field read below indexes into them.
+                    if (data.Length < 13)
+                    {
+                        throw new InvalidDataException($"{path} has a {data.Length}-byte IHDR; the format defines 13.");
+                    }
+
+                    width = ReadDimension(path, data, "width");
+                    height = ReadDimension(path, data[4..], "height");
+                    seenHeader = true;
+
+                    if ((long)width * height > MaxPixels)
+                    {
+                        throw new InvalidDataException(
+                            $"{path} declares {width}x{height} pixels, past the {MaxPixels:N0} this decoder allocates for.");
+                    }
 
                     if (data[8] != 8 || data[9] != 6)
                     {
@@ -139,7 +199,7 @@ public static class PngCodec
                     break;
             }
 
-            offset += 12 + length; // length + type + data + CRC
+            offset += 12 + (int)length; // length + type + data + CRC
 
             if (type == "IEND")
             {
@@ -147,9 +207,14 @@ public static class PngCodec
             }
         }
 
-        if (width == 0 || height == 0)
+        if (!seenHeader)
         {
             throw new InvalidDataException($"{path} has no IHDR.");
+        }
+
+        if (width == 0 || height == 0)
+        {
+            throw new InvalidDataException($"{path} declares an empty image ({width}x{height}).");
         }
 
         idat.Position = 0;
@@ -157,7 +222,23 @@ public static class PngCodec
 
         var stride = width * 4;
         var raw = new byte[(stride + 1) * height];
-        inflate.ReadExactly(raw);
+
+        // The header said how many bytes the image is; the compressed data is under no
+        // obligation to hold that many, or to be a DEFLATE stream at all. Both arrive from
+        // under ReadExactly as something that names neither the file nor what was expected of
+        // it: an EndOfStreamException when the data runs out, a ZLibException when it is
+        // corrupt rather than short. Both derive from IOException, and nothing here does any
+        // real I/O — the stream being inflated is a MemoryStream of bytes already read — so
+        // catching that is precise rather than broad.
+        try
+        {
+            inflate.ReadExactly(raw);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException)
+        {
+            throw new InvalidDataException(
+                $"{path} does not hold the {raw.Length:N0} bytes its {width}x{height} header declares.", exception);
+        }
 
         var pixels = new int[width * height];
 
@@ -191,6 +272,24 @@ public static class PngCodec
         }
 
         return (pixels, width, height);
+    }
+
+    /// <summary>
+    /// One dimension out of an IHDR, bounded before anything is sized off it. PNG stores them
+    /// as unsigned 32-bit, so the range they can name is twice what an int holds and the whole
+    /// top half of it reads back negative.
+    /// </summary>
+    private static int ReadDimension(string path, ReadOnlySpan<byte> data, string name)
+    {
+        var value = BinaryPrimitives.ReadUInt32BigEndian(data);
+
+        if (value > MaxDimension)
+        {
+            throw new InvalidDataException(
+                $"{path} declares a {name} of {value}, past the {MaxDimension:N0} this decoder accepts.");
+        }
+
+        return (int)value;
     }
 
     /// <summary>Reverses one scanline's filter in place. <paramref name="bpp"/> is the byte distance to the pixel on the left.</summary>
@@ -237,7 +336,9 @@ public static class PngCodec
                 break;
 
             default:
-                throw new NotSupportedException($"PNG filter type {filter}.");
+                // Not NotSupportedException: the format defines five filter types and no
+                // others, so a sixth is a corrupt file and not a feature to go and add.
+                throw new InvalidDataException($"PNG filter type {filter}; the format defines 0 to 4.");
         }
     }
 

@@ -52,7 +52,7 @@ a reference.
 ```bash
 dotnet build SoftEngine.slnx
 dotnet run --project src/SoftEngine.WinForms                  # interactive viewer
-dotnet test tests/SoftEngine.Core.Tests                       # 796 tests
+dotnet test tests/SoftEngine.Core.Tests                       # 818 tests
 dotnet run -c Release --project bench/SoftEngine.Benchmarks   # Release, or you measure the debugger
 ```
 
@@ -166,7 +166,7 @@ tests/SoftEngine.Core.Tests/   # xUnit suite in folders mirroring the engine, an
 
 ## Testing
 
-`dotnet test tests/SoftEngine.Core.Tests` — **796 tests**. Alongside the unit tests, eighteen
+`dotnet test tests/SoftEngine.Core.Tests` — **818 tests**. Alongside the unit tests, eighteen
 generated scenes are rendered headless at 320×180 and compared against committed PNG baselines, so a
 change that alters the picture shows up in the diff as a picture. `SOFTENGINE_UPDATE_GOLDEN=1` is the
 only way to re-record one, and a failing run drops the actual frame and a diff image beside the
@@ -186,7 +186,10 @@ image test fails. If your change moves a golden baseline, re-record it deliberat
 baseline is the one thing that makes that suite worthless.
 
 Security reports go through [private advisories](SECURITY.md), not public issues. The file parsers
-— glTF, Collada, OBJ, PNG, Radiance HDR — are where the real attack surface is.
+— glTF, Collada, OBJ, PNG, Radiance HDR — are where the real attack surface is, and each of them is
+swept by a seeded mutation fuzzer that requires a broken file to fail as `InvalidDataException` or
+`NotSupportedException` and nothing else. `SOFTENGINE_FUZZ_ROUNDS=200000 dotnet test` runs the long
+version; see [DESIGN.md § Reading files nobody here wrote](DESIGN.md#reading-files-nobody-here-wrote).
 
 ## Credits
 
