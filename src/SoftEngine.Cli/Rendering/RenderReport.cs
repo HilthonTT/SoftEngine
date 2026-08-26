@@ -70,9 +70,20 @@ internal static class RenderReport
         }
     }
 
-    /// <summary>What <c>--gpu-info</c> prints: the adapter, if there is one worth rendering on.</summary>
+    /// <summary>
+    /// What <c>--gpu-info</c> prints: the adapter a render would land on, and — on a machine
+    /// with more than one — what else there is and how to ask for it.
+    ///
+    /// <para>
+    /// The installed list is printed before the probe rather than after it, because it is the
+    /// answer to the question somebody with two adapters is actually asking. The probe below
+    /// says which one they are getting; this says which ones there are.
+    /// </para>
+    /// </summary>
     public static int PrintGpuInfo()
     {
+        PrintAdapterChoice();
+
         if (GpuAvailability.Probe(out var adapter, out var error))
         {
             Console.WriteLine($"  adapter   {adapter!.Renderer}");
@@ -89,5 +100,35 @@ internal static class RenderReport
 
         // Not an error: "there is no GPU here" is a true answer to the question that was asked.
         return 0;
+    }
+
+    /// <summary>
+    /// The adapters this machine has drivers for and the preference in force, on a machine
+    /// where that is a choice. Silent on a machine with one adapter, where naming it twice
+    /// would only be noise.
+    /// </summary>
+    private static void PrintAdapterChoice()
+    {
+        if (!GpuDevices.HasChoice)
+        {
+            return;
+        }
+
+        Console.WriteLine("  installed");
+
+        foreach (var device in GpuDevices.Installed)
+        {
+            var flag = device.Kind switch
+            {
+                GpuAdapterKind.Discrete => "--adapter high",
+                GpuAdapterKind.Integrated => "--adapter low",
+                _ => string.Empty,
+            };
+
+            Console.WriteLine($"      {device.Name,-44}{flag}");
+        }
+
+        Console.WriteLine($"  preference {GpuPreferences.Describe(GpuPreferences.Current)}");
+        Console.WriteLine();
     }
 }

@@ -38,6 +38,8 @@ public sealed partial class MainScreen
 
         panel3D1.BackendChanged += (s, e) => UpdateBackendMenu();
 
+        InitializeAdapterMenu();
+
         // The tracer's sample count climbs frame by frame while it refines, and the status bar is
         // where anyone would look to see whether it is still working.
         panel3D1.FrameRendered += (s, e) =>
@@ -48,9 +50,158 @@ public sealed partial class MainScreen
             }
         };
 
+        // Before the backend is restored, because restoring it onto the GPU creates a context
+        // and the preference is only read while there is not one yet.
+        RestoreAdapterPreference();
+
         RestoreBackend();
 
         UpdateBackendMenu();
+    }
+
+    /// <summary>What one entry of the adapter submenu stands for.</summary>
+    private sealed record AdapterChoice(GpuPreference Preference, ToolStripMenuItem Item);
+
+    /// <summary>The adapter entries, empty on a machine where there is nothing to choose between.</summary>
+    private readonly List<AdapterChoice> _adapterChoices = [];
+
+    /// <summary>
+    /// Adds "Graphics adapter" under View ▸ Rendered by, on a machine that has more than one
+    /// adapter to be given.
+    ///
+    /// <para>
+    /// Built here rather than in the designer because what it lists depends on the machine: the
+    /// entries are named after the devices actually installed, so the choice reads as "the
+    /// GeForce or the Intel" rather than as two words about power management. A desktop with one
+    /// card gets no submenu at all — a control whose every setting does the same thing is worse
+    /// than no control, because it invites somebody to go looking for the difference.
+    /// </para>
+    /// </summary>
+    private void InitializeAdapterMenu()
+    {
+        if (!GpuPreferences.IsSupported || !GpuDevices.HasChoice)
+        {
+            return;
+        }
+
+        var adapters = new ToolStripMenuItem("&Graphics adapter")
+        {
+            Name = "mnuGpuAdapter",
+            ToolTipText =
+                "Which adapter the GPU backend is given. The driver hands an application the " +
+                "integrated one unless it is told otherwise, which on this machine is not the fast one.",
+        };
+
+        foreach (var preference in (GpuPreference[])[GpuPreference.Automatic, GpuPreference.HighPerformance, GpuPreference.PowerSaving])
+        {
+            var choice = preference;
+
+            var item = new ToolStripMenuItem(GpuPreferences.Describe(choice))
+            {
+                Name = $"mnuGpuAdapter{choice}",
+            };
+
+            item.Click += (s, e) => SelectAdapter(choice);
+
+            adapters.DropDownItems.Add(item);
+            _adapterChoices.Add(new AdapterChoice(choice, item));
+        }
+
+        mnuRenderedBy.DropDownItems.Add(new ToolStripSeparator());
+        mnuRenderedBy.DropDownItems.Add(adapters);
+    }
+
+    /// <summary>
+    /// Puts the saved preference back before anything has created a context, which is the only
+    /// moment it can be put back at.
+    ///
+    /// <para>
+    /// Written to the machine on every launch rather than only when it changes, because the
+    /// setting Windows holds is keyed by the executable's path: a build that has moved, or a
+    /// second copy of the viewer, has no preference recorded against it even though the person
+    /// running it chose one. The saved value is the intent; the registry value is where that
+    /// intent has to be repeated for the driver to see it.
+    /// </para>
+    ///
+    /// <para>
+    /// <see cref="GpuPreference.Automatic"/> is the one value not repeated, because in this file
+    /// it means "never chose" rather than "chose the default". Somebody who set this application
+    /// to High performance in Windows' own graphics settings and never opened this menu would
+    /// otherwise have that undone on every launch by a viewer that has no opinion — and undoing
+    /// a setting is not a thing to do on the strength of having no opinion. Picking Automatic
+    /// from the menu is a different statement, and <see cref="SelectAdapter"/> does honour it.
+    /// </para>
+    /// </summary>
+    private void RestoreAdapterPreference()
+    {
+        if (_adapterChoices.Count == 0 ||
+            _settings.GpuPreference == GpuPreference.Automatic ||
+            _settings.GpuPreference == GpuPreferences.Current)
+        {
+            UpdateAdapterMenu();
+            return;
+        }
+
+        // A preference that cannot be written is not worth a dialog nobody asked for: the menu
+        // will show what is actually in force, which is the honest answer either way.
+        GpuPreferences.TryApply(_settings.GpuPreference, out _);
+
+        UpdateAdapterMenu();
+    }
+
+    /// <summary>
+    /// Records a new adapter choice, and says whether it is about to take effect or has to wait
+    /// for a restart.
+    ///
+    /// <para>
+    /// It is the driver's OpenGL implementation that gets loaded, and it gets loaded once. Before
+    /// the viewport has ever been on the GPU there is nothing loaded, so the choice applies to the
+    /// next GPU render — which is why the message is not simply "restart to apply".
+    /// </para>
+    /// </summary>
+    private void SelectAdapter(GpuPreference preference)
+    {
+        if (preference == _settings.GpuPreference && preference == GpuPreferences.Current)
+        {
+            return;
+        }
+
+        if (!GpuPreferences.TryApply(preference, out var error))
+        {
+            MessageBox.Show(this, error, "Graphics adapter", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            UpdateAdapterMenu();
+            return;
+        }
+
+        _settings.GpuPreference = preference;
+        _settings.Save();
+
+        UpdateAdapterMenu();
+
+        if (GpuPreferences.TakesEffectImmediately)
+        {
+            return;
+        }
+
+        MessageBox.Show(
+            this,
+            $"{GpuPreferences.Describe(preference)}.\n\n" +
+            "The graphics driver is loaded once per session, so this takes effect the next time " +
+            "the viewer starts.",
+            "Graphics adapter",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
+    }
+
+    /// <summary>Ticks whichever preference the machine is actually holding, not whichever was clicked.</summary>
+    private void UpdateAdapterMenu()
+    {
+        var current = GpuPreferences.Current;
+
+        foreach (var (preference, item) in _adapterChoices)
+        {
+            item.Checked = preference == current;
+        }
     }
 
     private void SelectBackend(RenderBackend backend)

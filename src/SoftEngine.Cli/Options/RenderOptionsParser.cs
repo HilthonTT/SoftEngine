@@ -196,6 +196,32 @@ internal static class RenderOptionsParser
                     options.Backend = RenderBackend.Gpu;
                     break;
 
+                case "--adapter":
+                {
+                    var name = Next(args, ref i, options, arg);
+
+                    if (name is null)
+                    {
+                        break;
+                    }
+
+                    if (GpuPreferences.TryParse(name, out var preference))
+                    {
+                        options.GpuPreference = preference;
+
+                        // Naming an adapter is asking for one, so it selects the backend the way
+                        // --samples selects the tracer. Saying which GPU and then being given
+                        // the CPU because nothing said --gpu would be a poor reading of it.
+                        options.Backend = RenderBackend.Gpu;
+                    }
+                    else
+                    {
+                        options.Errors.Add($"unknown adapter '{name}' — expected auto, high or low");
+                    }
+                }
+
+                break;
+
                 case "--cpu":
                     options.Backend = RenderBackend.Cpu;
                     break;

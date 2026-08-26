@@ -95,6 +95,16 @@ live in `%APPDATA%\SoftEngine\viewer.json`; nothing in there may throw, so a cor
 viewer is a demonstration of a software rasterizer, and defaulting to the graphics card would quietly
 show you something else.
 
+On a laptop with two adapters, **View ▸ Rendered by ▸ Graphics adapter** names them and picks
+between them — the driver hands an application the integrated one unless it is told otherwise, which
+is rarely what "render on the GPU" was meant to mean. The submenu appears only where there is a
+choice, and the entries are the devices themselves rather than words about power:
+
+> Automatic  ·  High performance — NVIDIA GeForce RTX 5060 Laptop GPU  ·  Power saving — Intel(R) Graphics
+
+The driver's OpenGL is loaded once per session, so changing this once the viewport has been on the
+GPU takes effect at the next launch, and the viewer says so rather than appearing to do nothing.
+
 ## Headless rendering
 
 ```bash
@@ -112,7 +122,7 @@ dotnet run -c Release --project src/SoftEngine.Cli -- model.gltf -o frame.png -w
 | `--bake`, `--bake-resolution`, `--bake-rays`, `--bake-bounces` | measure indirect light into probes first |
 | `--trace`, `--samples`, `--bounces`, `--physical` | path-trace instead of rasterizing |
 | `--frames`, `--fps`, `--turntable`, `--shutter` | render a numbered sequence |
-| `--backend`, `--gpu`, `--cpu`, `--gpu-info` | where the frame is filled |
+| `--backend`, `--gpu`, `--cpu`, `--adapter`, `--gpu-info` | where the frame is filled, and on which adapter |
 | `--scene`, `--stats` | apply a saved scene; print counts and timings |
 
 ```bash

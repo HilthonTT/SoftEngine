@@ -134,6 +134,21 @@ public sealed class GpuAdapter
 
     public override string ToString() => $"{Describe()}, {Version}";
 
+    /// <summary>
+    /// The same classification, for a caller holding a device name from somewhere other than a
+    /// live context — the list of adapters Windows has drivers for, say, which
+    /// <see cref="GpuDevices"/> reads without creating one.
+    ///
+    /// <para>
+    /// The markers are shared rather than duplicated because the strings are: a driver writes
+    /// much the same name into <c>GL_RENDERER</c> as it writes into its own description, and a
+    /// menu that called an adapter integrated and a status bar that then called the same part
+    /// discrete would be a bug nobody could explain.
+    /// </para>
+    /// </summary>
+    public static GpuAdapterKind KindOf(string? vendor, string? renderer) =>
+        Classify(vendor ?? string.Empty, renderer ?? string.Empty);
+
     private static GpuAdapterKind Classify(string vendor, string renderer)
     {
         var haystack = $"{vendor} {renderer}".ToLowerInvariant();

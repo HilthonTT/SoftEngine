@@ -650,6 +650,37 @@ driver, and slower. So the backend reads the driver's account of itself and refu
 hardware. An unrecognised device is treated as hardware — new cards appear constantly and new CPU
 rasterizers essentially never.
 
+**Which adapter, on a machine with two.** A laptop drives its display from the integrated GPU and
+keeps the discrete one asleep, so every OpenGL context created without saying otherwise lands on the
+integrated part — which is the right default for battery and the wrong one for "render this on the
+GPU". Saying otherwise is harder than it should be. The extensions that come closest are one vendor
+each (`WGL_NV_gpu_affinity` is workstation-only, `WGL_AMD_gpu_association` is AMD), and the trick
+native applications use — exporting `NvOptimusEnablement` from the executable — needs an executable
+this repository does not build, since a managed program's entry point is a generic host and the
+driver reads the exports of the `.exe`.
+
+What is left is the setting Windows itself exposes under Settings ▸ Display ▸ Graphics: a
+per-application preference, keyed by the program's path, that the driver reads when it hands out a
+device. `GpuPreferences` writes the same value, in the same place, that the operating system's own
+interface writes — and asking for Automatic *deletes* it rather than writing a "no preference", so
+the application leaves nothing behind it did not need to. It is also not re-applied on startup when
+it is Automatic: in a settings file that means "never chose", and undoing a preference somebody set
+in Windows' own settings on the strength of having no opinion would be the wrong way round.
+
+**It is read once per process**, which was measured rather than assumed: writing the preference and
+then creating a context picks it up, and writing it again after a context exists does not — a second
+context comes back on the same adapter. So the front-ends apply it before anything creates one, and
+`GpuPreferences.TakesEffectImmediately` is what lets the viewer say "next launch" only when that is
+actually true, rather than saying it always and being wrong for the common case of a session that
+has not been on the GPU yet.
+
+`GpuDevices` reads the installed adapters from the display-class registry key so the choice can be
+offered by name — "High performance — NVIDIA GeForce RTX 5060 Laptop GPU" — rather than as two words
+about power. Deliberately a different type from `GpuAdapter`: a list of installed devices is a guess
+about what a preference will select, and the adapter behind a live context is a fact. It names no
+device at all where the machine's adapters do not sort into exactly one candidate, because a menu
+naming the wrong one is worse than a menu naming none — the first is believed.
+
 **What runs where.** Everything that scales with triangles × pixels runs on the adapter: shadow
 cascades, the opaque fill, sky, transparency, wireframe. Everything that runs once over the finished
 image runs where it already did — post-process, debug views, gizmos — over a frame read back into

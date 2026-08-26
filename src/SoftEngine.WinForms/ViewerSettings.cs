@@ -50,6 +50,18 @@ internal sealed class ViewerSettings
     /// </summary>
     public RenderBackend Backend { get; set; } = RenderBackend.Cpu;
 
+    /// <summary>
+    /// Which graphics adapter a GPU render was left asking for, on a machine with more than one.
+    ///
+    /// <para>
+    /// Kept here as well as in the Windows setting it is written to, and that duplication is on
+    /// purpose. The Windows setting is keyed by the executable's path, so a build moved or
+    /// rebuilt somewhere else loses it silently; this file is keyed by the user. On a mismatch
+    /// this is the one that is believed, and it is re-applied at startup.
+    /// </para>
+    /// </summary>
+    public GpuPreference GpuPreference { get; set; } = GpuPreference.Automatic;
+
     /// <summary>Where the window was, or null until it has been anywhere.</summary>
     public WindowPlacement? Window { get; set; }
 

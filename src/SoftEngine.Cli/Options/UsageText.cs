@@ -34,6 +34,8 @@ internal static class UsageText
                   --backend <name>  auto, cpu, gpu or trace (default auto)
                   --gpu             shorthand for --backend gpu
                   --cpu             shorthand for --backend cpu
+                  --adapter <which> which GPU to render on where there is more than one:
+                                    "high" (discrete), "low" (integrated) or "auto"
                   --gpu-info        print the graphics adapter, if any, and exit
 
               auto uses a graphics adapter when one is there and the software rasterizer when

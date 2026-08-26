@@ -1,5 +1,6 @@
 using SoftEngine.Cli.Options;
 using SoftEngine.Cli.Rendering;
+using SoftEngine.Gpu;
 
 // The entry point does the four things that decide whether a render happens at all — read the
 // arguments, answer --help and --gpu-info, report anything unreadable, and turn the exceptions a
@@ -11,6 +12,15 @@ if (options.ShowHelp || args.Length == 0)
 {
     UsageText.Print();
     return options.ShowHelp ? 0 : 1;
+}
+
+// Before --gpu-info, and before any render: the adapter preference decides which driver's
+// OpenGL is loaded, and that is settled by the first context this process creates. Applied only
+// when --adapter actually said something — see RenderOptions.GpuPreference.
+if (options.GpuPreference is { } preference && !GpuPreferences.TryApply(preference, out var preferenceError))
+{
+    Console.Error.WriteLine($"softengine: {preferenceError}");
+    return 1;
 }
 
 if (options.ShowGpuInfo)

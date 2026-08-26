@@ -41,6 +41,26 @@ public sealed class GpuContext : IDisposable
     /// <summary>The device the context turned out to be running on.</summary>
     public GpuAdapter Adapter { get; }
 
+    private static volatile bool _hasCreatedContext;
+
+    /// <summary>
+    /// Whether anything in this process has yet asked the platform for an OpenGL context.
+    ///
+    /// <para>
+    /// The moment it has, the driver's implementation is loaded and the adapter is settled for
+    /// the life of the process — a second context comes back on the same device however the
+    /// preference has changed since, which was measured rather than assumed. That is what
+    /// <see cref="GpuPreferences.TakesEffectImmediately"/> reports, and why it reports anything
+    /// at all instead of a preference simply being a setter.
+    /// </para>
+    ///
+    /// <para>
+    /// Set on the attempt rather than on success: a context that was created and then rejected
+    /// for being a software rasterizer has loaded a driver exactly as a successful one has.
+    /// </para>
+    /// </summary>
+    public static bool HasCreatedContext => _hasCreatedContext;
+
     /// <summary>
     /// Creates a context, or explains why it could not. <paramref name="error"/> is null on
     /// success and a message fit to show a user on failure — a missing driver and a machine
@@ -83,6 +103,10 @@ public sealed class GpuContext : IDisposable
 
             window = Window.Create(options);
             window.Initialize();
+
+            // From here the adapter is decided for the whole process, whatever this particular
+            // attempt goes on to conclude about it.
+            _hasCreatedContext = true;
 
             var gl = GL.GetApi(window);
 

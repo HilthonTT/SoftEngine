@@ -121,6 +121,19 @@ internal sealed class RenderOptions
     /// <summary>Which rasterizer draws the frame. Automatic takes a GPU when there is one.</summary>
     public RenderBackend Backend { get; set; } = RenderBackend.Automatic;
 
+    /// <summary>
+    /// Which adapter a GPU render is given on a machine with more than one, or null when the
+    /// command line said nothing about it.
+    ///
+    /// <para>
+    /// Null rather than <see cref="GpuPreference.Automatic"/>, because the two are different
+    /// instructions. Automatic clears whatever preference the machine holds for this program —
+    /// including one set from Windows' own graphics settings — and a render that was never
+    /// asked about adapters has no business doing that.
+    /// </para>
+    /// </summary>
+    public GpuPreference? GpuPreference { get; set; }
+
     /// <summary>Paths per pixel, when the path tracer is drawing the frame.</summary>
     public int Samples { get; set; } = 16;
 
