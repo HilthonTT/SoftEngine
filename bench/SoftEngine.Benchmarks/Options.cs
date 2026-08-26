@@ -18,6 +18,7 @@ internal sealed record Options(
         ComparedFeature.Occlusion => "no cull",
         ComparedFeature.VectorizedSpans => "scalar",
         ComparedFeature.NearestMeshesFirst => "world order",
+        ComparedFeature.ParallelCullPhase => "1 thread",
         _ => "no hi-z",
     };
 
@@ -68,6 +69,7 @@ internal sealed record Options(
                         "occlusion" or "cull" or "culling" => ComparedFeature.Occlusion,
                         "spans" or "simd" or "vector" => ComparedFeature.VectorizedSpans,
                         "order" or "nearest" or "front-to-back" => ComparedFeature.NearestMeshesFirst,
+                        "phase1" or "cull-phase" or "transform" => ComparedFeature.ParallelCullPhase,
                         _ => ComparedFeature.HierarchicalZ,
                     };
                     break;
@@ -92,7 +94,8 @@ internal sealed record Options(
               --warmup <n>     discarded frames before measuring (default 10)
               --scene  <name>  run only scenes whose name contains this
               --compare [what] also measure with an optimization off, and report the ratio:
-                               "hi-z" (the default), "occlusion", "spans" or "order"
+                               "hi-z" (the default), "occlusion", "spans", "order"
+                               or "phase1"
               --csv    <path>  write the results as CSV as well
             """);
 

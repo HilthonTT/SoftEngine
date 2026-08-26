@@ -16,4 +16,7 @@ internal enum ComparedFeature
 
     /// <summary>Drawing the opaque meshes nearest-first rather than in the order the world holds them.</summary>
     NearestMeshesFirst,
+
+    /// <summary>Dividing the transform, cull and project phase across the cores.</summary>
+    ParallelCullPhase,
 }

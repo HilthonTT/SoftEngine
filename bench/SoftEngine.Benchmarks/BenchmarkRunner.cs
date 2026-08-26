@@ -1,3 +1,4 @@
+using SoftEngine.Core.Pipeline;
 using SoftEngine.Core.Rasterization;
 using System.Diagnostics;
 
@@ -24,7 +25,8 @@ internal static class BenchmarkRunner
         bool hierarchicalZ = true,
         bool occlusionCulling = true,
         bool vectorizedSpans = true,
-        bool nearestMeshesFirst = true)
+        bool nearestMeshesFirst = true,
+        bool parallelCullPhase = true)
     {
         var (renderer, built, painter) = scene.Build(width, height);
         renderer.Settings.HierarchicalZ = hierarchicalZ;
@@ -35,6 +37,9 @@ internal static class BenchmarkRunner
         // afterwards. Nothing else is rendering — the harness measures one scene at a time.
         var restoreSpans = ScanlineRasterizer.VectorizedSpans;
         ScanlineRasterizer.VectorizedSpans = vectorizedSpans;
+
+        var restoreCullPhase = Renderer.ParallelCullPhase;
+        Renderer.ParallelCullPhase = parallelCullPhase;
 
         double[] samples;
 
@@ -57,6 +62,7 @@ internal static class BenchmarkRunner
         finally
         {
             ScanlineRasterizer.VectorizedSpans = restoreSpans;
+            Renderer.ParallelCullPhase = restoreCullPhase;
         }
 
         Array.Sort(samples);

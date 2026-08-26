@@ -2,7 +2,6 @@ using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Gizmos;
-using SoftEngine.Core.Pipeline.Clipping;
 using SoftEngine.Core.Pipeline.Culling;
 using SoftEngine.Core.Pipeline.Debugging;
 using SoftEngine.Core.Pipeline.PostProcess;
@@ -20,7 +19,7 @@ using System.Runtime.InteropServices;
 
 namespace SoftEngine.Core.Pipeline;
 
-public sealed class Renderer : IRenderer
+public sealed partial class Renderer : IRenderer
 {
     /// <summary>
     /// Below this many triangle-in-tile pairs, scheduling costs more than the parallel fill
@@ -306,9 +305,9 @@ public sealed class Renderer : IRenderer
         List<IMesh> meshes = world.Meshes;
         int volumeCount = meshes.Count;
 
-        // Phase 1 (sequential): transform, cull and project; collect visible triangles.
-        _visible.Clear();
-        _transparent.Clear();
+        // Phase 1: transform, cull and project; collect visible triangles. Divided across the
+        // cores in Renderer.CullPhase.cs, which is also where the reasons it cannot simply be a
+        // parallel loop are written down.
 
         // Nearest mesh first, so the opaque fill draws what will still be visible before what
         // it is about to cover. See NearestFirstMeshOrder for why this is at the mesh and not
@@ -321,152 +320,18 @@ public sealed class Renderer : IRenderer
                 ? NearestFirstMeshOrder(meshes, volumeCount, viewMatrix)
                 : null;
 
-        for (var slot = 0; slot < volumeCount; slot++)
-        {
-            var idxVolume = meshOrder is null ? slot : meshOrder[slot];
-
-            var vbx = worldBuffer.VertexBuffers[idxVolume];
-            var mesh = meshes[idxVolume];
-            var objectId = meshIdBase + idxVolume;
-
-            // Composed from scratch on the unordered path, and read back from the ordering
-            // pass on the other — it walks every mesh's parent chain to place it, and doing
-            // that twice a frame would be most of what the ordering saves.
-            var worldMatrix = meshOrder is null ? mesh.WorldMatrix : _meshWorld[idxVolume];
-            var modelViewMatrix = worldMatrix * viewMatrix;
-
-            vbx.Mesh = mesh;
-            vbx.WorldMatrix = worldMatrix;
-
-            Stats.TotalTriangleCount += mesh.Triangles.Length;
-
-            // Deactivated from the graphics object table, or faded out entirely.
-            if (!mesh.Visible || mesh.Opacity <= 0f)
-            {
-                events.Add(GraphicsEventKind.MeshSkipInactive, objectId, mesh.Triangles.Length);
-                continue;
-            }
-
-            // Transparent meshes collect into their own list; they must blend over the
-            // finished opaque image, in back-to-front order.
-            var target = mesh.Opacity < 1f ? _transparent : _visible;
-
-            // Whole-mesh rejection: if the mesh's bounding sphere is fully outside the
-            // frustum, skip transforming its vertices and culling its triangles.
-            //
-            // Sized off the world matrix rather than the mesh's own Scale: the centre below
-            // already follows the whole scene-graph chain, and a radius that did not would
-            // cull a mesh hanging off a scaled node while it is still on screen.
-            var radius = mesh.WorldBoundingRadius(worldMatrix);
-            if (float.IsFinite(radius))
-            {
-                var viewCenter = Vector3.Transform(Vector3.Zero, modelViewMatrix);
-                if (Frustum.IsSphereOutside(frustumPlanes, viewCenter, radius))
-                {
-                    Stats.OutOfViewTriangleCount += mesh.Triangles.Length;
-                    events.Add(GraphicsEventKind.MeshCullBoundingSphere, objectId, mesh.Triangles.Length);
-                    continue;
-                }
-
-                // On screen, and behind something already covering all of it. The same sphere
-                // answers both questions, so being hidden costs one more test on a mesh that
-                // has survived the cheaper one.
-                if (occlusion is not null && occlusion.IsOccluded(idxVolume, viewCenter, radius))
-                {
-                    Stats.OccludedMeshTriangleCount += mesh.Triangles.Length;
-                    Stats.OccludedMeshCount++;
-                    events.Add(GraphicsEventKind.MeshCullOccluded, objectId, mesh.Triangles.Length);
-                    continue;
-                }
-            }
-
-            var vertices = mesh.Vertices;
-            var vertexCount = vertices.Length;
-
-            TransformToView(vbx, vertices, vertexCount, modelViewMatrix);
-
-            events.Add(GraphicsEventKind.MeshTransformVertices, objectId, vertexCount);
-
-            var triangleCount = mesh.Triangles.Length;
-            var drawn = 0;
-            var facingBack = 0;
-            var clipped = 0;
-
-            for (var idxTriangle = 0; idxTriangle < triangleCount; idxTriangle++)
-            {
-                Triangle t = mesh.Triangles[idxTriangle];
-
-                // Discard if behind the camera
-                if (t.IsBehindFarPlane(vbx))
-                {
-                    Stats.BehindViewTriangleCount++;
-                    clipped++;
-                    continue;
-                }
-
-                // Discard if back facing
-                if (rendererSettings.BackFaceCulling && t.IsFacingBack(vbx))
-                {
-                    Stats.FacingBackTriangleCount++;
-                    facingBack++;
-                    continue;
-                }
-
-                // Project in frustum
-                t.TransformProjection(vbx, projectionMatrix);
-
-                // Classify against the near plane (clip-space z ≥ 0): fully behind is
-                // discarded, straddling is clipped, fully in front takes the fast path.
-                var behindNear = (vbx.Vertices[t.I0].Proj.Z < 0 ? 1 : 0)
-                    + (vbx.Vertices[t.I1].Proj.Z < 0 ? 1 : 0)
-                    + (vbx.Vertices[t.I2].Proj.Z < 0 ? 1 : 0);
-
-                if (behindNear == 3)
-                {
-                    Stats.BehindViewTriangleCount++;
-                    clipped++;
-                    continue;
-                }
-
-                if (behindNear == 0)
-                {
-                    // Discard if outside view frustum
-                    if (t.IsOutsideFrustum(vbx))
-                    {
-                        Stats.OutOfViewTriangleCount++;
-                        clipped++;
-                        continue;
-                    }
-
-                    // Cache world positions and normals while still single-threaded, so the
-                    // parallel paint phase only reads the vertex buffer.
-                    t.TransformWorld(vbx);
-
-                    target.Add((idxVolume, idxTriangle));
-                    Stats.DrawnTriangleCount++;
-                    drawn++;
-                    continue;
-                }
-
-                // Straddles the near plane: clip into sub-triangles. The new vertices
-                // interpolate world data, so the source's must be computed first.
-                t.TransformWorld(vbx);
-
-                if (NearPlaneClipper.Clip(vbx, t, idxTriangle, idxVolume, target) > 0)
-                {
-                    Stats.DrawnTriangleCount++;
-                    Stats.NearClippedTriangleCount++;
-                    drawn++;
-                }
-                else
-                {
-                    Stats.OutOfViewTriangleCount++;
-                    clipped++;
-                }
-            }
-
-            events.Add(GraphicsEventKind.MeshCullTriangles, objectId, drawn, facingBack, clipped);
-        }
+        CullPhase(
+            meshes,
+            volumeCount,
+            meshOrder,
+            worldBuffer,
+            events,
+            meshIdBase,
+            viewMatrix,
+            projectionMatrix,
+            frustumPlanes,
+            occlusion,
+            rendererSettings.BackFaceCulling);
 
         Stats.PaintTime();
 
@@ -681,58 +546,6 @@ public sealed class Renderer : IRenderer
         // Last of all, after the event list is complete and the clocks have stopped: file the
         // frame, if anyone asked for a history. Does nothing when nobody did.
         diagnostics.CaptureFrame(Stats);
-    }
-
-    /// <summary>
-    /// Vertices below which transforming a mesh on one thread beats scheduling it across
-    /// several. A dense model is one mesh of tens of thousands, and the transform is the
-    /// first thing every frame pays for it.
-    /// </summary>
-    private const int ParallelTransformThreshold = 4096;
-
-    /// <summary>How many vertices one worker takes at a time.</summary>
-    private const int TransformBandSize = 1024;
-
-    /// <summary>
-    /// Model space to view space for one mesh's vertices.
-    ///
-    /// <para>
-    /// A pure map: every vertex reads its own slot of the source and writes its own slot of
-    /// the destination, so there is nothing to coordinate and a large mesh can be split
-    /// straight across the cores. The cull phase around it is still sequential — it appends
-    /// to the frame's draw list, whose order the transparent sort and the pixel probe both
-    /// depend on — but the transform, which is where a dense model's time in that phase
-    /// actually goes, does not have to be.
-    /// </para>
-    /// </summary>
-    private static void TransformToView(VertexBuffer vbx, Vector3[] vertices, int vertexCount, in Matrix4x4 modelViewMatrix)
-    {
-        if (vertexCount < ParallelTransformThreshold || Environment.ProcessorCount <= 1)
-        {
-            var target = vbx.Vertices;
-
-            for (var i = 0; i < vertexCount; i++)
-            {
-                target[i] = target[i].SetView(Vector3.Transform(vertices[i], modelViewMatrix));
-            }
-
-            return;
-        }
-
-        var matrix = modelViewMatrix;
-        var buffer = vbx.Vertices;
-        var bands = (vertexCount + TransformBandSize - 1) / TransformBandSize;
-
-        Parallel.For(0, bands, band =>
-        {
-            var from = band * TransformBandSize;
-            var to = System.Math.Min(from + TransformBandSize, vertexCount);
-
-            for (var i = from; i < to; i++)
-            {
-                buffer[i] = buffer[i].SetView(Vector3.Transform(vertices[i], matrix));
-            }
-        });
     }
 
     /// <summary>

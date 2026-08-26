@@ -1,3 +1,4 @@
+using SoftEngine.Core.Pipeline;
 using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Tests.Golden;
 
@@ -110,6 +111,55 @@ public class GoldenImageTests
         finally
         {
             ScanlineRasterizer.VectorizedSpans = restore;
+        }
+    }
+
+    /// <summary>
+    /// The same frame, with phase 1 divided across the cores and with it run on one thread.
+    ///
+    /// <para>
+    /// The transform, cull and project phase computes a view, clip and world position and a
+    /// normal for every vertex, and it does so on several threads at once. The values are what
+    /// this compares: a vertex transformed by the wrong matrix, or a normal lost to two threads
+    /// writing the same struct, reaches the frame as shading that is subtly wrong rather than
+    /// as anything that throws — and the sixteen ways of shading a surface are exactly what the
+    /// scenes below cover.
+    /// </para>
+    ///
+    /// <para>
+    /// What it does not check is the order the triangles were collected in, because for opaque
+    /// geometry the depth buffer makes the fill order-independent: reversing a mesh's triangles
+    /// produces this same image. That order matters for other reasons and is pinned separately,
+    /// in <c>CullPhaseTests</c>.
+    /// </para>
+    ///
+    /// <para>
+    /// Run over every scene rather than one, because the phase's paths are per scene: a mesh
+    /// wide enough to span several bands, a mesh small enough to be one, transparency, and the
+    /// whole-mesh rejections that decide which meshes reach the passes at all.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(SceneNames))]
+    public void Scene_RendersIdenticallyWithASequentialCullPhase(string name)
+    {
+        var scene = GoldenScene.All.Single(s => s.Name == name);
+
+        var restore = Renderer.ParallelCullPhase;
+
+        try
+        {
+            Renderer.ParallelCullPhase = true;
+            var (parallel, width, height) = scene.Render();
+
+            Renderer.ParallelCullPhase = false;
+            var (sequential, _, _) = scene.Render();
+
+            GoldenImage.VerifyIdentical($"{name} sequential cull phase", sequential, parallel, width, height);
+        }
+        finally
+        {
+            Renderer.ParallelCullPhase = restore;
         }
     }
 

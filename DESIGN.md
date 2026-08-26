@@ -904,7 +904,8 @@ dotnet run -c Release --project bench/SoftEngine.Benchmarks -- --compare occlusi
 Seven scenes covering the shapes the renderer is built around, reporting the **median** frame time —
 a desktop frame-time distribution has a long right tail belonging to the scheduler, and one preempted
 frame moves a mean but not a median. Warm-up frames are discarded. `--compare` re-runs each scene
-with one optimization off — `hi-z`, `occlusion`, `spans` or `order` — and reports the ratio.
+with one optimization off — `hi-z`, `occlusion`, `spans`, `order` or `phase1` — and reports the
+ratio.
 Hierarchical-Z is worth ≈**2.4×** on the overdraw scene and ≈1× elsewhere, occlusion culling ≈**1.5×**
 on the scene built around it, nearest-meshes-first ≈**1.05×** on the scenes with depth to them.
 
@@ -919,7 +920,8 @@ for keeping the switch rather than writing the number down and moving on.
 | --- | --- |
 | Parallel fill chosen by **tile coverage** rather than triangle count — sixteen viewport-filling triangles are 14M pixels and were drawn on one core | `big-triangles` 22.3 → 3.4 ms |
 | The clear split into bands of rows, and not clearing a buffer the HDR resolve rewrites anyway | `overdraw` 7.8 → 6.0 ms, `shadows` 7.2 → 5.4 ms |
-| Model-to-view transform split across cores (a pure map); the cull phase around it stays sequential, since the draw list's order matters | `dense-model` 9.2 → 7.9 ms |
+| Model-to-view transform split across cores (a pure map) — the first half of the step below | `dense-model` 9.2 → 7.9 ms |
+| The rest of phase 1 split too: every vertex projected up front so the triangles can be classified in parallel, with the ordering and the near-plane clipping left to two cheap sequential passes — see below | `dense-model` 3.0 → 2.0 ms, `many-meshes` 4.5 → 3.6 ms, `pbr` 3.0 → 2.4 ms |
 | Vectorized spans: one packed divide instead of eight scalar ones | 1.16× `big-triangles`, 1.08× `shadows` |
 | The pixel counters striped across cache lines and flushed per triangle rather than per scanline — see below | `many-meshes` 14.3 → 4.8 ms, `big-triangles` 4.6 → 2.2 ms |
 
@@ -944,6 +946,69 @@ The general shape is worth stating, because nothing about the code looked wrong:
 is a shared cache line, and a shared cache line in a parallel inner loop is a lock you did not know
 you took.** Batching alone would not have fixed it — flushing per triangle instead of per scanline is
 worth the last few percent, and striping is worth the rest.
+
+### Phase 1 divided, and what had to stay in order
+
+Once the fill divides across every thread, the half that does not is what is left. Phase 1 —
+transform, cull, project, clip — was one sequential loop over the meshes, and measured at 320×180,
+where the fill is nearly free, it was **3.07 of `dense-model`'s 4.47 ms** and **4.53 of
+`many-meshes`' 7.82**. That is the ceiling, and it is Amdahl's rather than anything about the
+arithmetic.
+
+Running the loop in parallel is not available, for three reasons and only one of them is obvious:
+
+- **The draw list's order is load-bearing.** Nearest-meshes-first is worth nothing if the fill draws
+  the list in whatever order the workers finished in, and a pixel probe reports the writes in the
+  order they happened.
+- **The event log is a record in pipeline order**, which is most of what makes a frame capture
+  readable.
+- **Near-plane clipping appends to the mesh's own vertex and triangle lists**, and nothing
+  synchronises them.
+
+There is a fourth, and it is the one that decides the shape of the fix. Projection and the
+world-space transform were **memoized per vertex** behind a `Proj == Vector4.Zero` sentinel, so a
+vertex was computed the first time a triangle asked for it. Two triangles sharing a vertex are then
+a read-modify-write of the same struct from two threads, and the loser of that race silently loses a
+field — not a crash, a wrong normal.
+
+So the phase became four passes instead of one loop:
+
+| | | |
+| --- | --- | --- |
+| **1a** | sequential | Whole-mesh rejection: visibility, the bounding sphere against the frustum, the occlusion buffer. Two sphere tests and a matrix per mesh, and the only place the scene graph is read — `IMesh.WorldMatrix` walks a parent chain, which is not a thing to do from twenty threads. |
+| **1b** | **parallel** | Every vertex of every surviving mesh to view, clip and world space. A pure map, banded across meshes rather than within one, so a world that is one dense model divides as evenly as one that is four thousand cubes. |
+| **1c** | **parallel** | Every triangle classified: behind, back-facing, off-screen, drawn, or straddling the near plane. Read-only on the vertex buffers, so a band writes nothing but its own kept-list and its own counters. |
+| **1d** | sequential | Append the kept triangles to the draw lists in mesh order, clip the straddlers, emit the events, sum the counters. |
+
+Pass 1b is what removes the sharing: computing every vertex once, unconditionally, means 1c never
+writes one. It costs the projections of vertices that only a back-facing or off-screen triangle would
+have asked for — on a closed model, a little under twice as many — and buys a pass that divides
+perfectly. Pass 1d is what keeps the order: it walks the meshes as the sequential loop did, so the
+draw list and the event log come out identical, and the clipper runs on one thread so appending to a
+mesh's clipped geometry needs no lock. A straddling triangle is one touching the camera plane, so a
+frame usually has none.
+
+Worth **1.5× on `dense-model`**, ≈1.3× on `overdraw` and `pbr`, ≈1.15–1.3× on `many-meshes` and the
+occlusion scene, and nothing on `big-triangles` — sixteen triangles, correctly, take the sequential
+path in both. `--compare phase1` measures it.
+
+**The claim is that only the time changed**, so it is tested rather than asserted, the same way
+vectorized spans are: `Renderer.ParallelCullPhase` is a diagnostic seam nothing in the pipeline
+reads, and the golden suite renders every one of its eighteen scenes both ways in one process and
+compares the frames pixel for pixel.
+
+That catches a wrong *value* and, it turns out, nothing about order: for opaque geometry the depth
+buffer makes the fill order-independent, so reversing a mesh's triangles produces the same image.
+Found by trying it — a deliberately broken merge passed all eighteen scenes. Order is visible in
+`BehindZPixelCount` and in the coarse-depth rejections, since both are statements about what was
+already in the tile when a triangle arrived, and that is what `CullPhaseTests` pins instead.
+
+One measurement note that cost an hour. The first version allocated a closure and a delegate per
+pass per frame, which is four objects — nothing, until you notice the frame is 1.7 ms and there are
+six hundred of them a second. It showed up as a **5% regression on `big-triangles`**, a scene whose
+sixteen triangles never reach a parallel path at all, so the two configurations were running
+identical code. Hoisting the pass bodies out of the closures and holding their state in fields made
+it flat again.
 
 ## Roadmap
 
