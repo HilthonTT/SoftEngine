@@ -70,7 +70,6 @@ public sealed class MaterialPainter(ILight? light = null, float ambient = 0.12f)
 
         var mesh = vertexBuffer.Mesh;
         var t = vertexBuffer.GetTriangle(triangleIndice);
-        t.TransformWorld(vertexBuffer);
 
         var (a, b, c) = (vertexBuffer.GetVertex(t.I0), vertexBuffer.GetVertex(t.I1), vertexBuffer.GetVertex(t.I2));
 

@@ -49,9 +49,18 @@ public sealed class WorldBuffer : IDisposable
     }
 
     /// <summary>
-    /// Clears the per-frame vertex data. The pipeline caches transforms behind
-    /// zero-value sentinels (<c>Proj == Vector4.Zero</c>, <c>Norm == Vector3.Zero</c>),
-    /// and a zeroed <see cref="Vertices"/> is exactly the untransformed state.
+    /// Drops what the previous frame left in these buffers, so a mesh the coming frame culls
+    /// cannot be read as though it had been transformed for it.
+    ///
+    /// <para>
+    /// It used to carry more than that: the pipeline memoized transforms behind zero-value
+    /// sentinels (<c>Proj == Vector4.Zero</c>, <c>Norm == Vector3.Zero</c>), and a zeroed
+    /// <see cref="Buffers.Vertices"/> was what told it a vertex still had to be computed. The
+    /// cull phase now computes every vertex of every surviving mesh up front and
+    /// unconditionally — that is what makes it safe to divide across threads, and why the
+    /// painters no longer transform anything while the fill runs in parallel. See
+    /// <c>Renderer.CullPhase.cs</c>.
+    /// </para>
     /// </summary>
     public void Reset()
     {

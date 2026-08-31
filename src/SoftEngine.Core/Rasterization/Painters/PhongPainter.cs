@@ -37,7 +37,6 @@ public sealed class PhongPainter(
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
         var t = vertexBuffer.GetTriangle(triangleIndice);
-        t.TransformWorld(vertexBuffer);
 
         var (a, b, c) = (vertexBuffer.GetVertex(t.I0), vertexBuffer.GetVertex(t.I1), vertexBuffer.GetVertex(t.I2));
 

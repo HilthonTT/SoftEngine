@@ -14,7 +14,6 @@ public sealed class GouraudPainter(ILight? light = null, float ambient = 0.12f) 
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
         var t = vertexBuffer.GetTriangle(triangleIndice);
-        t.TransformWorld(vertexBuffer);
 
         var (a, b, c) = (vertexBuffer.GetVertex(t.I0), vertexBuffer.GetVertex(t.I1), vertexBuffer.GetVertex(t.I2));
 
