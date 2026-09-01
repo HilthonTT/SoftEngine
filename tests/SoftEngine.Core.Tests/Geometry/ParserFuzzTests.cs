@@ -7,47 +7,8 @@ using System.Xml;
 
 namespace SoftEngine.Core.Tests.Geometry;
 
-/// <summary>
-/// The file readers, fed files that are wrong.
-///
-/// <para>
-/// These are the engine's attack surface, and the only part of it that ever sees bytes nobody
-/// here wrote: a model off the internet, a panorama out of a download, a scene somebody edited
-/// by hand and got a brace wrong in. SECURITY.md says as much. What the rest of the suite
-/// checks is that a <em>correct</em> file decodes correctly, which is the easier half — a
-/// reader can be right about every well-formed file and still be one truncated download away
-/// from an unhandled exception, an index off the end of a buffer, or a sixty-byte header that
-/// asks for a hundred gigabytes.
-/// </para>
-///
-/// <para>
-/// So: take a file that works, break it in every way a file breaks — a byte flipped, a length
-/// field made enormous, the end cut off — and require that the reader still fails in a way its
-/// caller could have written a catch for. The mutations come from a seeded generator, so a
-/// failure names the seed that produced it and the same bytes come back on the next run.
-/// </para>
-/// </summary>
 public class ParserFuzzTests
 {
-    /// <summary>
-    /// How a reader is allowed to reject a file: the data is malformed, or it is well-formed
-    /// and asks for something the reader does not implement.
-    ///
-    /// <para>
-    /// <see cref="JsonException"/> and <see cref="XmlException"/> are on the list because glTF
-    /// and Collada are a JSON document and an XML one, and "this is not valid JSON" is a
-    /// perfectly good account of what went wrong with a file whose braces do not match.
-    /// </para>
-    ///
-    /// <para>
-    /// What is deliberately <em>not</em> on the list is every exception that means the reader
-    /// walked off the end of something: <see cref="IndexOutOfRangeException"/>,
-    /// <see cref="ArgumentOutOfRangeException"/>, <see cref="OverflowException"/>,
-    /// <see cref="OutOfMemoryException"/>. Those are the bug, not the report of one, and a
-    /// suite that accepted them would pass while the thing it exists to catch went on
-    /// happening.
-    /// </para>
-    /// </summary>
     private static bool IsAcceptable(Exception exception) =>
         exception is InvalidDataException or NotSupportedException or JsonException or XmlException;
 
@@ -59,7 +20,6 @@ public class ParserFuzzTests
         }
         catch (Exception exception) when (IsAcceptable(exception))
         {
-            // Rejected, and rejected in a way a caller could have caught by name.
         }
         catch (Exception exception)
         {
@@ -69,25 +29,10 @@ public class ParserFuzzTests
         }
     }
 
-    /// <summary>
-    /// One mutation of <paramref name="seed"/>'s bytes, chosen by <paramref name="rng"/>.
-    ///
-    /// <para>
-    /// Four kinds, because they break different things. A flipped byte finds the reader that
-    /// trusts a field; a run of <c>0xFF</c> finds the one that trusts a <em>length</em>, which
-    /// is the whole decompression-bomb shape and the mutation most likely to end in an
-    /// allocation nobody meant; truncation finds the one that assumes the bytes it was
-    /// promised are there; and a chopped-out slice finds the one whose offsets are computed
-    /// rather than checked.
-    /// </para>
-    /// </summary>
     private static byte[] Mutate(byte[] seed, Random rng)
     {
         var bytes = (byte[])seed.Clone();
 
-        // One to three of them, compounded. A single edit is usually caught by the first
-        // check a reader makes; the interesting failures are the ones where a field has been
-        // made enormous *and* the bytes behind it have been cut away.
         for (var i = rng.Next(3); i >= 0; i--)
         {
             bytes = MutateOnce(bytes, rng);
@@ -116,8 +61,7 @@ public class ParserFuzzTests
                 return bytes;
 
             case 1:
-                // A length field made as large as it can be. Aligned to four bytes because
-                // that is where the length fields are in every binary format here.
+
                 var at = rng.Next(bytes.Length / 4) * 4;
                 for (var i = at; i < System.Math.Min(at + 4, bytes.Length); i++)
                 {
@@ -130,8 +74,7 @@ public class ParserFuzzTests
                 return bytes[..(1 + rng.Next(bytes.Length))];
 
             case 4:
-                // Text formats carry their counts as digits, so the way to make one enormous is
-                // to find a digit and grow the number it is part of.
+
                 for (var i = 0; i < bytes.Length; i++)
                 {
                     var digit = (i + rng.Next(bytes.Length)) % bytes.Length;
@@ -157,24 +100,6 @@ public class ParserFuzzTests
         }
     }
 
-    /// <summary>
-    /// How many mutations each reader is fed.
-    ///
-    /// <para>
-    /// Two thousand is what the suite runs by default: a couple of seconds a reader, which is
-    /// what a test everybody runs on every change can cost. It is not the number that found
-    /// the bugs these tests were written for — those turned up at mutations 24, 1,320 and
-    /// 6,857 of a twelve-thousand-round sweep, and the last of them would sail straight
-    /// through the default.
-    /// </para>
-    ///
-    /// <para>
-    /// So the three of them are pinned separately below as cases in their own right, and the
-    /// sweep is for the next one. <c>SOFTENGINE_FUZZ_ROUNDS=200000</c> is the long version,
-    /// for when there is time to go looking — the mutations are seeded by their round number,
-    /// so a failure at 173,402 is a failure anyone can reproduce by asking for that many again.
-    /// </para>
-    /// </summary>
     private static int Rounds =>
         int.TryParse(Environment.GetEnvironmentVariable("SOFTENGINE_FUZZ_ROUNDS"), out var rounds) && rounds > 0
             ? rounds
@@ -201,11 +126,6 @@ public class ParserFuzzTests
             }
             catch (UnauthorizedAccessException)
             {
-                // The temp file, not the reader: none of these take a path they open for
-                // writing, so this is the machine — a virus scanner holding the file it just
-                // watched appear, most often — and not a verdict on the bytes. Skipped rather
-                // than failed, because a sweep long enough to be worth running is long enough
-                // to meet it, and a test that fails for that reason gets switched off.
             }
             finally
             {
@@ -224,9 +144,6 @@ public class ParserFuzzTests
         }
     }
 
-    // ---- seeds -------------------------------------------------------------------------
-
-    /// <summary>A real PNG, produced by the encoder these tests are otherwise about.</summary>
     private static byte[] PngSeed()
     {
         var path = WriteTemporary([], ".png");
@@ -249,7 +166,6 @@ public class ParserFuzzTests
         }
     }
 
-    /// <summary>A flat (un-run-length-encoded) Radiance image, small enough to mutate densely.</summary>
     private static byte[] HdrSeed()
     {
         var header = Encoding.ASCII.GetBytes("#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 4 +X 4\n");
@@ -334,12 +250,6 @@ public class ParserFuzzTests
         </COLLADA>
         """);
 
-    // ---- the seeds themselves have to load ---------------------------------------------
-
-    /// <summary>
-    /// Every fuzz case below is worthless if the file it mutates was already broken: a reader
-    /// that rejects everything passes all of them. This is the control.
-    /// </summary>
     [Fact]
     public void TheSeedFilesLoad()
     {
@@ -365,8 +275,6 @@ public class ParserFuzzTests
         }
     }
 
-    // ---- the fuzz cases ----------------------------------------------------------------
-
     [Fact]
     public void Png_RejectsMutatedFilesCleanly() =>
         FuzzFile("PNG", PngSeed(), ".png", path => PngCodec.Load(path));
@@ -387,19 +295,11 @@ public class ParserFuzzTests
     public void Collada_RejectsMutatedFilesCleanly() =>
         FuzzFile("Collada", ColladaSeed(), ".dae", path => ColladaImporter.HackyImportCollada(path));
 
-    // ---- the bombs ---------------------------------------------------------------------
-    //
-    // A mutation finds these by accident at best. They are the shape the format invites: a
-    // small file whose header describes an enormous one, which a reader either bounds or
-    // allocates for.
-
     [Fact]
     public void Png_HeaderDeclaringAnEnormousImage_IsRefusedBeforeItIsAllocatedFor()
     {
         var bytes = PngSeed();
 
-        // The IHDR's width and height, which sit 8 bytes past the signature plus the chunk's
-        // own length-and-type prefix.
         var at = 8 + 8;
         for (var i = at; i < at + 8; i++)
         {
@@ -452,19 +352,6 @@ public class ParserFuzzTests
         Assert.Contains("this reader will hold", failure.Message, StringComparison.Ordinal);
     }
 
-    // ---- what the sweep found ----------------------------------------------------------
-    //
-    // Each of these was a mutation that crashed a reader, cut down to the one thing about it
-    // that mattered. They are here rather than left to the sweep because the sweep only finds
-    // them at the depth it happens to be run to, and a regression test that depends on an
-    // environment variable is not one.
-
-    /// <summary>
-    /// A face indexing past the vertices it was given. It used to surface as an
-    /// <see cref="IndexOutOfRangeException"/> from inside the mesh constructor's own normal
-    /// calculation — the model never opened, and nothing in the message said which file, or
-    /// which face, or that an index was the problem at all.
-    /// </summary>
     [Fact]
     public void Collada_FaceIndexingPastTheVertices_LoadsWithoutIt()
     {
@@ -483,12 +370,6 @@ public class ParserFuzzTests
         }
     }
 
-    /// <summary>
-    /// One token in an index array that is not a number. The geometry path parsed these
-    /// through <c>Convert.ChangeType</c>, which threw <see cref="FormatException"/> and took
-    /// the whole model with it — while the animation path of the same importer had always
-    /// skipped what it could not read.
-    /// </summary>
     [Fact]
     public void Collada_NonNumericTokenInAnIndexArray_DoesNotFailTheLoad()
     {
@@ -505,17 +386,11 @@ public class ParserFuzzTests
         }
     }
 
-    /// <summary>
-    /// Image data that is not a DEFLATE stream. Short data and corrupt data fail differently
-    /// inside the decompressor — an end-of-stream against a <c>ZLibException</c> — and only
-    /// the first of them was being turned into something a caller could catch.
-    /// </summary>
     [Fact]
     public void Png_CorruptCompressedData_IsRejectedAsInvalidData()
     {
         var bytes = PngSeed();
 
-        // Past the signature, the IHDR and the IDAT's own length and type: the deflate stream.
         var idat = 8 + 12 + 13 + 8;
         for (var i = idat; i < System.Math.Min(idat + 16, bytes.Length); i++)
         {

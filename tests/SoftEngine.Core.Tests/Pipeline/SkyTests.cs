@@ -22,7 +22,6 @@ public class SkyTests
         public Matrix4x4 ViewMatrix => Matrix4x4.CreateLookAt(Position, target, Vector3.UnitY);
     }
 
-    /// <summary>A cube map whose every face is one flat colour, so a sample is unambiguous.</summary>
     private static CubeMap Faces(
         ColorRGB positiveX, ColorRGB negativeX,
         ColorRGB positiveY, ColorRGB negativeY,
@@ -96,7 +95,6 @@ public class SkyTests
         var up = ambient.Evaluate(Vector3.UnitY);
         var down = ambient.Evaluate(-Vector3.UnitY);
 
-        // Bright green above, dark green below.
         Assert.True(up.G > down.G);
         Assert.True(up.G > up.R);
         Assert.True(ambient.Evaluate(Vector3.UnitX).R > up.R);
@@ -105,8 +103,6 @@ public class SkyTests
     [Fact]
     public void AmbientCube_Weights_SumToOne()
     {
-        // A uniform white environment must evaluate to exactly its constant in every
-        // direction, which only holds if the three squared components sum to 1.
         var ambient = AmbientCube.FromEnvironment(SkyBox.Uniform(ColorRGB.White));
 
         foreach (var normal in new[]
@@ -166,8 +162,6 @@ public class SkyTests
 
         new Renderer().Render(scene, new ClassicPainter());
 
-        // The camera sits on +Z looking at the origin, so the background behind it is the
-        // -Z face... and the pixel at the centre is the cube, which the sky must not touch.
         var corner = ColorRGB.FromPacked(scene.Surface.GetColor(1, 1));
         var centre = ColorRGB.FromPacked(scene.Surface.GetColor(32, 32));
 
@@ -190,9 +184,6 @@ public class SkyTests
     [Fact]
     public void Render_SkyDoesNotOverwriteTransparentGeometry()
     {
-        // A pane of glass with nothing but sky behind it. The sky has to land behind the
-        // blend, not on top of it — transparent geometry never writes depth, so the pixel
-        // still looks like background to anything that only asks the depth buffer.
         var glass = new Cube { Scale = new Vector3(2, 2, 0.1f), Opacity = 0.5f };
         var scene = SceneWithSky(SkyBox.Uniform(ColorRGB.Red), glass);
 
@@ -220,7 +211,6 @@ public class SkyTests
             return ColorRGB.FromPacked(scene.Surface.GetColor(32, 32));
         }
 
-        // A bright white environment delivers far more ambient than the painter's 0.05.
         Assert.True(Centre(fromEnvironment: true).R > Centre(fromEnvironment: false).R);
     }
 }

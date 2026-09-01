@@ -11,7 +11,6 @@ namespace SoftEngine.Core.Tests.Shading;
 
 public class HighDynamicRangeTests
 {
-    /// <summary>A shader that reports a fixed amount of light, however much that is.</summary>
     private readonly struct ConstantShader(LinearColor color) : IPixelShader<EmptyVarying>
     {
         private readonly LinearColor _color = color;
@@ -59,7 +58,6 @@ public class HighDynamicRangeTests
         Assert.Equal(3f, sum.G);
         Assert.Equal(3f, sum.B);
 
-        // The encode is where the ceiling lives, not the arithmetic.
         Assert.Equal(255, sum.ToColorRGB().R);
     }
 
@@ -86,7 +84,6 @@ public class HighDynamicRangeTests
         Assert.Equal(2f, surface.HdrColor[i + 1]);
         Assert.Equal(1f, surface.HdrColor[i + 2]);
 
-        // Nothing has resolved yet, so the presentable image is still the cleared one.
         Assert.Equal(0, surface.GetColor(8, 8));
     }
 
@@ -100,16 +97,12 @@ public class HighDynamicRangeTests
 
         var pixel = ColorRGB.FromPacked(surface.GetColor(8, 8));
 
-        Assert.Equal(255, pixel.R);                 // clamped only at the very end
-        Assert.InRange(pixel.G, 186, 190);          // half the light, sRGB-encoded
+        Assert.Equal(255, pixel.R);
+        Assert.InRange(pixel.G, 186, 190);
         Assert.Equal(0, pixel.B);
         Assert.Equal(0xFF, (surface.GetColor(8, 8) >> 24) & 0xFF);
     }
 
-    /// <summary>
-    /// The reason the whole thing exists: two highlights that an 8-bit target cannot tell
-    /// apart are still distinguishable to a tone-map curve on an HDR one.
-    /// </summary>
     [Fact]
     public void ToneMap_OverAnHdrTarget_SeparatesHighlightsAnLdrTargetWouldFlatten()
     {
@@ -128,11 +121,8 @@ public class HighDynamicRangeTests
             return ColorRGB.FromPacked(surface.GetColor(8, 8)).R;
         }
 
-        // On an 8-bit target both highlights were already 255 before the stack ever ran,
-        // so the curve has nothing left to separate.
         Assert.Equal(Resolve(hdr: false, 2f), Resolve(hdr: false, 8f));
 
-        // On the HDR target the shader's measurement survived to the curve.
         Assert.True(Resolve(hdr: true, 2f) < Resolve(hdr: true, 8f));
     }
 
@@ -148,7 +138,6 @@ public class HighDynamicRangeTests
             stack.Effects.Add(new BloomEffect { Enabled = true, Threshold = 0.8f, Intensity = 1f });
             stack.Apply(surface);
 
-            // Well outside the filled triangle: whatever lands here bled there.
             return ColorRGB.FromPacked(surface.GetColor(50, 50)).R;
         }
 

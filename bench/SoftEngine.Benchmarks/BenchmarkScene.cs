@@ -12,10 +12,6 @@ using System.Numerics;
 
 namespace SoftEngine.Benchmarks;
 
-/// <summary>
-/// One measurable workload: a scene, a painter, and whatever renderer settings the workload is
-/// about. Built fresh per run so a measurement never inherits another one's warmed buffers.
-/// </summary>
 internal sealed class BenchmarkScene(
     string name,
     string description,
@@ -27,12 +23,6 @@ internal sealed class BenchmarkScene(
 
     public (Renderer Renderer, Scene Scene, IPainter Painter) Build(int width, int height) => build(width, height);
 
-    /// <summary>
-    /// The workloads the renderer is actually shaped around: a dense model where the cost is
-    /// per-triangle setup, heavy overdraw where it is the depth test, a handful of huge
-    /// triangles where one tile's worth of pixels dominates, and thousands of small meshes
-    /// where it is the per-mesh work before any pixel is touched.
-    /// </summary>
     public static IReadOnlyList<BenchmarkScene> All { get; } =
     [
         new("dense-model",
@@ -103,11 +93,6 @@ internal sealed class BenchmarkScene(
             {
                 var meshes = new List<IMesh> { Wall(5f, 0f) };
 
-                // Dense meshes rather than cubes, because that is the case the pass exists for.
-                // A twelve-triangle cube behind a wall costs almost nothing to reject and
-                // almost nothing to keep, so a scene made of them measures the pass's overhead
-                // and not its point; the work worth skipping is geometry that is expensive to
-                // transform, and a rejected mesh's cost is its whole cost.
                 for (var x = 0; x < 8; x++)
                 {
                     for (var y = 0; y < 8; y++)
@@ -146,7 +131,6 @@ internal sealed class BenchmarkScene(
             }),
     ];
 
-    /// <summary>The common wiring: a frame buffer, a fixed camera pulled back to <paramref name="distance"/>, one sun.</summary>
     private static (Renderer Renderer, Scene Scene, IPainter Painter) Compose(
         int width,
         int height,
@@ -157,8 +141,6 @@ internal sealed class BenchmarkScene(
         var renderer = new Renderer();
         renderer.Settings.BackFaceCulling = true;
 
-        // Events cost allocation-free but non-zero work per mesh, and the interactive app can
-        // switch them off; a benchmark of the renderer should not be measuring its debugger.
         renderer.Diagnostics.Events.IsEnabled = false;
 
         var scene = new Scene
@@ -180,9 +162,6 @@ internal sealed class BenchmarkScene(
     {
         var source = new IcoSphere(recursion);
 
-        // A fresh Mesh rather than the IcoSphere itself: primitives share one static colour
-        // array between instances, and a scene of 36 of them would otherwise be 36 views of
-        // the same colours.
         var vertices = (Vector3[])source.Vertices.Clone();
 
         return new Mesh(vertices, source.Triangles, (Vector3[])source.NormVertices.Clone())
@@ -192,11 +171,6 @@ internal sealed class BenchmarkScene(
         };
     }
 
-    /// <summary>
-    /// A stack of triangles each large enough to cover the whole viewport, at stepped depths.
-    /// The per-triangle setup is negligible here and the fill is everything, which is the
-    /// case the tiled rasterizer's vectorized depth test is aimed at.
-    /// </summary>
     private static Mesh BigTriangles(int count)
     {
         var vertices = new Vector3[count * 3];
@@ -205,9 +179,6 @@ internal sealed class BenchmarkScene(
 
         for (var i = 0; i < count; i++)
         {
-            // Nearest first, so every triangle after the first is a full-screen depth test
-            // that fails — which is precisely what the tile's coarse depth bound exists to
-            // drop whole, and so what --compare measures the bound's worth on.
             var z = -i * 0.1f;
 
             vertices[i * 3 + 0] = new Vector3(-8f, -5f, z);
@@ -221,7 +192,6 @@ internal sealed class BenchmarkScene(
         return new Mesh(vertices, triangles, null, colors);
     }
 
-    /// <summary>A single quad facing the camera, large enough to fill the frame at the scene's viewing distance.</summary>
     private static Mesh Wall(float half, float z)
     {
         Vector3[] vertices =

@@ -24,7 +24,6 @@ public class OrthographicProjectionTests
         var projection = new OrthographicProjection(10f, 1f, 100f);
         var matrix = projection.ProjectionMatrix(200f, 100f);
 
-        // The camera looks down -Z, so the near plane sits at view-space z = -1.
         var near = Vector4.Transform(new Vector3(0, 0, -1f), matrix);
         var far = Vector4.Transform(new Vector3(0, 0, -100f), matrix);
 
@@ -40,7 +39,6 @@ public class OrthographicProjectionTests
         var projection = new OrthographicProjection(10f, 1f, 100f);
         var matrix = projection.ProjectionMatrix(200f, 100f);
 
-        // 10 units tall over a 2:1 viewport is 20 wide, so ±10 lands on the edges.
         var right = Vector4.Transform(new Vector3(10f, 5f, -10f), matrix);
 
         Assert.Equal(1f, right.X, 4);
@@ -52,7 +50,6 @@ public class OrthographicProjectionTests
     {
         Assert.True(((IProjection)new OrthographicProjection(10f, 1f, 100f)).IsOrthographic);
 
-        // Perspective keeps the interface's default, so existing projections are unaffected.
         Assert.False(((IProjection)new PerspectiveProjection(1f, 1f, 100f)).IsOrthographic);
     }
 
@@ -74,7 +71,6 @@ public class OrthographicProjectionTests
         surface.SetLinearDepthRange();
         surface.SetDepthRange(1f, 101f);
 
-        // Perspective depth is a function of w alone: at the near plane it is 0.
         var atNear = surface.ToScreen3(new Vector4(0, 0, 0f, 1f));
 
         Assert.Equal(0f, atNear.Z, 1f);
@@ -101,12 +97,9 @@ public class OrthographicProjectionTests
 
         Assert.True(renderer.Stats.DrawnPixelCount > 0);
 
-        // The near cube covers the centre; with a working depth test the far, larger cube
-        // cannot overwrite it however it is ordered in the world.
         var centreDepth = surface.GetDepth(64, 64);
         Assert.True(centreDepth < FrameBuffer.DepthResolution);
 
-        // Off-centre the small cube ends; the big one behind it still shows, and farther away.
         var edgeDepth = surface.GetDepth(64, 110);
         Assert.True(edgeDepth > centreDepth);
     }

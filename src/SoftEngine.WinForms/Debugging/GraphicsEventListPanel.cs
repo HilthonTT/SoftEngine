@@ -2,11 +2,6 @@ using SoftEngine.Core.Diagnostics;
 
 namespace SoftEngine.WinForms.Debugging;
 
-/// <summary>
-/// The graphics event list: every step the renderer took for the frame on screen, in
-/// pipeline order. Virtual, because a scene of a few thousand meshes emits an event
-/// per mesh per stage.
-/// </summary>
 internal sealed class GraphicsEventListPanel : UserControl
 {
     private readonly ListView _list;
@@ -49,17 +44,10 @@ internal sealed class GraphicsEventListPanel : UserControl
         Controls.Add(new DockPanelHeader("Graphics Event List"));
     }
 
-    /// <summary>Raised with the event the user clicked.</summary>
     public event EventHandler<GraphicsEvent>? EventSelected;
 
-    /// <summary>Copies the frame's events out of the renderer's log and refreshes the view.</summary>
     public void SetEvents(GraphicsEventLog log) => SetEvents(log.AsSpan());
 
-    /// <summary>
-    /// Shows a frame's events from anywhere they have been kept. The live log is one buffer
-    /// reused every frame, so a history entry hands over its own copy instead — and the panel
-    /// does not need to know which it was given.
-    /// </summary>
     public void SetEvents(ReadOnlySpan<GraphicsEvent> source)
     {
         if (_events.Length < source.Length)
@@ -78,7 +66,6 @@ internal sealed class GraphicsEventListPanel : UserControl
         _list.Invalidate();
     }
 
-    /// <summary>Scrolls to an event and selects it — used when a pixel history entry is clicked.</summary>
     public void SelectEvent(int index)
     {
         if ((uint)index >= (uint)_count)
@@ -93,7 +80,6 @@ internal sealed class GraphicsEventListPanel : UserControl
 
     private void RetrieveVirtualItem(object? sender, RetrieveVirtualItemEventArgs e)
     {
-        // The list can ask for a row that a shrinking frame has just dropped.
         if ((uint)e.ItemIndex >= (uint)_count)
         {
             e.Item = new ListViewItem(string.Empty);

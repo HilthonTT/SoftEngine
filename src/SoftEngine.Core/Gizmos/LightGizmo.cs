@@ -5,37 +5,10 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Gizmos;
 
-/// <summary>
-/// Draws the scene's lights as wireframe markers.
-///
-/// <para>
-/// A light has no geometry, which makes it the one thing in a scene that cannot be seen — only its
-/// effects can. That is fine until something is wrong with it, at which point the question "is the
-/// spot pointing where I think it is" has no way to be answered except by moving it and watching
-/// what changes. Every light here draws where it is, which way it faces and how far it reaches, in
-/// the same wireframe the grid and the skeleton are drawn in.
-/// </para>
-///
-/// <para>
-/// Sizes are given in world units by the caller rather than derived: the scenes this engine ships
-/// with span three orders of magnitude, and a marker sized for one is invisible in another or
-/// swallows it. The front-end already computes a reference distance for exactly this reason.
-/// </para>
-/// </summary>
 public static class LightGizmo
 {
-    /// <summary>Segments in a ring. Twelve is round enough at gizmo sizes and cheap enough to draw three of.</summary>
     private const int RingSegments = 16;
 
-    /// <summary>
-    /// Draws every light in the world.
-    /// </summary>
-    /// <param name="size">Radius of a light's marker in world units.</param>
-    /// <param name="showRange">
-    /// Whether a positional light's falloff range is drawn as a ring. It is the one number about a
-    /// light that is invisible in the frame and easy to get wrong by an order of magnitude — but on a
-    /// light with no range set it is infinite, and nothing is drawn.
-    /// </param>
     public static void Draw(
         FrameBuffer surface,
         Matrix4x4 world2Projection,
@@ -65,10 +38,6 @@ public static class LightGizmo
         }
     }
 
-    /// <summary>
-    /// A point light: three rings in the cardinal planes, which read as a sphere from any angle, plus
-    /// a ring at its range where it has one.
-    /// </summary>
     private static void DrawPoint(
         FrameBuffer surface, Matrix4x4 world2Projection, PointLight light, float size, bool showRange)
     {
@@ -78,7 +47,6 @@ public static class LightGizmo
         Ring(surface, world2Projection, light.Position, Vector3.UnitY, Vector3.UnitZ, size, color);
         Ring(surface, world2Projection, light.Position, Vector3.UnitZ, Vector3.UnitX, size, color);
 
-        // Spikes, so a light seen edge-on to all three rings is still something rather than a dot.
         foreach (var axis in new[] { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ })
         {
             GizmoRenderer.DrawLine(surface, world2Projection,
@@ -91,15 +59,6 @@ public static class LightGizmo
         }
     }
 
-    /// <summary>
-    /// A directional light: an arrow through the origin along the direction it travels, drawn as a
-    /// shaft with a ring around it.
-    ///
-    /// It has no position — it is a direction and nothing else — so the marker is placed where the
-    /// light <em>comes from</em> relative to the world origin, at a fixed standoff. That is a
-    /// fiction, and it is the only one available: drawing it at the origin would bury it in whatever
-    /// is being lit.
-    /// </summary>
     private static void DrawDirectional(
         FrameBuffer surface, Matrix4x4 world2Projection, DirectionalLight light, float size)
     {
@@ -123,13 +82,11 @@ public static class LightGizmo
 
         Ring(surface, world2Projection, from, right, up, size, color);
 
-        // An arrowhead at the far end, so which way along the shaft it points is unambiguous.
         foreach (var offset in new[] { right, -right, up, -up })
         {
             GizmoRenderer.DrawLine(surface, world2Projection, to, to - travel * size + offset * size * 0.6f, color);
         }
 
-        // Four parallel rays through the ring, which is how a directional light is drawn everywhere.
         foreach (var offset in new[] { right + up, right - up, -right + up, -right - up })
         {
             var start = from + offset * size * 0.7f;
@@ -137,10 +94,6 @@ public static class LightGizmo
         }
     }
 
-    /// <summary>
-    /// A spot: the cone it actually lights, drawn at its outer angle — four edge lines and a ring at
-    /// the far end, which is enough to read the aim and the spread from.
-    /// </summary>
     private static void DrawSpot(
         FrameBuffer surface, Matrix4x4 world2Projection, SpotLight light, float size, bool showRange)
     {
@@ -155,7 +108,6 @@ public static class LightGizmo
 
         var color = Tint(light);
 
-        // As far as the light reaches, or a marker's length when it reaches forever.
         var length = showRange && float.IsFinite(light.Range) && light.Range > size
             ? light.Range
             : size * 6f;
@@ -172,7 +124,6 @@ public static class LightGizmo
             GizmoRenderer.DrawLine(surface, world2Projection, light.Position, end + offset * radius, color);
         }
 
-        // The inner cone, where the light is at full strength, as a second fainter ring.
         var inner = length * MathF.Tan(System.Math.Clamp(light.InnerAngle, 1e-3f, 1.5f));
 
         if (inner < radius * 0.98f)
@@ -181,7 +132,6 @@ public static class LightGizmo
         }
     }
 
-    /// <summary>A closed ring around a centre, in the plane the two axes span.</summary>
     private static void Ring(
         FrameBuffer surface,
         Matrix4x4 world2Projection,
@@ -205,7 +155,6 @@ public static class LightGizmo
         }
     }
 
-    /// <summary>Two unit vectors perpendicular to a direction and to each other.</summary>
     private static (Vector3 Right, Vector3 Up) Basis(Vector3 direction)
     {
         var reference = MathF.Abs(direction.Y) < 0.999f ? Vector3.UnitY : Vector3.UnitX;
@@ -216,11 +165,6 @@ public static class LightGizmo
         return (right, up);
     }
 
-    /// <summary>
-    /// The light's own colour, brightened toward white so a dim or saturated light is still legible
-    /// as a marker. A gizmo is a label, not a sample of what it labels — but a scene with a red key
-    /// and a blue fill is much easier to read when the two markers are not the same colour.
-    /// </summary>
     private static ColorRGB Tint(ILight light)
     {
         var color = light.Color;

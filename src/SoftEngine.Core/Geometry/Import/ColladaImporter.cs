@@ -4,22 +4,12 @@ using System.Xml.Linq;
 
 namespace SoftEngine.Core.Geometry.Import;
 
-/// <summary>
-/// A minimal, best-effort Collada (.dae) reader. It understands just enough of the format
-/// to pull positions, normals and vertex indices out of a mesh's <c>polylist</c> and/or
-/// <c>triangles</c> blocks — it is not a general-purpose importer and assumes a
-/// well-formed, single-source layout.
-/// </summary>
 public static partial class ColladaImporter
 {
     private static readonly XNamespace _collada = "http://www.collada.org/2005/11/COLLADASchema";
 
-    /// <param name="fileName">Path of the .dae file to read.</param>
-    /// <param name="progress">Optional overall progress in the range 0..1.</param>
     public static IMesh[] HackyImportCollada(string fileName, IProgress<float>? progress = null)
     {
-        // Loading the XML document is roughly as expensive as walking it afterwards,
-        // so it gets a fixed share of the reported progress.
         const float parseShare = 0.4f;
 
         progress?.Report(0f);
@@ -62,8 +52,6 @@ public static partial class ColladaImporter
             }
             progress?.Report(done + share * 0.8f);
 
-            // Normals are only usable when there is exactly one per vertex; otherwise let
-            // the mesh compute its own instead of indexing out of range while rendering.
             meshes.Add(new Mesh(
                 buffers.Vertices.ToArray(),
                 buffers.Indices.ToArray().BuildTriangleIndices(buffers.Vertices.Count),
@@ -79,11 +67,6 @@ public static partial class ColladaImporter
         return meshes.ToArray();
     }
 
-    /// <summary>
-    /// A <c>polylist</c> references its positions (and possibly normals) through a shared
-    /// <c>vertices</c> element. Its <c>p</c> stream interleaves one lane per input and its
-    /// <c>vcount</c> element gives the size of each polygon, which is fan-triangulated here.
-    /// </summary>
     private static void ReadPolylist(XElement mesh, XElement polylist, GeometryBuffers buffers)
     {
         var interleavedIndices = ParseArray<int>(polylist.Element(_collada + "p")?.Value);
@@ -107,7 +90,6 @@ public static partial class ColladaImporter
 
         if (vcounts.Count == 0)
         {
-            // No vcount — assume the stream is already triangles.
             buffers.Indices.AddRange(vertexIndices.Select(index => index + baseVertex));
             return;
         }
@@ -131,11 +113,6 @@ public static partial class ColladaImporter
         }
     }
 
-    /// <summary>
-    /// A <c>triangles</c> block interleaves several index streams (one per input) in its
-    /// <c>p</c> element. Each input declares an <c>offset</c> into that interleaved stream,
-    /// so the stride is <c>maxOffset + 1</c> and each attribute is read from its own lane.
-    /// </summary>
     private static void ReadTriangles(XElement mesh, XElement triangles, GeometryBuffers buffers)
     {
         var interleavedIndices = ParseArray<int>(triangles.Element(_collada + "p")?.Value);
@@ -155,8 +132,6 @@ public static partial class ColladaImporter
 
         if (normalSourceId is not null)
         {
-            // The gathered normals are one per triangle corner; the mesh consumes them by
-            // vertex index, so scatter each corner's normal to its vertex slot.
             var cornerNormals = ReadVectors(mesh, normalSourceId, interleavedIndices, normalOffset, stride);
             var vertexNormals = new Vector3[positions.Count];
             for (var corner = 0; corner < vertexIndices.Count && corner < cornerNormals.Count; corner++)
@@ -173,16 +148,6 @@ public static partial class ColladaImporter
         buffers.Indices.AddRange(vertexIndices.Select(index => index + baseVertex));
     }
 
-    /// <summary>
-    /// The interleaved stream's stride: one lane per declared input offset.
-    ///
-    /// <para>
-    /// Never less than one, whatever the file says. The stride is what <see cref="ExtractLane"/>
-    /// steps by, so a negative offset in the document — which nothing stops an exporter, or a
-    /// corrupt byte, from writing — would make it step backwards through the index list and
-    /// never terminate.
-    /// </para>
-    /// </summary>
     private static int Stride(XElement primitives) =>
         System.Math.Max(
             primitives.Elements(_collada + "input")
@@ -191,21 +156,13 @@ public static partial class ColladaImporter
                 .Max() + 1,
             1);
 
-    /// <summary>
-    /// An <c>offset</c> attribute: a lane number into the interleaved index stream, so
-    /// non-negative by construction and zero when the file omits it or writes nonsense.
-    /// </summary>
     private static int ParseOffset(string? value) =>
         int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var offset) && offset >= 0
             ? offset
             : 0;
 
-    /// <summary>Picks every <paramref name="stride"/>-th index starting at <paramref name="lane"/>.</summary>
     private static List<int> ExtractLane(List<int> interleaved, int lane, int stride)
     {
-        // Belt and braces against a stride the document talked down to zero or below: Stride
-        // already floors it at one, and a loop that cannot advance is not a thing to leave
-        // reachable by way of one more caller being added later.
         stride = System.Math.Max(stride, 1);
 
         var laneIndices = new List<int>();
@@ -216,11 +173,6 @@ public static partial class ColladaImporter
         return laneIndices;
     }
 
-    /// <summary>
-    /// Reads a <c>float_array</c> source as a list of <see cref="Vector3"/>. When
-    /// <paramref name="indices"/> is supplied the values are gathered through the given lane
-    /// of the interleaved index stream; otherwise the array is read straight through.
-    /// </summary>
     private static List<Vector3> ReadVectors(
         XElement mesh,
         string? sourceId,
@@ -246,9 +198,6 @@ public static partial class ColladaImporter
         }
         else
         {
-            // A trailing partial triple is dropped rather than read past the end of the list:
-            // a float_array whose count does not divide by three is a malformed source, and
-            // losing its last incomplete vector beats failing to open the file at all.
             for (var i = 0; i + 2 < floats.Count; i += 3)
             {
                 vectors.Add(new Vector3(floats[i], floats[i + 1], floats[i + 2]));
@@ -258,25 +207,16 @@ public static partial class ColladaImporter
         return vectors;
     }
 
-    /// <summary>Finds the <c>vertices</c> element a <c>VERTEX</c> input points at.</summary>
     private static XElement? FindVertices(XElement mesh, string? vertexInputId) =>
         mesh.Elements(_collada + "vertices")
             .FirstOrDefault(v => v.Attribute("id")?.Value == vertexInputId);
 
-    /// <summary>
-    /// Returns the raw text of the <c>float_array</c> owned by the given source, or an
-    /// empty string when the source (or its array) is missing.
-    /// </summary>
     private static string ReadFloatArray(XElement mesh, string? sourceId) =>
         mesh.Elements(_collada + "source")
             .FirstOrDefault(source => source?.Attribute("id")?.Value == sourceId)
             ?.Element(_collada + "float_array")
             ?.Value ?? string.Empty;
 
-    /// <summary>
-    /// Reads the <c>input</c> with the given <paramref name="semantic"/> off an element,
-    /// returning the source id it references (without the leading '#') and its offset.
-    /// </summary>
     private static void GetInput(XElement? element, string semantic, out string? sourceId, out int offset)
     {
         var ns = element?.GetDefaultNamespace() ?? XNamespace.None;
@@ -287,25 +227,6 @@ public static partial class ColladaImporter
         offset = ParseOffset(input?.Attribute("offset")?.Value);
     }
 
-    /// <summary>
-    /// Splits a whitespace-separated value string into a typed list, skipping any token that
-    /// is not a number.
-    ///
-    /// <para>
-    /// It used to go through <see cref="Convert.ChangeType(object, Type, IFormatProvider)"/>,
-    /// which throws <see cref="FormatException"/> at the first token it cannot read. That is
-    /// the whole of an index or position array in a Collada file — text, whitespace-separated,
-    /// however the exporter felt like writing it — so one stray character anywhere in a
-    /// million of them took the entire model down, with an exception that names the token and
-    /// nothing else: not the file, not the element, not the mesh.
-    /// </para>
-    ///
-    /// <para>
-    /// Skipping rather than failing, which is what the animation half of this importer has
-    /// always done with the same arrays (see its <c>ParseFloats</c>). The two halves reading
-    /// the same file to different standards was the actual bug; this is them agreeing.
-    /// </para>
-    /// </summary>
     private static List<T> ParseArray<T>(string? value)
     {
         if (value is null)
@@ -334,7 +255,6 @@ public static partial class ColladaImporter
         return result;
     }
 
-    /// <summary>The positions, normals and vertex indices accumulated for one mesh.</summary>
     private sealed class GeometryBuffers
     {
         public List<Vector3> Vertices { get; } = [];

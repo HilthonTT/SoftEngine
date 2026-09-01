@@ -29,7 +29,6 @@ public class MaterialShadingTests
     private static Texture Fill(byte r, byte g, byte b) =>
         new(2, 2, [.. Enumerable.Repeat(new ColorRGB(r, g, b).Color, 4)]);
 
-    /// <summary>A surface facing +Z at the origin, lit from straight ahead.</summary>
     private static MaterialShader Shader(
         Texture? normalMap,
         Texture? specularMap = null,
@@ -55,7 +54,6 @@ public class MaterialShadingTests
     [Fact]
     public void Shade_FlatNormalMap_MatchesShadingWithoutOne()
     {
-        // (128, 128, 255) decodes to very nearly +Z — a normal map that changes nothing.
         var withMap = Shader(Fill(128, 128, 255)).Shade(Varying());
         var withoutMap = Shader(null).Shade(Varying());
 
@@ -65,8 +63,6 @@ public class MaterialShadingTests
     [Fact]
     public void Shade_TiltedNormalMap_TurnsTheSurfaceAwayFromTheLight()
     {
-        // Full red tilts the normal all the way along the tangent, so it no longer faces
-        // the light and the Lambert term collapses to the ambient floor.
         var tilted = Shader(Fill(255, 128, 128)).Shade(Varying());
         var flat = Shader(Fill(128, 128, 255)).Shade(Varying());
 
@@ -86,8 +82,6 @@ public class MaterialShadingTests
     [Fact]
     public void Shade_SpecularMap_MasksTheHighlight()
     {
-        // A dark base colour, or the diffuse term alone already saturates the channel and
-        // the highlight has nowhere to show.
         var dark = new ColorRGB(20, 20, 20);
 
         var lit = Shader(null, Fill(255, 255, 255), specularStrength: 1f, baseColor: dark).Shade(Varying());
@@ -181,7 +175,6 @@ public class MaterialShadingTests
     [Fact]
     public void FromHeight_ASlope_TiltsTheNormalAcrossIt()
     {
-        // A horizontal ramp: height grows with x, so the normal leans along x and nowhere else.
         var pixels = new int[8 * 8];
         for (var y = 0; y < 8; y++)
         {
@@ -194,7 +187,6 @@ public class MaterialShadingTests
 
         var normals = NormalMapBuilder.FromHeight(new Texture(8, 8, pixels), 2f);
 
-        // Sample in the middle of the ramp, away from the wrap-around at the edges.
         var texel = normals.Sample(4.5f / 8f, 0.5f);
 
         Assert.NotEqual(128, texel.R);

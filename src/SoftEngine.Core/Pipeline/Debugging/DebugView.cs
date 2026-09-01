@@ -1,64 +1,20 @@
 namespace SoftEngine.Core.Pipeline.Debugging;
 
-/// <summary>
-/// Which of the frame's own buffers to present instead of the shaded image.
-///
-/// A renderer produces far more per frame than the picture: a depth per pixel, a count of
-/// how many times each was written, a second depth buffer taken from the light. All of it is
-/// discarded at present time, and all of it is what you actually need when the picture is
-/// wrong — a shadow that lands in the wrong place is a shadow map you have never seen, and a
-/// frame that is slow for no visible reason is overdraw you have never measured.
-/// </summary>
 public enum DebugView
 {
-    /// <summary>The shaded image, as normal.</summary>
     Off,
 
-    /// <summary>Distance from the eye, auto-ranged over the geometry actually on screen.</summary>
     Depth,
 
-    /// <summary>Surface orientation, reconstructed from the depth buffer and encoded as colour.</summary>
     Normals,
 
-    /// <summary>How many times each pixel was written, as a heat map.</summary>
     Overdraw,
 
-    /// <summary>The shadow-map depth buffer, drawn as the light sees it.</summary>
     ShadowMap,
 
-    /// <summary>
-    /// The occlusion pass's depth pyramid — what the culler tests every other mesh against.
-    ///
-    /// It is the one pass whose working nothing else in the debugger can show. A mesh that
-    /// should have been culled and was not is a question about coverage in this buffer, and
-    /// coverage is invisible in the finished frame by construction: the pass only ever decides
-    /// what <em>not</em> to draw, so when it under-performs the picture is exactly right and
-    /// merely slower.
-    /// </summary>
     OcclusionBuffer,
 
-    /// <summary>
-    /// Which way each pixel's surface is moving, and how fast: direction as hue, speed as
-    /// brightness.
-    ///
-    /// The buffer temporal antialiasing and motion blur are both built on, and the one whose errors
-    /// are invisible in the picture they produce — a velocity that points the wrong way shows up as
-    /// a faint smear or a slow ghost, which looks like the technique being imperfect rather than
-    /// like a buffer being wrong.
-    /// </summary>
     Velocity,
 
-    /// <summary>
-    /// Which mip level each textured pixel was sampled from — level 0 red, and cooler with
-    /// every halving.
-    ///
-    /// Mip selection is the one decision in the frame with no visible failure mode. Too fine a
-    /// level shimmers, which reads as the texture being noisy; too coarse is blurry, which
-    /// reads as the texture being low-resolution — and a level chosen per triangle can be
-    /// wrong for one triangle in a strip and right for the next, which reads as nothing at
-    /// all. The view makes it a picture: a floor running away from the camera should fade
-    /// evenly through the ramp, and any band that jumps two levels at a seam is a footprint
-    /// being measured wrong.
-    /// </summary>
     MipLevel,
 }

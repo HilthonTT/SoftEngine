@@ -5,11 +5,6 @@ using SoftEngine.Core.Textures;
 
 namespace SoftEngine.Core.Rasterization.Shaders;
 
-/// <summary>
-/// Samples a texture at the interpolated UV and applies the interpolated light. Samples
-/// one mip level, chosen per triangle by the painter; filtering is nearest or bilinear,
-/// and the light can be applied in linear space (gamma-correct).
-/// </summary>
 public readonly struct TexturedShader : IPixelShader<TextureVarying>
 {
     private readonly TextureSampler _albedo;
@@ -25,11 +20,6 @@ public readonly struct TexturedShader : IPixelShader<TextureVarying>
     {
     }
 
-    /// <summary>
-    /// Shades from a sampler the caller has already bound. For a painter that needs the same
-    /// binding twice — the colour here and the alpha as a cutout mask — so the two cannot
-    /// come from different mip levels of the same map.
-    /// </summary>
     public TexturedShader(in TextureSampler albedo, bool gammaCorrect)
     {
         _albedo = albedo;

@@ -1,13 +1,5 @@
 namespace SoftEngine.Cli.Options;
 
-/// <summary>
-/// What the flags are called, in prose.
-///
-/// A file of its own because it is documentation that happens to be compiled: it is edited when
-/// the wording is wrong, which is a different occasion from the parser being edited because the
-/// behaviour is. Grouped and ordered the way somebody reading it for the first time would want,
-/// not the way <see cref="RenderOptionsParser"/> happens to switch on them.
-/// </summary>
 internal static class UsageText
 {
     public static void Print()

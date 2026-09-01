@@ -42,7 +42,6 @@ public class EditingTests
         Assert.Equal(original.Scale, copy.Scale);
         Assert.Equal(original.Opacity, copy.Opacity);
 
-        // Moving the copy must not move what it was copied from.
         copy.Position = new Vector3(-5f, 0f, 0f);
         Assert.Equal(new Vector3(1f, 2f, 3f), original.Position);
     }
@@ -50,8 +49,6 @@ public class EditingTests
     [Fact]
     public void Duplicate_DoesNotShareTriangleColours()
     {
-        // Every Cube shares one static colour array, so a duplicate that shared it too would mean
-        // recolouring one cube recolours every copy of every cube.
         var original = new Cube();
         var copy = original.Duplicate();
 
@@ -65,8 +62,6 @@ public class EditingTests
     [Fact]
     public void Duplicate_KeepsTheRotationSeparate()
     {
-        // Rotation3D is a mutable class, so a duplicate holding the original's instance would turn
-        // with it — the same trap TransformState was written to avoid.
         var original = new Cube();
         original.Rotation.YYaw = 0.5f;
 
@@ -118,8 +113,6 @@ public class EditingTests
 
         edit!.Revert();
 
-        // Back in the middle, not on the end: a scene document and the debugger's obj:N both address
-        // meshes by index, so putting it back anywhere else renumbers everything after it.
         Assert.Equal([a, b, c], world.Meshes);
     }
 
@@ -181,7 +174,6 @@ public class EditingTests
         var history = new EditHistory();
         history.Push(composite);
 
-        // One entry on the stack, not three: one gesture, one undo.
         Assert.Equal("Move 3 meshes", history.NextUndo);
 
         history.Undo();
@@ -205,8 +197,6 @@ public class EditingTests
         var mesh = new Cube();
         var unchanged = TransformState.Of(mesh);
 
-        // A drag that moved nothing produces no edits, and no edit at all is the right answer —
-        // otherwise the first Ctrl+Z after a misclick appears to do nothing.
         Assert.Null(CompositeEdit.Combine([null, null], "Move"));
 
         var single = TransformEdit.Between(mesh, unchanged with { Position = new Vector3(1f, 0f, 0f) }, "Move");
@@ -255,8 +245,6 @@ public class EditingTests
 
         settings.HighlightedMeshes.Add(7);
 
-        // The singular property is the first of them, which is what a backend that can only outline
-        // one mesh reads.
         Assert.Equal(3, settings.HighlightedMesh);
 
         settings.HighlightedMesh = -1;
@@ -286,7 +274,6 @@ public class EditingTests
 
             renderer.Render(scene, new FlatPainter());
 
-            // The highlight is drawn in amber, which nothing else in this scene is.
             var amber = 0;
 
             for (var i = 0; i < scene.Surface.Screen.Length; i++)
@@ -351,7 +338,6 @@ public class EditingTests
         var spot = new SpotLight { Position = new Vector3(4f, 6f, 0), Direction = -Vector3.UnitY, Range = 8f };
         var directional = new DirectionalLight { Direction = new Vector3(-0.4f, -1f, -0.3f) };
 
-        // An empty world draws nothing at all, so every lit pixel is a marker.
         Assert.Equal(0, Drawn(showLights: false, point));
 
         var one = Drawn(showLights: true, point);
@@ -367,7 +353,6 @@ public class EditingTests
         var surface = new FrameBuffer(32, 32) { Stats = new RenderStats() };
         surface.Clear();
 
-        // A directional light whose direction is zero has no line to draw and no way to guess one.
         LightGizmo.Draw(surface, Matrix4x4.Identity, [new DirectionalLight { Direction = Vector3.Zero }], 1f);
 
         Assert.All(surface.Screen, pixel => Assert.Equal(0, pixel & 0x00FFFFFF));

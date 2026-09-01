@@ -12,19 +12,6 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Tests.Pipeline;
 
-/// <summary>
-/// Phase 1 no longer runs in the order it reports: it decides each mesh's fate in one pass, does
-/// the work in two parallel ones, and records what happened in a fourth.
-///
-/// <para>
-/// The golden suite already compares the two configurations pixel for pixel, and that is the
-/// check that would catch a vertex computed wrongly. What it cannot catch is a reordering,
-/// because for opaque geometry the z-buffer makes the fill order-independent — the same pixels
-/// come out whichever triangle reached them first. This is where the order itself is pinned:
-/// the event log's, which is read top to bottom as an account of what the renderer did, and the
-/// draw list's, which is visible in how much work the depth test managed to reject.
-/// </para>
-/// </summary>
 public class CullPhaseTests
 {
     private const int Width = 320;
@@ -60,9 +47,6 @@ public class CullPhaseTests
         renderer.Settings.BackFaceCulling = true;
         renderer.Settings.OcclusionCulling = false;
 
-        // Recording is the subject here, and it is also what puts phase 1 on the unordered
-        // path: a captured frame is walked in the world's own order so that the account it
-        // gives is of the world as it is written down.
         renderer.Diagnostics.Events.IsEnabled = true;
 
         var scene = new Scene
@@ -80,7 +64,6 @@ public class CullPhaseTests
         return (renderer, scene);
     }
 
-    /// <summary>The phase-1 events, in the order they were recorded, paired with the mesh they name.</summary>
     private static List<(GraphicsEventKind Kind, int ObjectId)> PhaseOneEvents(Renderer renderer, Scene scene)
     {
         var meshIdBase = SceneObjectIds.Mesh(scene.World.Lights.Count, 0);
@@ -110,11 +93,6 @@ public class CullPhaseTests
         return recorded;
     }
 
-    /// <summary>
-    /// Four meshes, one of each outcome, in an order that interleaves the rejected with the
-    /// drawn. A phase that recorded its rejections separately from its survivors would pass any
-    /// assertion about which events are present and fail this one.
-    /// </summary>
     [Fact]
     public void PhaseOne_RecordsEachMeshInWorldOrder()
     {
@@ -143,10 +121,6 @@ public class CullPhaseTests
             PhaseOneEvents(renderer, scene));
     }
 
-    /// <summary>
-    /// The same account whether the phase divided its work or not. The seam exists so this can
-    /// be asked rather than assumed; see <see cref="Renderer.ParallelCullPhase"/>.
-    /// </summary>
     [Fact]
     public void PhaseOne_RecordsTheSameAccountSequentially()
     {
@@ -154,8 +128,6 @@ public class CullPhaseTests
 
         try
         {
-            // Dense enough that the passes actually divide: the triangle pass takes the
-            // parallel path only above a couple of thousand triangles, which one cube is not.
             var meshes = new IMesh[64];
 
             for (var i = 0; i < meshes.Length; i++)
@@ -180,7 +152,6 @@ public class CullPhaseTests
             Assert.NotEmpty(parallel);
             Assert.Equal(sequential, parallel);
 
-            // The counters the same events carry, which is the other half of the account.
             Assert.Equal(sequentialRenderer.Stats.DrawnTriangleCount, parallelRenderer.Stats.DrawnTriangleCount);
             Assert.Equal(sequentialRenderer.Stats.FacingBackTriangleCount, parallelRenderer.Stats.FacingBackTriangleCount);
             Assert.Equal(sequentialRenderer.Stats.OutOfViewTriangleCount, parallelRenderer.Stats.OutOfViewTriangleCount);
@@ -193,18 +164,6 @@ public class CullPhaseTests
         }
     }
 
-    /// <summary>
-    /// The draw list's order, pinned through the one thing that can see it.
-    ///
-    /// <para>
-    /// Two nested spheres, so most of the outer one's pixels are drawn over and most of the
-    /// inner one's are rejected. How many the depth test rejects, and how many triangles the
-    /// tile's coarse bound drops whole, both depend on what was drawn before what — which is
-    /// the entire reason the fill is handed its triangles nearest-mesh-first. Reverse a mesh's
-    /// triangles and the picture is identical while both counters move; that is the failure
-    /// this exists to catch, and nothing else in the suite would notice it.
-    /// </para>
-    /// </summary>
     [Fact]
     public void PhaseOne_CollectsTheTrianglesInTheSameOrderEitherWay()
     {
@@ -237,12 +196,6 @@ public class CullPhaseTests
         }
     }
 
-    /// <summary>
-    /// A mesh straddling the near plane is the one case phase 1 cannot finish in parallel: its
-    /// sub-triangles are appended to the mesh's own buffer, so the split is left to the
-    /// sequential pass at the end. Worth a case of its own, because a frame usually has none —
-    /// and a path that only runs when something touches the lens is a path that goes untested.
-    /// </summary>
     [Fact]
     public void PhaseOne_ClipsAcrossTheNearPlaneWithTheSameResultEitherWay()
     {
@@ -250,10 +203,6 @@ public class CullPhaseTests
 
         try
         {
-            // A ground plane just below the eye and long enough to run out past the camera, so
-            // it crosses the near plane in the middle of the frame rather than off the edge of
-            // it. Subdivided past the threshold the triangle pass parallelizes at, so the
-            // straddlers being marked and the bands being merged are both on the divided path.
             static IMesh[] Straddling() =>
             [
                 new PlaneMesh(600f, 600f, 40, 40) { Position = new Vector3(0f, -0.02f, 0f) },

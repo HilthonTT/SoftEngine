@@ -2,28 +2,20 @@ using SoftEngine.Gpu;
 
 namespace SoftEngine.Core.Tests.Gpu;
 
-/// <summary>
-/// What the GPU backend concludes from the strings a driver reports about itself.
-///
-/// This is the part of "render on the GPU" that has to be right even when there is no GPU:
-/// an OpenGL context is perfectly happy to be served by a CPU implementation, and offering
-/// that as hardware acceleration would be a promise the frame time then breaks. None of
-/// these tests create a context, so they run anywhere.
-/// </summary>
 public class GpuAdapterTests
 {
     private static GpuAdapter Adapter(string vendor, string renderer) =>
         new(vendor, renderer, "4.6.0", "4.60");
 
     [Theory]
-    // Mesa's software paths, which is what a Linux machine with no driver falls back to.
+
     [InlineData("Mesa/X.org", "llvmpipe (LLVM 15.0.7, 256 bits)")]
     [InlineData("VMware, Inc.", "softpipe")]
     [InlineData("Mesa Project", "Software Rasterizer")]
-    // Windows' own fallbacks.
+
     [InlineData("Microsoft Corporation", "GDI Generic")]
     [InlineData("Microsoft Corporation", "D3D12 (Microsoft Basic Render Driver)")]
-    // Google's, which is what a headless browser or a CI container usually has.
+
     [InlineData("Google Inc.", "SwiftShader Device (Subzero)")]
     public void Classify_SoftwareImplementation_IsNotHardware(string vendor, string renderer)
     {
@@ -49,8 +41,7 @@ public class GpuAdapterTests
     [Theory]
     [InlineData("Intel", "Intel(R) UHD Graphics 620")]
     [InlineData("Intel", "Intel(R) Iris(R) Xe Graphics")]
-    // The bare name this project's own development machine reports, which matches none of
-    // the model-name markers and has to be settled by the vendor.
+
     [InlineData("Intel", "Intel(R) Graphics")]
     [InlineData("Apple", "Apple M2 Pro")]
     [InlineData("Qualcomm", "Adreno (TM) 740")]
@@ -62,12 +53,6 @@ public class GpuAdapterTests
         Assert.True(adapter.IsHardwareAccelerated);
     }
 
-    /// <summary>
-    /// A device nothing here recognizes is treated as hardware, which is the safe direction:
-    /// new graphics cards appear constantly and new CPU rasterizers essentially never, so an
-    /// unknown name is far likelier to be the first than the second. Refusing to render on it
-    /// would be the more damaging mistake.
-    /// </summary>
     [Fact]
     public void Classify_UnknownDevice_IsTreatedAsHardware()
     {
@@ -77,11 +62,6 @@ public class GpuAdapterTests
         Assert.True(adapter.IsHardwareAccelerated);
     }
 
-    /// <summary>
-    /// A discrete card whose name also contains an integrated marker is still discrete —
-    /// Intel ships both under overlapping names, and the add-in card must not be reported as
-    /// on-package silicon.
-    /// </summary>
     [Fact]
     public void Classify_DiscreteNameInsideIntegratedVendor_PrefersDiscrete()
     {
@@ -115,10 +95,6 @@ public class GpuAdapterTests
         Assert.False(RenderBackends.TryParse("vulkan", out _));
     }
 
-    /// <summary>
-    /// Asking for the CPU never touches OpenGL, never probes for an adapter, and never
-    /// reports a fallback — choosing the software rasterizer is a decision, not a failure.
-    /// </summary>
     [Fact]
     public void Create_Cpu_UsesTheSoftwareRendererWithoutProbing()
     {

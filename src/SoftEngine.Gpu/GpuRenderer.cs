@@ -2,7 +2,6 @@
 using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
-using SoftEngine.Core.Gizmos;
 using SoftEngine.Core.Pipeline;
 using SoftEngine.Core.Pipeline.Culling;
 using SoftEngine.Core.Pipeline.Debugging;
@@ -19,47 +18,10 @@ using Texture = SoftEngine.Core.Textures.Texture;
 
 namespace SoftEngine.Gpu;
 
-/// <summary>
-/// The same pipeline as <see cref="Renderer"/>, with the fill on a graphics card.
-///
-/// <para>
-/// It is a drop-in for the software renderer, not a different program: the same
-/// <see cref="Scene"/>, the same <see cref="IPainter"/> choosing the shading model, the same
-/// <see cref="RendererSettings"/>, and a finished frame in the same
-/// <see cref="FrameBuffer"/>. What changes is where the triangles are rasterized — and,
-/// consequently, how the cost of a frame scales. The software rasterizer pays per pixel per
-/// triangle on a handful of cores; a graphics card pays for the same work on hundreds, which
-/// is worth an order of magnitude on a dense scene at a large viewport and worth very little
-/// on a cube.
-/// </para>
-///
-/// <para>
-/// The division of labour is deliberate. Everything that scales with triangles times pixels —
-/// the shadow cascades, the opaque fill, the sky, the transparent blend, the wireframe — runs
-/// on the GPU. Everything that runs once over the finished image and already exists on the
-/// CPU — the post-process stack, the debug views, the gizmos and the grid — is left where it
-/// is, over a frame read back into the engine's own buffers. Porting those too would double
-/// them, and they are not what a frame's time goes on.
-/// </para>
-///
-/// <para><b>What it does not do.</b> The per-pixel history the graphics debugger records is a
-/// log of every write the software rasterizer attempted, including the ones the depth test
-/// rejected. A GPU discards those inside the hardware and has nowhere to write them down, so
-/// a probed pixel reports nothing here. The event list and the frame statistics are recorded
-/// as usual.
-/// </para>
-///
-/// <para>
-/// An OpenGL context belongs to one thread. Construct and call this from the same thread
-/// throughout — the UI thread in the viewer, the main thread in the command-line renderer.
-/// </para>
-/// </summary>
 public sealed class GpuRenderer : IRenderer, IDisposable
 {
-    /// <summary>As many lights as the fragment shader declares room for.</summary>
     public const int MaxLights = 16;
 
-    /// <summary>Frames a cached mesh may go unused before its buffers are released.</summary>
     private const int MeshCacheGrace = 120;
 
     private readonly GpuContext _context;
@@ -73,7 +35,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
     private readonly GpuProgram _overdrawProgram;
     private readonly GpuProgram _overdrawSkyProgram;
 
-    // Built on the first frame that shows the overdraw view, and never otherwise.
     private GpuOverdrawPass? _overdraw;
 
     private readonly GpuRenderTarget _target;
@@ -83,12 +44,8 @@ public sealed class GpuRenderer : IRenderer, IDisposable
     private readonly Dictionary<IMesh, CachedMesh> _meshes = [];
     private readonly List<IMesh> _evicted = [];
 
-    // A vertex array with nothing in it, for the draws that generate their own geometry from
-    // the vertex index. A core profile refuses to draw without one bound.
     private readonly uint _emptyVertexArray;
 
-    // Counts fragments that survived the depth test, which is the GPU's answer to the
-    // software rasterizer's drawn-pixel counter.
     private readonly uint _pixelQuery;
 
     private float[] _vertexScratch = [];
@@ -101,13 +58,9 @@ public sealed class GpuRenderer : IRenderer, IDisposable
     private readonly Vector3[] _lightColor = new Vector3[MaxLights];
     private readonly Vector4[] _lightParams = new Vector4[MaxLights];
 
-    // Draw order for one frame, rebuilt each time: opaque in world order, transparent sorted
-    // farthest first so the blends land in the right order.
     private readonly List<int> _opaque = [];
     private readonly List<(int Mesh, float Depth)> _transparent = [];
 
-    // The last environment reduced to an ambient cube, and what it was reduced with. The
-    // reduction walks every texel of six faces, so it is kept until the scene changes one.
     private CubeMap? _ambientSource;
     private float _ambientIntensity = float.NaN;
     private AmbientCube _ambientCube;
@@ -138,11 +91,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         _pixelQuery = _gl.GenQuery();
     }
 
-    /// <summary>
-    /// Creates a renderer on its own context, or explains why it could not.
-    /// <paramref name="error"/> carries a message fit to show a user — no graphics driver and
-    /// no display are ordinary situations, and both mean the CPU renderer is the answer.
-    /// </summary>
     public static bool TryCreate(out GpuRenderer? renderer, out string? error)
     {
         renderer = null;
@@ -159,9 +107,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         }
         catch (InvalidOperationException exception)
         {
-            // A driver that reports 3.3 and then fails to compile the shaders is a real
-            // situation on old integrated parts, and it has to read as "no GPU here" rather
-            // than as a crash.
             error = $"The GPU backend could not start on {context!.Adapter.Renderer}: {exception.Message}";
 
             context.Dispose();
@@ -169,10 +114,8 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         }
     }
 
-    /// <summary>Creates a renderer on a context the caller owns and will dispose.</summary>
     public static GpuRenderer On(GpuContext context) => new(context, ownsContext: false);
 
-    /// <summary>The device this renderer is running on.</summary>
     public GpuAdapter Adapter => _context.Adapter;
 
     public RendererSettings Settings { get; set; } = new();
@@ -203,35 +146,17 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         events.Add(GraphicsEventKind.FrameBegin, -1, Diagnostics.FrameNumber);
         events.Add(GraphicsEventKind.RendererSetViewport, SceneObjectIds.RenderTarget, surface.Width, surface.Height);
 
-        // A GPU discards a failed depth test inside the hardware, where there is nothing to
-        // record. Rather than report a partial history that would be read as the whole one,
-        // the probe reports nothing at all.
         Diagnostics.PixelHistory = null;
 
         var projection = scene.Projection;
 
         surface.SetHighDynamicRange(scene.HighDynamicRange);
 
-        // Counting costs a whole extra pass over the frame's geometry, so it is on only
-        // while the view that reads it is being shown — as on the CPU, where the counters
-        // are allocated and incremented for the same reason.
         var countOverdraw = settings.DebugView == DebugView.Overdraw;
         surface.SetOverdrawCounting(countOverdraw);
 
-        // The mip level is chosen per triangle inside the software painters; here it is chosen
-        // by the hardware's own sampler, per pixel, with nowhere to write it down. Switched
-        // off rather than left alone: a frame drawn on the CPU before the backend was switched
-        // would otherwise leave its levels in the buffer, and the view would present them as
-        // this frame's.
         surface.SetMipLevelRecording(false);
 
-        // And the same for the reflection pass's surface channel, for the same reason and with
-        // the same consequence: the backend's fragment shaders write one target, so nothing
-        // here records what a surface reflects, and the stack's reflection effect finds no
-        // reflectance and leaves the frame alone. A GPU frame therefore keeps the environment
-        // reflection its shaders applied and gains no screen-space one — which is a real
-        // difference between the backends, and a smaller lie than reflecting this frame's
-        // geometry through the last CPU frame's materials.
         surface.SetReflectanceRecording(false);
 
         if (projection.IsOrthographic)
@@ -251,8 +176,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         var projectionMatrix = projection.ProjectionMatrix(surface.Width, surface.Height);
         var viewProjection = viewMatrix * projectionMatrix;
 
-        // Camera.Position is the translation fed into the view matrix, not the eye's world
-        // position — invert the view matrix to get the true eye point, as the lit painters do.
         var eye = Matrix4x4.Invert(viewMatrix, out var inverseView)
             ? inverseView.Translation
             : scene.Camera.Position;
@@ -268,8 +191,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
 
         _target.Resize(surface.Width, surface.Height, surface.IsHighDynamicRange);
 
-        // The shadow pass first: every subsequent shade reads the map, so it has to be
-        // complete before any of them start.
         var castsShadow = shadowLight >= 0 && _shadows.Render(
             scene,
             SceneLights.Resolve(scene.World, painter?.FallbackLight),
@@ -283,9 +204,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
                 _shadows.Resolution, _shadows.TriangleCount, _shadows.CascadeCount);
         }
 
-        // The shadow-map view reads Scene.ShadowMap, which on this backend lives in a texture.
-        // Copying it back is only worth doing when that view is open — shading samples the
-        // texture directly and never needs it here.
         scene.ShadowMap = castsShadow && settings.DebugView == DebugView.ShadowMap
             ? _shadows.ReadBack(scene.Shadows.Strength, scene.Shadows.SoftFilter)
             : null;
@@ -309,10 +227,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
             DrawOpaque(scene, mode, painter, viewMatrix, viewProjection, events);
         }
 
-        // The sky fills whatever the opaque pass left untouched. It has to run between the two
-        // fills — after the opaque one so it only shades pixels no surface covered, before the
-        // transparent one because that blends without writing depth, and a sky drawn afterwards
-        // would paint over the glass rather than behind it.
         if (scene.ShowSky && scene.Environment is { } environment && !projection.IsOrthographic)
         {
             events.Add(GraphicsEventKind.SkyRender, SceneObjectIds.RenderTarget, surface.Width, surface.Height);
@@ -344,7 +258,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         {
             CountOverdraw(scene, viewProjection);
 
-            // Back to the scene target: the counter pass drew into its own.
             _target.Bind();
         }
 
@@ -354,26 +267,28 @@ public sealed class GpuRenderer : IRenderer, IDisposable
 
         if (!needsDepth)
         {
-            // Nothing this frame is going to read the z-buffer, so it was not transferred —
-            // but leaving last frame's depth in it, or the zeroes a freshly allocated one
-            // starts at, is a buffer that lies: zero is the near plane, so every pixel would
-            // read as having something right in front of the camera. Resetting it to the
-            // cleared value says what is true, which is that this frame recorded no depth.
             surface.ClearDepth();
         }
 
         _gl.GetQueryObject(_pixelQuery, QueryObjectParameterName.Result, out uint drawnPixels);
         Stats.AddPixelCounts((int)System.Math.Min(drawnPixels, int.MaxValue), 0);
 
-        // From here on the frame is an ordinary FrameBuffer again, and the passes that work
-        // over a finished image are the engine's own.
-        DrawCpuOverlays(scene, settings, viewProjection, events);
+        SceneOverlayPass.DrawWorldGizmos(scene, settings, viewProjection, events, recordProbeContext: false);
+        SceneOverlayPass.DrawTransformGizmo(scene, settings, viewProjection, events, recordProbeContext: false);
 
-        ResolveFrame(surface, projection, events);
+        FrameResolvePass.Resolve(surface, projection, PostProcess, events);
 
         if (settings.DebugView != DebugView.Off)
         {
-            RenderDebugView(surface, scene, projection, events, settings.DebugView);
+            FrameResolvePass.RenderDebugView(
+                ref _visualizer,
+                surface,
+                scene,
+                projection,
+                events,
+                settings.DebugView,
+                occlusion: null,
+                velocity: null);
         }
 
         Stats.StopTime();
@@ -385,7 +300,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         EvictStaleMeshes();
     }
 
-    /// <summary>The colour a picked mesh is outlined in, matching the software renderer's.</summary>
     private static readonly Vector3 HighlightColor = new(255f / 255f, 190f / 255f, 60f / 255f);
 
     private static readonly Vector3 WireframeColor = new(1f, 0f, 1f);
@@ -394,17 +308,10 @@ public sealed class GpuRenderer : IRenderer, IDisposable
 
     #region Geometry
 
-    /// <summary>
-    /// Brings every mesh's buffers up to date and builds the tangent frames the mode is going
-    /// to read. Both have to happen before anything is drawn: a tangent array built after the
-    /// upload would not be in it.
-    /// </summary>
     private void PrepareGeometry(Scene scene, GpuShadingMode mode)
     {
         var meshes = scene.World.Meshes;
 
-        // A world that animates rewrites its vertices in place every frame, so the reference
-        // check that spares a static mesh its upload cannot see the change.
         var deforming = scene.World.IsAnimated;
 
         var wantsTangents = mode.UsesTangents();
@@ -450,23 +357,10 @@ public sealed class GpuRenderer : IRenderer, IDisposable
 
             cached.Mesh.Upload(mesh, _vertexScratch, _indexScratch, force: deforming);
 
-            // Only the modes that read a base colour need them, and only a world that
-            // actually varies colour per face has any.
             cached.Mesh.UploadTriangleColors(mesh);
         }
     }
 
-    /// <summary>
-    /// Splits the world into what will be drawn opaque and what will be blended, rejecting
-    /// meshes whose bounding sphere is entirely outside the frustum.
-    ///
-    /// <para>
-    /// Frustum culling survives the move to the GPU because it removes draw calls, which are
-    /// the thing a GPU frame is actually short of. The occlusion pass does not: it exists to
-    /// spare the software rasterizer the fill of geometry it cannot see, and the hardware's
-    /// own early-depth rejection does that job without a pre-pass over the frame.
-    /// </para>
-    /// </summary>
     private void Cull(Scene scene, in Matrix4x4 viewMatrix, in Matrix4x4 projectionMatrix)
     {
         _opaque.Clear();
@@ -504,8 +398,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
 
             if (mesh.Opacity < 1f)
             {
-                // Negated so an ascending sort puts the farthest mesh first. The view looks
-                // down -Z, so a farther mesh has the more negative centre.
                 _transparent.Add((i, viewCenter.Z));
             }
             else
@@ -552,10 +444,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
 
     #region Lights and per-frame uniforms
 
-    /// <summary>
-    /// Flattens the frame's lights into the arrays the shader reads, and returns the index of
-    /// the one the shadow map was rendered from — or -1 when nothing casts.
-    /// </summary>
     private int FlattenLights(LightSet lights)
     {
         var count = System.Math.Min(lights.Count, MaxLights);
@@ -583,7 +471,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         return shadowLight;
     }
 
-    /// <summary>The frame's ambient light, reduced from the environment when it has one.</summary>
     private AmbientCube ResolveAmbient(Scene scene, IPainter? painter)
     {
         var level = painter?.AmbientLevel ?? 0f;
@@ -645,13 +532,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
 
         program.SetArray("uAmbient", faces);
 
-        // Shadows.
-        //
-        // The sampler is pointed at unit 6 whether or not the frame casts, and the cube map
-        // at unit 5 whether or not there is one. Two samplers of different types left on the
-        // same unit — which is what happens when an unused one keeps its default of 0 while
-        // the albedo map is bound there — is undefined behaviour, and a driver is entitled to
-        // fail the whole draw over a branch the shader never takes.
         program.Set("uShadowMap", 6);
         program.Set("uEnvironment", 5);
 
@@ -677,7 +557,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
             _shadows.BindPlaceholder(TextureUnit.Texture6);
         }
 
-        // Fog
         var fog = scene.Fog;
 
         if (fog is { Enabled: true })
@@ -705,7 +584,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
             program.Set("uFogMode", 0);
         }
 
-        // Environment, for the physically-based path's reflections.
         if (mode == GpuShadingMode.PhysicallyBased && scene.Environment is { } environment && scene.AmbientFromEnvironment)
         {
             _textures.BindCube(TextureUnit.Texture5, _textures.GetCube(environment));
@@ -720,16 +598,13 @@ public sealed class GpuRenderer : IRenderer, IDisposable
             program.Set("uHasEnvironment", false);
         }
 
-        // Every sampler gets a texture unit, whether or not this frame's mode reads it: an
-        // unbound sampler is undefined behaviour even on a branch nothing takes.
         program.Set("uAlbedoMap", 0);
         program.Set("uNormalMap", 1);
         program.Set("uSpecularMap", 2);
         program.Set("uMetallicMap", 3);
         program.Set("uRoughnessMap", 4);
         program.Set("uEmissiveMap", 7);
-        // Unit 8 is the buffer sampler's alone, so it never collides with another type even
-        // on a frame where no mesh binds one.
+
         program.Set("uTriangleColors", 8);
     }
 
@@ -749,10 +624,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
     {
         _gl.Enable(EnableCap.DepthTest);
 
-        // Less-or-equal, not less. FrameBuffer.PutPixel admits a pixel at exactly the stored
-        // depth — `z <= previousDepth` — so the last coplanar surface drawn is the one that
-        // shows. A strict test would let the first one win instead, and two backends that
-        // disagree about which of two coplanar faces is visible disagree visibly.
         _gl.DepthFunc(DepthFunction.Lequal);
         _gl.DepthMask(true);
         _gl.Disable(EnableCap.Blend);
@@ -780,8 +651,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         in Matrix4x4 viewProjection,
         GraphicsEventLog events)
     {
-        // Depth-tested but never depth-written, so transparent surfaces do not occlude what
-        // is drawn after them — the same rule PutPixelBlend follows.
         _gl.Enable(EnableCap.DepthTest);
         _gl.DepthFunc(DepthFunction.Lequal);
         _gl.DepthMask(false);
@@ -832,14 +701,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         var program = _sceneProgram;
         var material = mesh.Material;
 
-        // Where the base colour comes from, following the painters exactly.
-        //
-        // Only the material and physically-based paths read Material.Diffuse. The older modes
-        // are handed the triangle's own colour by the renderer and never look at the material
-        // at all — which is not an oversight but the thing that distinguishes them, and a mesh
-        // carrying a dark material renders in its triangle colours under Gouraud and in the
-        // material's under Material. Reading the material in both would quietly turn every
-        // mode into the material one.
         var readsMaterialColor = mode is GpuShadingMode.Material or GpuShadingMode.PhysicallyBased;
 
         var useTriangleColors = geometry.HasTriangleColors && !(readsMaterialColor && material is not null);
@@ -861,18 +722,12 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         var filtering = painter?.Filtering ?? TextureFiltering.Bilinear;
         var mipMaps = painter?.UseMipMaps ?? true;
 
-        // A mesh with no UVs shades from the flat colour: sampling a map without them would
-        // read texel (0, 0) across the whole surface.
         var textured = mode.UsesTextures() && mesh.TexCoords is not null;
 
-        // The textured mode predates materials and reads the mesh's own texture; the material
-        // and physically-based modes read the material's maps.
         var albedo = mode == GpuShadingMode.Textured ? mesh.Texture : material?.DiffuseMap;
 
         BindMap(TextureUnit.Texture0, "uHasAlbedoMap", textured ? albedo : null, filtering, mipMaps);
 
-        // The cutout reads the albedo map's own alpha, so it needs the same map bound and the
-        // UVs to read it at. Zero is no cutout — the shader's branch then never samples.
         program.Set("uAlphaCutoff",
             textured && albedo is not null && material is { IsCutout: true } ? material.AlphaCutoff : 0f);
 
@@ -903,8 +758,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         {
             program.Set("uHasSpecularMap", false);
 
-            // PhongPainter shades every mesh with one highlight, whatever the material says —
-            // it is the mode that predates them.
             program.Set("uSpecularStrength", 0.35f);
             program.Set("uShininess", 32f);
         }
@@ -939,16 +792,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         }
     }
 
-    /// <summary>
-    /// Points the shadow pass's depth program at one caster's alpha mask, or tells it there
-    /// isn't one. Lives here rather than in <see cref="GpuShadowPass"/> because the texture
-    /// cache does, and uploading a map is the one thing the shadow pass would otherwise need
-    /// to know about textures at all.
-    ///
-    /// Nearest and un-mipped, matching what the software pass samples: the shadow map's texel
-    /// density has nothing to do with the camera's, so there is no screen footprint here to
-    /// choose a mip level from.
-    /// </summary>
     private void BindShadowCutout(IMesh mesh, GpuProgram program)
     {
         var cutout = mesh.Material is { IsCutout: true } material && mesh.TexCoords is not null
@@ -1004,9 +847,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         _skyProgram.Set("uIntensity", MathF.Max(0f, scene.SkyIntensity));
         _skyProgram.Set("uHighDynamicRange", highDynamicRange);
 
-        // Drawn at the far plane against an equality test, so it lands on exactly the pixels
-        // the opaque pass left cleared — the GPU's version of asking the depth buffer what is
-        // still at its clear value.
         _gl.Enable(EnableCap.DepthTest);
         _gl.DepthFunc(DepthFunction.Equal);
         _gl.DepthMask(false);
@@ -1021,10 +861,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         _gl.DepthMask(true);
     }
 
-    /// <summary>
-    /// The wireframe overlay and the picked-mesh outline, as line-mode polygons over the
-    /// finished image. <paramref name="meshIndex"/> of -1 draws every mesh the frame drew.
-    /// </summary>
     private void DrawWireframe(Scene scene, in Matrix4x4 viewProjection, Vector3 color, int meshIndex, bool highDynamicRange)
     {
         _overlayProgram.Use();
@@ -1033,16 +869,10 @@ public sealed class GpuRenderer : IRenderer, IDisposable
 
         _gl.Enable(EnableCap.DepthTest);
 
-        // The lines sit exactly on the surfaces they outline, so an exclusive test would
-        // reject every one of them. The software renderer's own z-test admits an equal depth
-        // for the same reason.
         _gl.DepthFunc(DepthFunction.Lequal);
         _gl.DepthMask(false);
         _gl.Disable(EnableCap.Blend);
 
-        // Culled the same way the fill was. The software renderer outlines the triangles in
-        // its own draw list, which back-face culling has already been applied to, so a closed
-        // mesh is outlined on the side facing you and not on the side facing away.
         SetCulling(Settings.BackFaceCulling);
 
         _gl.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Line);
@@ -1075,10 +905,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         _gl.DepthMask(true);
     }
 
-    /// <summary>
-    /// Re-draws the frame's geometry into the overdraw counters. Every mesh the frame drew,
-    /// opaque and transparent alike, because both wrote pixels and both cost what they cost.
-    /// </summary>
     private void CountOverdraw(Scene scene, in Matrix4x4 viewProjection)
     {
         _overdraw ??= new GpuOverdrawPass(_gl);
@@ -1134,9 +960,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         _gl.Enable(EnableCap.CullFace);
         _gl.CullFace(TriangleFace.Back);
 
-        // The projection flips Y so the frame reads back in the software renderer's row
-        // order, and flipping Y reverses the winding of every triangle with it. Declaring
-        // clockwise faces front-facing puts it back.
         _gl.FrontFace(FrontFaceDirection.CW);
     }
 
@@ -1144,11 +967,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
 
     #region Passes over the finished image
 
-    /// <summary>
-    /// Whether anything downstream is going to read the z-buffer. The transfer is the same
-    /// size as the colour one, so a frame that draws no overlays, runs no effects and shows
-    /// no buffer skips it.
-    /// </summary>
     private bool NeedsDepthReadBack(Scene scene, RendererSettings settings) =>
         settings.ShowXZGrid
         || settings.ShowAxes
@@ -1157,99 +975,6 @@ public sealed class GpuRenderer : IRenderer, IDisposable
         || settings.DebugView != DebugView.Off
         || PostProcess is { HasEffects: true }
         || Diagnostics.IsProbing;
-
-    /// <summary>
-    /// The overlays that are not part of the scene — the ground grid, the world axes, the
-    /// skeleton and the transform handles. They are drawn on the CPU, into the frame that has
-    /// just been read back, because each is a handful of depth-tested lines and reproducing
-    /// them on the GPU would buy nothing measurable.
-    /// </summary>
-    private void DrawCpuOverlays(Scene scene, RendererSettings settings, in Matrix4x4 viewProjection, GraphicsEventLog events)
-    {
-        var surface = scene.Surface;
-
-        if (settings.ShowXZGrid)
-        {
-            const float gridFrom = -10f;
-            const float gridTo = 10f;
-
-            var gridLines = ((int)(gridTo - gridFrom) + 1) * 2;
-
-            events.Add(GraphicsEventKind.GizmoDrawGrid, -1, gridLines, gridFrom, gridTo);
-            GizmoRenderer.DrawGrid(surface, viewProjection, gridFrom, gridTo);
-        }
-
-        if (settings.ShowAxes)
-        {
-            events.Add(GraphicsEventKind.GizmoDrawAxes);
-            GizmoRenderer.DrawAxes(surface, viewProjection);
-        }
-
-        if (settings.ShowSkeleton && scene.World.Root is { } root)
-        {
-            var joints = 0;
-            foreach (var _ in root.SelfAndDescendants())
-            {
-                joints++;
-            }
-
-            events.Add(GraphicsEventKind.GizmoDrawSkeleton, -1, joints);
-            GizmoRenderer.DrawSkeleton(surface, viewProjection, root, settings.SkeletonTickSize);
-        }
-
-        if (settings.Gizmo is { IsActive: true } gizmo)
-        {
-            var origin = gizmo.Origin;
-            var scale = TransformGizmo.HandleScale(scene, origin);
-
-            events.Add(GraphicsEventKind.GizmoDrawTransform, -1, (int)gizmo.Mode, scale);
-
-            GizmoRenderer.DrawTransformGizmo(
-                surface,
-                viewProjection,
-                gizmo.Mode,
-                origin,
-                scale,
-                gizmo.IsDragging ? gizmo.ActiveAxis : gizmo.HoveredAxis);
-        }
-    }
-
-    /// <summary>
-    /// The post-process stack, or — with no stack — the encode an HDR target still needs.
-    /// Identical to <see cref="Renderer"/>'s, over the same buffers.
-    /// </summary>
-    private void ResolveFrame(FrameBuffer surface, IProjection projection, GraphicsEventLog events)
-    {
-        var stack = PostProcess is { HasEffects: true } candidate ? candidate : null;
-
-        if (stack is null && !surface.IsHighDynamicRange)
-        {
-            return;
-        }
-
-        events.Add(GraphicsEventKind.PostProcessApply, SceneObjectIds.PostProcess,
-            stack?.EnabledCount ?? 0, surface.Width, surface.Height);
-
-        if (stack is not null)
-        {
-            stack.Apply(surface, projection);
-        }
-        else
-        {
-            surface.ResolveToScreen();
-        }
-    }
-
-    private void RenderDebugView(FrameBuffer surface, Scene scene, IProjection projection, GraphicsEventLog events, DebugView view)
-    {
-        _visualizer ??= new BufferVisualizer();
-
-        // The occlusion pyramid is the software renderer's own pre-pass and does not exist
-        // here, so that view reports having nothing to show rather than presenting a stale one.
-        var drawn = _visualizer.Render(surface, projection, scene.ShadowMap, view, occlusion: null);
-
-        events.Add(GraphicsEventKind.DebugViewRender, SceneObjectIds.RenderTarget, (int)view, drawn ? 1f : 0f);
-    }
 
     #endregion
 

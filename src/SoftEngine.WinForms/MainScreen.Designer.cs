@@ -4,15 +4,9 @@ namespace SoftEngine.WinForms;
 
 public sealed partial class MainScreen
 {
-    /// <summary>
-    /// Required designer variable.
-    /// </summary>
+
     private System.ComponentModel.IContainer components = null;
 
-    /// <summary>
-    /// Clean up any resources being used.
-    /// </summary>
-    /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
     protected override void Dispose(bool disposing)
     {
         if (disposing && (components != null))
@@ -24,10 +18,6 @@ public sealed partial class MainScreen
 
     #region Windows Form Designer generated code
 
-    /// <summary>
-    /// Required method for Designer support - do not modify
-    /// the contents of this method with the code editor.
-    /// </summary>
     private void InitializeComponent()
     {
         components = new System.ComponentModel.Container();
@@ -187,9 +177,7 @@ public sealed partial class MainScreen
         splitCenter.Panel2.SuspendLayout();
         splitCenter.SuspendLayout();
         SuspendLayout();
-        // 
-        // pnlSidebar
-        // 
+
         pnlSidebar.AutoScroll = true;
         pnlSidebar.Controls.Add(tlpSidebar);
         pnlSidebar.Dock = DockStyle.Fill;
@@ -197,9 +185,7 @@ public sealed partial class MainScreen
         pnlSidebar.Name = "pnlSidebar";
         pnlSidebar.Size = new Size(290, 469);
         pnlSidebar.TabIndex = 0;
-        // 
-        // tlpSidebar
-        // 
+
         tlpSidebar.AutoSize = true;
         tlpSidebar.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         tlpSidebar.ColumnCount = 1;
@@ -245,9 +231,7 @@ public sealed partial class MainScreen
         tlpSidebar.RowStyles.Add(new RowStyle());
         tlpSidebar.Size = new Size(273, 1348);
         tlpSidebar.TabIndex = 0;
-        // 
-        // lblTitle
-        // 
+
         lblTitle.AutoSize = true;
         lblTitle.Font = new Font("Segoe UI Semibold", 14F, FontStyle.Bold);
         lblTitle.Location = new Point(16, 12);
@@ -256,9 +240,7 @@ public sealed partial class MainScreen
         lblTitle.Size = new Size(105, 25);
         lblTitle.TabIndex = 0;
         lblTitle.Text = "SoftEngine";
-        // 
-        // lblModelHeader
-        // 
+
         lblModelHeader.AutoSize = true;
         lblModelHeader.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
         lblModelHeader.Location = new Point(18, 55);
@@ -267,9 +249,7 @@ public sealed partial class MainScreen
         lblModelHeader.Size = new Size(46, 13);
         lblModelHeader.TabIndex = 1;
         lblModelHeader.Text = "MODEL";
-        // 
-        // btnLoadModel
-        // 
+
         btnLoadModel.Dock = DockStyle.Fill;
         btnLoadModel.FlatStyle = FlatStyle.Flat;
         btnLoadModel.Location = new Point(16, 74);
@@ -281,9 +261,7 @@ public sealed partial class MainScreen
         btnLoadModel.Text = "Load model…";
         toolTip1.SetToolTip(btnLoadModel, "Pick a bundled world or open an OBJ/Collada file");
         btnLoadModel.UseVisualStyleBackColor = false;
-        // 
-        // lblCurrentModel
-        // 
+
         lblCurrentModel.AutoSize = true;
         lblCurrentModel.Location = new Point(18, 118);
         lblCurrentModel.Margin = new Padding(2, 0, 0, 6);
@@ -291,9 +269,7 @@ public sealed partial class MainScreen
         lblCurrentModel.Size = new Size(34, 17);
         lblCurrentModel.TabIndex = 2;
         lblCurrentModel.Text = "Skull";
-        // 
-        // lblDisplayHeader
-        // 
+
         lblDisplayHeader.AutoSize = true;
         lblDisplayHeader.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
         lblDisplayHeader.Location = new Point(18, 151);
@@ -302,9 +278,7 @@ public sealed partial class MainScreen
         lblDisplayHeader.Size = new Size(51, 13);
         lblDisplayHeader.TabIndex = 3;
         lblDisplayHeader.Text = "DISPLAY";
-        // 
-        // flpDisplay
-        // 
+
         flpDisplay.AutoSize = true;
         flpDisplay.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         flpDisplay.Controls.Add(chkShowTriangles);
@@ -336,9 +310,7 @@ public sealed partial class MainScreen
         flpDisplay.Size = new Size(178, 580);
         flpDisplay.TabIndex = 4;
         flpDisplay.WrapContents = false;
-        // 
-        // chkShowTriangles
-        // 
+
         chkShowTriangles.AutoSize = true;
         chkShowTriangles.Location = new Point(2, 2);
         chkShowTriangles.Margin = new Padding(2, 2, 0, 2);
@@ -347,9 +319,7 @@ public sealed partial class MainScreen
         chkShowTriangles.TabIndex = 0;
         chkShowTriangles.Text = "Triangles";
         chkShowTriangles.UseVisualStyleBackColor = true;
-        // 
-        // chkShowBackFacesCulling
-        // 
+
         chkShowBackFacesCulling.AutoSize = true;
         chkShowBackFacesCulling.Location = new Point(2, 27);
         chkShowBackFacesCulling.Margin = new Padding(2, 2, 0, 2);
@@ -358,9 +328,7 @@ public sealed partial class MainScreen
         chkShowBackFacesCulling.TabIndex = 1;
         chkShowBackFacesCulling.Text = "Back faces culling";
         chkShowBackFacesCulling.UseVisualStyleBackColor = true;
-        // 
-        // chkShowXZGrid
-        // 
+
         chkShowXZGrid.AutoSize = true;
         chkShowXZGrid.Location = new Point(2, 52);
         chkShowXZGrid.Margin = new Padding(2, 2, 0, 2);
@@ -369,9 +337,7 @@ public sealed partial class MainScreen
         chkShowXZGrid.TabIndex = 2;
         chkShowXZGrid.Text = "XZ grid";
         chkShowXZGrid.UseVisualStyleBackColor = true;
-        // 
-        // chkShowAxes
-        // 
+
         chkShowAxes.AutoSize = true;
         chkShowAxes.Location = new Point(2, 77);
         chkShowAxes.Margin = new Padding(2, 2, 0, 2);
@@ -380,9 +346,7 @@ public sealed partial class MainScreen
         chkShowAxes.TabIndex = 3;
         chkShowAxes.Text = "Axes";
         chkShowAxes.UseVisualStyleBackColor = true;
-        // 
-        // chkShowSkeleton
-        // 
+
         chkShowSkeleton.AutoSize = true;
         chkShowSkeleton.Location = new Point(2, 102);
         chkShowSkeleton.Margin = new Padding(2, 2, 0, 2);
@@ -392,9 +356,7 @@ public sealed partial class MainScreen
         chkShowSkeleton.Text = "Skeleton";
         toolTip1.SetToolTip(chkShowSkeleton, "Draw the scene's node hierarchy as bones over the frame");
         chkShowSkeleton.UseVisualStyleBackColor = true;
-        // 
-        // chkAnimate
-        // 
+
         chkAnimate.AutoSize = true;
         chkAnimate.CheckState = CheckState.Checked;
         chkAnimate.Checked = true;
@@ -406,9 +368,7 @@ public sealed partial class MainScreen
         chkAnimate.Text = "Animate";
         toolTip1.SetToolTip(chkAnimate, "Play the loaded world's animation; unchecking holds the current pose");
         chkAnimate.UseVisualStyleBackColor = true;
-        // 
-        // chkFog
-        // 
+
         chkFog.AutoSize = true;
         chkFog.Location = new Point(2, 152);
         chkFog.Margin = new Padding(2, 2, 0, 2);
@@ -418,9 +378,7 @@ public sealed partial class MainScreen
         chkFog.Text = "Fog";
         toolTip1.SetToolTip(chkFog, "Fade distant geometry into the background");
         chkFog.UseVisualStyleBackColor = true;
-        // 
-        // chkShadows
-        // 
+
         chkShadows.AutoSize = true;
         chkShadows.Location = new Point(2, 177);
         chkShadows.Margin = new Padding(2, 2, 0, 2);
@@ -430,9 +388,7 @@ public sealed partial class MainScreen
         chkShadows.Text = "Shadows";
         toolTip1.SetToolTip(chkShadows, "Shadow-map the world from the first light (lit shading modes)");
         chkShadows.UseVisualStyleBackColor = true;
-        // 
-        // chkSky
-        // 
+
         chkSky.AutoSize = true;
         chkSky.Location = new Point(2, 202);
         chkSky.Margin = new Padding(2, 2, 0, 2);
@@ -442,9 +398,7 @@ public sealed partial class MainScreen
         chkSky.Text = "Sky";
         toolTip1.SetToolTip(chkSky, "Draw a procedural sky behind the scene, and take the ambient light from it");
         chkSky.UseVisualStyleBackColor = true;
-        // 
-        // chkHdrSky
-        // 
+
         chkHdrSky.AutoSize = true;
         chkHdrSky.Location = new Point(18, 227);
         chkHdrSky.Margin = new Padding(18, 2, 0, 2);
@@ -454,9 +408,7 @@ public sealed partial class MainScreen
         chkHdrSky.Text = "HDR sun";
         toolTip1.SetToolTip(chkHdrSky, "Build the procedural sky in linear light, with a sun hundreds of times brighter than white");
         chkHdrSky.UseVisualStyleBackColor = true;
-        // 
-        // chkPanorama
-        // 
+
         chkPanorama.AutoSize = true;
         chkPanorama.Enabled = false;
         chkPanorama.Location = new Point(18, 252);
@@ -467,9 +419,7 @@ public sealed partial class MainScreen
         chkPanorama.Text = "No panorama";
         toolTip1.SetToolTip(chkPanorama, "Use the loaded panorama instead of the procedural sky");
         chkPanorama.UseVisualStyleBackColor = true;
-        // 
-        // btnPanorama
-        // 
+
         btnPanorama.AutoSize = true;
         btnPanorama.FlatStyle = FlatStyle.Flat;
         btnPanorama.Location = new Point(18, 277);
@@ -481,9 +431,7 @@ public sealed partial class MainScreen
         btnPanorama.Text = "Load panorama…";
         toolTip1.SetToolTip(btnPanorama, "Open a Radiance .hdr or an image to surround and light the scene with");
         btnPanorama.UseVisualStyleBackColor = false;
-        // 
-        // chkBakedLight
-        // 
+
         chkBakedLight.AutoSize = true;
         chkBakedLight.Enabled = false;
         chkBakedLight.Location = new Point(18, 317);
@@ -494,9 +442,7 @@ public sealed partial class MainScreen
         chkBakedLight.Text = "No baked light";
         toolTip1.SetToolTip(chkBakedLight, "Light the scene with the baked probes instead of the environment's ambient");
         chkBakedLight.UseVisualStyleBackColor = true;
-        // 
-        // btnBake
-        // 
+
         btnBake.AutoSize = true;
         btnBake.FlatStyle = FlatStyle.Flat;
         btnBake.Location = new Point(18, 342);
@@ -508,9 +454,7 @@ public sealed partial class MainScreen
         btnBake.Text = "Bake indirect light";
         toolTip1.SetToolTip(btnBake, "Trace the scene's bounce light into a grid of probes (software rasterizer only)");
         btnBake.UseVisualStyleBackColor = false;
-        // 
-        // chkGammaCorrect
-        // 
+
         chkGammaCorrect.AutoSize = true;
         chkGammaCorrect.Location = new Point(2, 382);
         chkGammaCorrect.Margin = new Padding(2, 2, 0, 2);
@@ -520,9 +464,7 @@ public sealed partial class MainScreen
         chkGammaCorrect.Text = "Gamma-correct light";
         toolTip1.SetToolTip(chkGammaCorrect, "Shade in linear light and encode to sRGB on output");
         chkGammaCorrect.UseVisualStyleBackColor = true;
-        // 
-        // chkHighDynamicRange
-        // 
+
         chkHighDynamicRange.AutoSize = true;
         chkHighDynamicRange.Location = new Point(2, 407);
         chkHighDynamicRange.Margin = new Padding(2, 2, 0, 2);
@@ -532,9 +474,7 @@ public sealed partial class MainScreen
         chkHighDynamicRange.Text = "HDR target";
         toolTip1.SetToolTip(chkHighDynamicRange, "Keep highlights brighter than white in a linear float buffer, for bloom and tone mapping to work with");
         chkHighDynamicRange.UseVisualStyleBackColor = true;
-        // 
-        // chkTextureFiltering
-        // 
+
         chkTextureFiltering.AutoSize = true;
         chkTextureFiltering.Location = new Point(2, 432);
         chkTextureFiltering.Margin = new Padding(2, 2, 0, 2);
@@ -544,9 +484,7 @@ public sealed partial class MainScreen
         chkTextureFiltering.Text = "Texture filtering";
         toolTip1.SetToolTip(chkTextureFiltering, "Bilinear filtering with mip-mapping (Textured shading)");
         chkTextureFiltering.UseVisualStyleBackColor = true;
-        // 
-        // chkTrilinear
-        // 
+
         chkTrilinear.AutoSize = true;
         chkTrilinear.Location = new Point(14, 457);
         chkTrilinear.Margin = new Padding(14, 2, 0, 2);
@@ -556,9 +494,7 @@ public sealed partial class MainScreen
         chkTrilinear.Text = "Trilinear";
         toolTip1.SetToolTip(chkTrilinear, "Blend the two mip levels a surface falls between, instead of stepping from one to the next");
         chkTrilinear.UseVisualStyleBackColor = true;
-        // 
-        // chkSuperSampling
-        // 
+
         chkSuperSampling.AutoSize = true;
         chkSuperSampling.Location = new Point(2, 482);
         chkSuperSampling.Margin = new Padding(2, 2, 0, 2);
@@ -568,9 +504,7 @@ public sealed partial class MainScreen
         chkSuperSampling.Text = "Supersample 2×";
         toolTip1.SetToolTip(chkSuperSampling, "Render at twice the resolution and average down — anti-aliases everything, fills four times the pixels");
         chkSuperSampling.UseVisualStyleBackColor = true;
-        // 
-        // chkTemporalAntiAliasing
-        // 
+
         chkTemporalAntiAliasing.AutoSize = true;
         chkTemporalAntiAliasing.Location = new Point(2, 507);
         chkTemporalAntiAliasing.Margin = new Padding(2, 2, 0, 2);
@@ -580,9 +514,7 @@ public sealed partial class MainScreen
         chkTemporalAntiAliasing.Text = "Temporal AA";
         toolTip1.SetToolTip(chkTemporalAntiAliasing, "Jitter the frame by a fraction of a pixel and average it with the previous ones — supersampling spread over time. Costs a velocity pass.");
         chkTemporalAntiAliasing.UseVisualStyleBackColor = true;
-        // 
-        // chkMotionBlur
-        // 
+
         chkMotionBlur.AutoSize = true;
         chkMotionBlur.Location = new Point(2, 532);
         chkMotionBlur.Margin = new Padding(2, 2, 0, 2);
@@ -592,9 +524,7 @@ public sealed partial class MainScreen
         chkMotionBlur.Text = "Motion blur";
         toolTip1.SetToolTip(chkMotionBlur, "Smear each pixel along the direction its surface is travelling. Costs a velocity pass.");
         chkMotionBlur.UseVisualStyleBackColor = true;
-        // 
-        // chkOrderIndependentTransparency
-        // 
+
         chkOrderIndependentTransparency.AutoSize = true;
         chkOrderIndependentTransparency.Location = new Point(2, 557);
         chkOrderIndependentTransparency.Margin = new Padding(2, 2, 0, 2);
@@ -604,9 +534,7 @@ public sealed partial class MainScreen
         chkOrderIndependentTransparency.Text = "Per-pixel glass";
         toolTip1.SetToolTip(chkOrderIndependentTransparency, "Resolve transparency per pixel instead of by sorting the transparent triangles — correct where glass intersects glass, and where a small pane straddles a large one. Costs storage for the fragments.");
         chkOrderIndependentTransparency.UseVisualStyleBackColor = true;
-        // 
-        // lblShadingHeader
-        // 
+
         lblShadingHeader.AutoSize = true;
         lblShadingHeader.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
         lblShadingHeader.Location = new Point(18, 760);
@@ -615,9 +543,7 @@ public sealed partial class MainScreen
         lblShadingHeader.Size = new Size(57, 13);
         lblShadingHeader.TabIndex = 5;
         lblShadingHeader.Text = "SHADING";
-        // 
-        // flpShading
-        // 
+
         flpShading.AutoSize = true;
         flpShading.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         flpShading.Controls.Add(rdbNoneShading);
@@ -635,9 +561,7 @@ public sealed partial class MainScreen
         flpShading.Size = new Size(122, 200);
         flpShading.TabIndex = 6;
         flpShading.WrapContents = false;
-        // 
-        // rdbNoneShading
-        // 
+
         rdbNoneShading.AutoSize = true;
         rdbNoneShading.Location = new Point(2, 2);
         rdbNoneShading.Margin = new Padding(2, 2, 0, 2);
@@ -647,9 +571,7 @@ public sealed partial class MainScreen
         rdbNoneShading.TabStop = true;
         rdbNoneShading.Text = "None";
         rdbNoneShading.UseVisualStyleBackColor = true;
-        // 
-        // rdbClassicShading
-        // 
+
         rdbClassicShading.AutoSize = true;
         rdbClassicShading.Location = new Point(2, 27);
         rdbClassicShading.Margin = new Padding(2, 2, 0, 2);
@@ -659,9 +581,7 @@ public sealed partial class MainScreen
         rdbClassicShading.TabStop = true;
         rdbClassicShading.Text = "Classic";
         rdbClassicShading.UseVisualStyleBackColor = true;
-        // 
-        // rdbFlatShading
-        // 
+
         rdbFlatShading.AutoSize = true;
         rdbFlatShading.Location = new Point(2, 52);
         rdbFlatShading.Margin = new Padding(2, 2, 0, 2);
@@ -671,9 +591,7 @@ public sealed partial class MainScreen
         rdbFlatShading.TabStop = true;
         rdbFlatShading.Text = "Flat";
         rdbFlatShading.UseVisualStyleBackColor = true;
-        // 
-        // rdbGouraudShading
-        // 
+
         rdbGouraudShading.AutoSize = true;
         rdbGouraudShading.Location = new Point(2, 77);
         rdbGouraudShading.Margin = new Padding(2, 2, 0, 2);
@@ -683,9 +601,7 @@ public sealed partial class MainScreen
         rdbGouraudShading.TabStop = true;
         rdbGouraudShading.Text = "Gouraud";
         rdbGouraudShading.UseVisualStyleBackColor = true;
-        // 
-        // rdbPhongShading
-        // 
+
         rdbPhongShading.AutoSize = true;
         rdbPhongShading.Location = new Point(2, 102);
         rdbPhongShading.Margin = new Padding(2, 2, 0, 2);
@@ -695,9 +611,7 @@ public sealed partial class MainScreen
         rdbPhongShading.TabStop = true;
         rdbPhongShading.Text = "Phong";
         rdbPhongShading.UseVisualStyleBackColor = true;
-        // 
-        // rdbTexturedShading
-        // 
+
         rdbTexturedShading.AutoSize = true;
         rdbTexturedShading.Location = new Point(2, 127);
         rdbTexturedShading.Margin = new Padding(2, 2, 0, 2);
@@ -707,9 +621,7 @@ public sealed partial class MainScreen
         rdbTexturedShading.TabStop = true;
         rdbTexturedShading.Text = "Textured";
         rdbTexturedShading.UseVisualStyleBackColor = true;
-        // 
-        // rdbMaterialShading
-        // 
+
         rdbMaterialShading.AutoSize = true;
         rdbMaterialShading.Location = new Point(2, 152);
         rdbMaterialShading.Margin = new Padding(2, 2, 0, 2);
@@ -720,9 +632,7 @@ public sealed partial class MainScreen
         rdbMaterialShading.Text = "Material";
         toolTip1.SetToolTip(rdbMaterialShading, "Per-pixel albedo, normal and specular maps");
         rdbMaterialShading.UseVisualStyleBackColor = true;
-        // 
-        // rdbPbrShading
-        // 
+
         rdbPbrShading.AutoSize = true;
         rdbPbrShading.Location = new Point(2, 177);
         rdbPbrShading.Margin = new Padding(2, 2, 0, 2);
@@ -733,9 +643,7 @@ public sealed partial class MainScreen
         rdbPbrShading.Text = "Physically based";
         toolTip1.SetToolTip(rdbPbrShading, "Metallic-roughness materials lit by the scene and by the environment");
         rdbPbrShading.UseVisualStyleBackColor = true;
-        // 
-        // lblPostHeader
-        // 
+
         lblPostHeader.AutoSize = true;
         lblPostHeader.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
         lblPostHeader.Location = new Point(18, 989);
@@ -744,9 +652,7 @@ public sealed partial class MainScreen
         lblPostHeader.Size = new Size(105, 13);
         lblPostHeader.TabIndex = 7;
         lblPostHeader.Text = "POST-PROCESSING";
-        // 
-        // flpPost
-        // 
+
         flpPost.AutoSize = true;
         flpPost.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         flpPost.Controls.Add(chkReflections);
@@ -762,9 +668,7 @@ public sealed partial class MainScreen
         flpPost.Size = new Size(135, 150);
         flpPost.TabIndex = 8;
         flpPost.WrapContents = false;
-        //
-        // chkReflections
-        //
+
         chkReflections.AutoSize = true;
         chkReflections.Location = new Point(2, 2);
         chkReflections.Margin = new Padding(2, 2, 0, 2);
@@ -774,9 +678,7 @@ public sealed partial class MainScreen
         chkReflections.Text = "Reflections";
         toolTip1.SetToolTip(chkReflections, "Reflect the scene in glossy and metallic surfaces (CPU only)");
         chkReflections.UseVisualStyleBackColor = true;
-        //
-        // chkSsao
-        //
+
         chkSsao.AutoSize = true;
         chkSsao.Location = new Point(2, 27);
         chkSsao.Margin = new Padding(2, 2, 0, 2);
@@ -786,9 +688,7 @@ public sealed partial class MainScreen
         chkSsao.Text = "Ambient occlusion";
         toolTip1.SetToolTip(chkSsao, "Darken creases and contact points, from the depth buffer");
         chkSsao.UseVisualStyleBackColor = true;
-        //
-        // chkBloom
-        //
+
         chkBloom.AutoSize = true;
         chkBloom.Location = new Point(2, 52);
         chkBloom.Margin = new Padding(2, 2, 0, 2);
@@ -798,9 +698,7 @@ public sealed partial class MainScreen
         chkBloom.Text = "Bloom";
         toolTip1.SetToolTip(chkBloom, "Bleed light out of the brightest parts of the image");
         chkBloom.UseVisualStyleBackColor = true;
-        // 
-        // chkToneMap
-        // 
+
         chkToneMap.AutoSize = true;
         chkToneMap.Location = new Point(2, 77);
         chkToneMap.Margin = new Padding(2, 2, 0, 2);
@@ -810,9 +708,7 @@ public sealed partial class MainScreen
         chkToneMap.Text = "Tone map";
         toolTip1.SetToolTip(chkToneMap, "Exposure and an ACES filmic curve instead of a hard clip");
         chkToneMap.UseVisualStyleBackColor = true;
-        // 
-        // chkFxaa
-        // 
+
         chkFxaa.AutoSize = true;
         chkFxaa.Location = new Point(2, 102);
         chkFxaa.Margin = new Padding(2, 2, 0, 2);
@@ -822,9 +718,7 @@ public sealed partial class MainScreen
         chkFxaa.Text = "FXAA";
         toolTip1.SetToolTip(chkFxaa, "Smooth stair-stepped edges after rasterization");
         chkFxaa.UseVisualStyleBackColor = true;
-        // 
-        // chkVignette
-        // 
+
         chkVignette.AutoSize = true;
         chkVignette.Location = new Point(2, 127);
         chkVignette.Margin = new Padding(2, 2, 0, 2);
@@ -834,9 +728,7 @@ public sealed partial class MainScreen
         chkVignette.Text = "Vignette";
         toolTip1.SetToolTip(chkVignette, "Darken the frame toward its corners");
         chkVignette.UseVisualStyleBackColor = true;
-        // 
-        // lblBufferHeader
-        // 
+
         lblBufferHeader.AutoSize = true;
         lblBufferHeader.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
         lblBufferHeader.Location = new Point(18, 1143);
@@ -845,9 +737,7 @@ public sealed partial class MainScreen
         lblBufferHeader.Size = new Size(77, 13);
         lblBufferHeader.TabIndex = 9;
         lblBufferHeader.Text = "BUFFER VIEW";
-        // 
-        // cboBufferView
-        // 
+
         cboBufferView.Dock = DockStyle.Fill;
         cboBufferView.DropDownStyle = ComboBoxStyle.DropDownList;
         cboBufferView.FlatStyle = FlatStyle.Flat;
@@ -857,9 +747,7 @@ public sealed partial class MainScreen
         cboBufferView.Size = new Size(241, 25);
         cboBufferView.TabIndex = 3;
         toolTip1.SetToolTip(cboBufferView, "Present one of the frame's own buffers instead of the shaded image");
-        // 
-        // lblCascadeHeader
-        // 
+
         lblCascadeHeader.AutoSize = true;
         lblCascadeHeader.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
         lblCascadeHeader.Location = new Point(18, 1201);
@@ -868,9 +756,7 @@ public sealed partial class MainScreen
         lblCascadeHeader.Size = new Size(115, 13);
         lblCascadeHeader.TabIndex = 10;
         lblCascadeHeader.Text = "SHADOW CASCADES";
-        // 
-        // cboCascades
-        // 
+
         cboCascades.Dock = DockStyle.Fill;
         cboCascades.DropDownStyle = ComboBoxStyle.DropDownList;
         cboCascades.FlatStyle = FlatStyle.Flat;
@@ -880,9 +766,7 @@ public sealed partial class MainScreen
         cboCascades.Size = new Size(241, 25);
         cboCascades.TabIndex = 4;
         toolTip1.SetToolTip(cboCascades, "Split the shadow pass across several depth buffers, each fitted to a slice of the view");
-        // 
-        // lblGizmoHeader
-        // 
+
         lblGizmoHeader.AutoSize = true;
         lblGizmoHeader.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
         lblGizmoHeader.Location = new Point(18, 1259);
@@ -891,9 +775,7 @@ public sealed partial class MainScreen
         lblGizmoHeader.Size = new Size(115, 13);
         lblGizmoHeader.TabIndex = 11;
         lblGizmoHeader.Text = "TRANSFORM GIZMO";
-        // 
-        // cboGizmo
-        // 
+
         cboGizmo.Dock = DockStyle.Fill;
         cboGizmo.DropDownStyle = ComboBoxStyle.DropDownList;
         cboGizmo.FlatStyle = FlatStyle.Flat;
@@ -903,9 +785,7 @@ public sealed partial class MainScreen
         cboGizmo.Size = new Size(241, 25);
         cboGizmo.TabIndex = 5;
         toolTip1.SetToolTip(cboGizmo, "Drag the handles on the picked mesh to move, turn or stretch it");
-        // 
-        // chkSnap
-        // 
+
         chkSnap.AutoSize = true;
         chkSnap.Location = new Point(18, 1307);
         chkSnap.Margin = new Padding(2, 0, 0, 8);
@@ -914,9 +794,7 @@ public sealed partial class MainScreen
         chkSnap.TabIndex = 12;
         chkSnap.Text = "Snap to grid";
         chkSnap.UseVisualStyleBackColor = true;
-        // 
-        // pnlViewport
-        // 
+
         pnlViewport.Controls.Add(panel3D1);
         pnlViewport.Dock = DockStyle.Fill;
         pnlViewport.Location = new Point(0, 0);
@@ -924,9 +802,7 @@ public sealed partial class MainScreen
         pnlViewport.Padding = new Padding(10);
         pnlViewport.Size = new Size(862, 500);
         pnlViewport.TabIndex = 1;
-        // 
-        // panel3D1
-        // 
+
         panel3D1.BackgroundImageLayout = ImageLayout.None;
         panel3D1.Dock = DockStyle.Fill;
         panel3D1.Location = new Point(10, 10);
@@ -934,425 +810,307 @@ public sealed partial class MainScreen
         panel3D1.Name = "panel3D1";
         panel3D1.Size = new Size(842, 480);
         panel3D1.TabIndex = 0;
-        // 
-        // menuStrip
-        // 
+
         menuStrip.ImageScalingSize = new Size(24, 24);
         menuStrip.Items.AddRange(new ToolStripItem[] { mnuFile, mnuEdit, mnuView, mnuHelp });
         menuStrip.Location = new Point(0, 0);
         menuStrip.Name = "menuStrip";
         menuStrip.Size = new Size(1546, 24);
         menuStrip.TabIndex = 10;
-        // 
-        // mnuFile
-        // 
+
         mnuFile.DropDownItems.AddRange(new ToolStripItem[] { mnuLoadModel, mnuOpenModel, mnuOpenScene, mnuOpenRecent, mnuSaveScene, mnuScreenshot, mnuExit });
         mnuFile.Name = "mnuFile";
         mnuFile.Size = new Size(37, 20);
         mnuFile.Text = "&File";
-        // 
-        // mnuLoadModel
-        // 
+
         mnuLoadModel.Name = "mnuLoadModel";
         mnuLoadModel.ShortcutKeys = Keys.Control | Keys.M;
         mnuLoadModel.Size = new Size(211, 22);
         mnuLoadModel.Text = "&Load model…";
-        // 
-        // mnuOpenModel
-        // 
+
         mnuOpenModel.Name = "mnuOpenModel";
         mnuOpenModel.ShortcutKeys = Keys.Control | Keys.O;
         mnuOpenModel.Size = new Size(211, 22);
         mnuOpenModel.Text = "&Open model file…";
-        // 
-        // mnuOpenScene
-        // 
+
         mnuOpenScene.Name = "mnuOpenScene";
         mnuOpenScene.Size = new Size(211, 22);
         mnuOpenScene.Text = "Open sc&ene…";
-        // 
-        // mnuOpenRecent
-        // 
+
         mnuOpenRecent.DropDownItems.AddRange(new ToolStripItem[] { mnuClearRecent });
         mnuOpenRecent.Name = "mnuOpenRecent";
         mnuOpenRecent.Size = new Size(211, 22);
         mnuOpenRecent.Text = "Open &recent";
-        // 
-        // mnuClearRecent
-        // 
+
         mnuClearRecent.Name = "mnuClearRecent";
         mnuClearRecent.Size = new Size(141, 22);
         mnuClearRecent.Text = "&Clear this list";
-        // 
-        // mnuSaveScene
-        // 
+
         mnuSaveScene.Name = "mnuSaveScene";
         mnuSaveScene.ShortcutKeys = Keys.Control | Keys.S;
         mnuSaveScene.Size = new Size(211, 22);
         mnuSaveScene.Text = "Sa&ve scene as…";
-        // 
-        // mnuScreenshot
-        // 
+
         mnuScreenshot.Name = "mnuScreenshot";
         mnuScreenshot.ShortcutKeys = Keys.F12;
         mnuScreenshot.Size = new Size(211, 22);
         mnuScreenshot.Text = "Save &screenshot…";
-        // 
-        // mnuExit
-        // 
+
         mnuExit.Name = "mnuExit";
         mnuExit.Size = new Size(211, 22);
         mnuExit.Text = "E&xit";
-        // 
-        // mnuEdit
-        // 
+
         mnuEdit.DropDownItems.AddRange(new ToolStripItem[] { mnuAdd, mnuDelete, mnuUndo, mnuRedo, mnuSnap });
         mnuEdit.Name = "mnuEdit";
         mnuEdit.Size = new Size(39, 20);
         mnuEdit.Text = "&Edit";
-        //
-        // mnuAdd
-        //
+
         mnuAdd.Name = "mnuAdd";
         mnuAdd.Size = new Size(257, 22);
         mnuAdd.Text = "&Add mesh (Shift+A in the viewport)";
-        //
-        // mnuDelete
-        //
+
         mnuDelete.Name = "mnuDelete";
         mnuDelete.Size = new Size(257, 22);
         mnuDelete.Text = "&Delete selected mesh (X)";
-        //
-        // mnuUndo
-        //
+
         mnuUndo.Name = "mnuUndo";
         mnuUndo.ShortcutKeys = Keys.Control | Keys.Z;
         mnuUndo.Size = new Size(257, 22);
         mnuUndo.Text = "&Undo";
-        // 
-        // mnuRedo
-        // 
+
         mnuRedo.Name = "mnuRedo";
         mnuRedo.ShortcutKeys = Keys.Control | Keys.Y;
         mnuRedo.Size = new Size(257, 22);
         mnuRedo.Text = "&Redo";
-        // 
-        // mnuSnap
-        // 
+
         mnuSnap.CheckOnClick = true;
         mnuSnap.Name = "mnuSnap";
         mnuSnap.ShortcutKeys = Keys.Control | Keys.G;
         mnuSnap.Size = new Size(257, 22);
         mnuSnap.Text = "&Snap gizmo drags to a grid";
-        // 
-        // mnuView
-        // 
+
         mnuView.DropDownItems.AddRange(new ToolStripItem[] { mnuLayout, mnuSidebar, mnuRenderedBy, mnuPixelHistory, mnuObjectTable, mnuEventList, mnuStatsOverlay, mnuRecordEvents, mnuFrameHistory, mnuAxisViews, mnuZoomIn, mnuZoomOut, mnuZoomActual, mnuClearPixel });
         mnuView.Name = "mnuView";
         mnuView.Size = new Size(44, 20);
         mnuView.Text = "&View";
-        // 
-        // mnuLayout
-        // 
+
         mnuLayout.DropDownItems.AddRange(new ToolStripItem[] { mnuLayoutViewer, mnuLayoutDebugger, mnuFocusViewport });
         mnuLayout.Name = "mnuLayout";
         mnuLayout.Size = new Size(222, 22);
         mnuLayout.Text = "&Layout";
-        // 
-        // mnuLayoutViewer
-        // 
+
         mnuLayoutViewer.Name = "mnuLayoutViewer";
         mnuLayoutViewer.Size = new Size(206, 22);
         mnuLayoutViewer.Text = "&Viewer — just the picture";
         mnuLayoutViewer.ToolTipText = "Close the three debugger panels and give the space to the viewport.";
-        // 
-        // mnuLayoutDebugger
-        // 
+
         mnuLayoutDebugger.Name = "mnuLayoutDebugger";
         mnuLayoutDebugger.Size = new Size(206, 22);
         mnuLayoutDebugger.Text = "&Debugger — every panel";
         mnuLayoutDebugger.ToolTipText = "Open the pixel history, the object table and the event list.";
-        // 
-        // mnuFocusViewport
-        // 
+
         mnuFocusViewport.CheckOnClick = true;
         mnuFocusViewport.Name = "mnuFocusViewport";
         mnuFocusViewport.ShortcutKeys = Keys.F11;
         mnuFocusViewport.Size = new Size(206, 22);
         mnuFocusViewport.Text = "&Focus the viewport";
         mnuFocusViewport.ToolTipText = "Hide the sidebar and the panels. Press again to put them back where they were.";
-        // 
-        // mnuSidebar
-        // 
+
         mnuSidebar.DropDownItems.AddRange(new ToolStripItem[] { mnuSectionDisplay, mnuSectionShading, mnuSectionPost });
         mnuSidebar.Name = "mnuSidebar";
         mnuSidebar.Size = new Size(222, 22);
         mnuSidebar.Text = "&Sidebar sections";
-        // 
-        // mnuSectionDisplay
-        // 
+
         mnuSectionDisplay.CheckOnClick = true;
         mnuSectionDisplay.Name = "mnuSectionDisplay";
         mnuSectionDisplay.Size = new Size(159, 22);
         mnuSectionDisplay.Text = "&Display";
-        // 
-        // mnuSectionShading
-        // 
+
         mnuSectionShading.CheckOnClick = true;
         mnuSectionShading.Name = "mnuSectionShading";
         mnuSectionShading.Size = new Size(159, 22);
         mnuSectionShading.Text = "&Shading";
-        // 
-        // mnuSectionPost
-        // 
+
         mnuSectionPost.CheckOnClick = true;
         mnuSectionPost.Name = "mnuSectionPost";
         mnuSectionPost.Size = new Size(159, 22);
         mnuSectionPost.Text = "&Post-processing";
-        // 
-        // mnuRenderedBy
-        // 
+
         mnuRenderedBy.DropDownItems.AddRange(new ToolStripItem[] { mnuRenderCpu, mnuRenderGpu, mnuRenderTrace });
         mnuRenderedBy.Name = "mnuRenderedBy";
         mnuRenderedBy.Size = new Size(222, 22);
         mnuRenderedBy.Text = "Rendered &by";
-        // 
-        // mnuRenderCpu
-        // 
+
         mnuRenderCpu.CheckState = CheckState.Checked;
         mnuRenderCpu.Checked = true;
         mnuRenderCpu.Name = "mnuRenderCpu";
         mnuRenderCpu.Size = new Size(210, 22);
         mnuRenderCpu.Text = "&CPU — software rasterizer";
         mnuRenderCpu.ToolTipText = "Rasterize every triangle on the CPU, as this engine was written to.";
-        // 
-        // mnuRenderGpu
-        // 
+
         mnuRenderGpu.Name = "mnuRenderGpu";
         mnuRenderGpu.Size = new Size(210, 22);
         mnuRenderGpu.Text = "&GPU — graphics adapter";
         mnuRenderGpu.ToolTipText = "Fill the frame on the graphics card through OpenGL.";
-        // 
-        // mnuRenderTrace
-        // 
+
         mnuRenderTrace.Name = "mnuRenderTrace";
         mnuRenderTrace.Size = new Size(210, 22);
         mnuRenderTrace.Text = "&Path tracer — reference";
         mnuRenderTrace.ToolTipText = "Trace light through the scene instead of filling triangles: real interreflection and occlusion, refined for as long as nothing moves.";
-        // 
-        // mnuPixelHistory
-        // 
+
         mnuPixelHistory.CheckOnClick = true;
         mnuPixelHistory.CheckState = CheckState.Checked;
         mnuPixelHistory.Checked = true;
         mnuPixelHistory.Name = "mnuPixelHistory";
         mnuPixelHistory.Size = new Size(222, 22);
         mnuPixelHistory.Text = "&Pixel History";
-        // 
-        // mnuObjectTable
-        // 
+
         mnuObjectTable.CheckOnClick = true;
         mnuObjectTable.CheckState = CheckState.Checked;
         mnuObjectTable.Checked = true;
         mnuObjectTable.Name = "mnuObjectTable";
         mnuObjectTable.Size = new Size(222, 22);
         mnuObjectTable.Text = "Graphics &Object Table";
-        // 
-        // mnuEventList
-        // 
+
         mnuEventList.CheckOnClick = true;
         mnuEventList.CheckState = CheckState.Checked;
         mnuEventList.Checked = true;
         mnuEventList.Name = "mnuEventList";
         mnuEventList.Size = new Size(222, 22);
         mnuEventList.Text = "Graphics &Event List";
-        // 
-        // mnuStatsOverlay
-        // 
+
         mnuStatsOverlay.CheckOnClick = true;
         mnuStatsOverlay.CheckState = CheckState.Checked;
         mnuStatsOverlay.Checked = true;
         mnuStatsOverlay.Name = "mnuStatsOverlay";
         mnuStatsOverlay.Size = new Size(222, 22);
         mnuStatsOverlay.Text = "&Stats overlay";
-        // 
-        // mnuRecordEvents
-        // 
+
         mnuRecordEvents.CheckOnClick = true;
         mnuRecordEvents.CheckState = CheckState.Checked;
         mnuRecordEvents.Checked = true;
         mnuRecordEvents.Name = "mnuRecordEvents";
         mnuRecordEvents.Size = new Size(222, 22);
         mnuRecordEvents.Text = "&Record graphics events";
-        // 
-        // mnuFrameHistory
-        // 
+
         mnuFrameHistory.DropDownItems.AddRange(new ToolStripItem[] { mnuKeepFrames, mnuPreviousFrame, mnuNextFrame, mnuLatestFrame });
         mnuFrameHistory.Name = "mnuFrameHistory";
         mnuFrameHistory.Size = new Size(222, 22);
         mnuFrameHistory.Text = "&Frame history";
-        // 
-        // mnuKeepFrames
-        // 
+
         mnuKeepFrames.CheckOnClick = true;
         mnuKeepFrames.Name = "mnuKeepFrames";
         mnuKeepFrames.Size = new Size(287, 22);
         mnuKeepFrames.Text = "&Keep recent frames";
-        // 
-        // mnuPreviousFrame
-        // 
+
         mnuPreviousFrame.Name = "mnuPreviousFrame";
         mnuPreviousFrame.ShortcutKeys = Keys.Control | Keys.Left;
         mnuPreviousFrame.Size = new Size(287, 22);
         mnuPreviousFrame.Text = "&Previous frame";
-        // 
-        // mnuNextFrame
-        // 
+
         mnuNextFrame.Name = "mnuNextFrame";
         mnuNextFrame.ShortcutKeys = Keys.Control | Keys.Right;
         mnuNextFrame.Size = new Size(287, 22);
         mnuNextFrame.Text = "&Next frame";
-        // 
-        // mnuLatestFrame
-        // 
+
         mnuLatestFrame.Name = "mnuLatestFrame";
         mnuLatestFrame.ShortcutKeys = Keys.Control | Keys.End;
         mnuLatestFrame.Size = new Size(287, 22);
         mnuLatestFrame.Text = "&Live (follow the newest frame)";
-        // 
-        // mnuAxisViews
-        // 
+
         mnuAxisViews.DropDownItems.AddRange(new ToolStripItem[] { mnuViewFront, mnuViewBack, mnuViewRight, mnuViewLeft, mnuViewTop, mnuViewBottom, mnuViewOpposite, mnuTurnX, mnuTurnY, mnuTurnZ });
         mnuAxisViews.Name = "mnuAxisViews";
         mnuAxisViews.Size = new Size(222, 22);
         mnuAxisViews.Text = "&Axis view";
-        // 
-        // mnuViewFront
-        // 
+
         mnuViewFront.Name = "mnuViewFront";
         mnuViewFront.ShortcutKeyDisplayString = "Numpad 1";
         mnuViewFront.Size = new Size(233, 22);
         mnuViewFront.Text = "&Front  (+Z)";
-        // 
-        // mnuViewBack
-        // 
+
         mnuViewBack.Name = "mnuViewBack";
         mnuViewBack.ShortcutKeyDisplayString = "Ctrl+Numpad 1";
         mnuViewBack.Size = new Size(233, 22);
         mnuViewBack.Text = "&Back  (−Z)";
-        // 
-        // mnuViewRight
-        // 
+
         mnuViewRight.Name = "mnuViewRight";
         mnuViewRight.ShortcutKeyDisplayString = "Numpad 3";
         mnuViewRight.Size = new Size(233, 22);
         mnuViewRight.Text = "&Right  (+X)";
-        // 
-        // mnuViewLeft
-        // 
+
         mnuViewLeft.Name = "mnuViewLeft";
         mnuViewLeft.ShortcutKeyDisplayString = "Ctrl+Numpad 3";
         mnuViewLeft.Size = new Size(233, 22);
         mnuViewLeft.Text = "&Left  (−X)";
-        // 
-        // mnuViewTop
-        // 
+
         mnuViewTop.Name = "mnuViewTop";
         mnuViewTop.ShortcutKeyDisplayString = "Numpad 7";
         mnuViewTop.Size = new Size(233, 22);
         mnuViewTop.Text = "&Top  (+Y)";
-        // 
-        // mnuViewBottom
-        // 
+
         mnuViewBottom.Name = "mnuViewBottom";
         mnuViewBottom.ShortcutKeyDisplayString = "Ctrl+Numpad 7";
         mnuViewBottom.Size = new Size(233, 22);
         mnuViewBottom.Text = "B&ottom  (−Y)";
-        // 
-        // mnuViewOpposite
-        // 
+
         mnuViewOpposite.Name = "mnuViewOpposite";
         mnuViewOpposite.ShortcutKeyDisplayString = "Numpad 9";
         mnuViewOpposite.Size = new Size(233, 22);
         mnuViewOpposite.Text = "&Opposite side";
-        // 
-        // mnuTurnX
-        // 
+
         mnuTurnX.Name = "mnuTurnX";
         mnuTurnX.ShortcutKeyDisplayString = "X · Shift+X";
         mnuTurnX.Size = new Size(233, 22);
         mnuTurnX.Text = "Turn 15° about &X";
-        // 
-        // mnuTurnY
-        // 
+
         mnuTurnY.Name = "mnuTurnY";
         mnuTurnY.ShortcutKeyDisplayString = "Y · Shift+Y";
         mnuTurnY.Size = new Size(233, 22);
         mnuTurnY.Text = "Turn 15° about &Y";
-        // 
-        // mnuTurnZ
-        // 
+
         mnuTurnZ.Name = "mnuTurnZ";
         mnuTurnZ.ShortcutKeyDisplayString = "Z · Shift+Z";
         mnuTurnZ.Size = new Size(233, 22);
         mnuTurnZ.Text = "Turn 15° about &Z";
-        // 
-        // mnuZoomIn
-        // 
+
         mnuZoomIn.Name = "mnuZoomIn";
         mnuZoomIn.ShortcutKeys = Keys.Control | Keys.Oemplus;
         mnuZoomIn.Size = new Size(222, 22);
         mnuZoomIn.Text = "Zoom &In";
-        // 
-        // mnuZoomOut
-        // 
+
         mnuZoomOut.Name = "mnuZoomOut";
         mnuZoomOut.ShortcutKeys = Keys.Control | Keys.OemMinus;
         mnuZoomOut.Size = new Size(222, 22);
         mnuZoomOut.Text = "Zoom O&ut";
-        // 
-        // mnuZoomActual
-        // 
+
         mnuZoomActual.Name = "mnuZoomActual";
         mnuZoomActual.ShortcutKeys = Keys.Control | Keys.D0;
         mnuZoomActual.Size = new Size(222, 22);
         mnuZoomActual.Text = "&Reset zoom (100%)";
-        // 
-        // mnuClearPixel
-        // 
+
         mnuClearPixel.Name = "mnuClearPixel";
         mnuClearPixel.Size = new Size(222, 22);
         mnuClearPixel.Text = "&Clear pixel selection";
-        // 
-        // mnuHelp
-        // 
+
         mnuHelp.DropDownItems.AddRange(new ToolStripItem[] { mnuShortcuts, mnuProjectPage, mnuAbout });
         mnuHelp.Name = "mnuHelp";
         mnuHelp.Size = new Size(44, 20);
         mnuHelp.Text = "&Help";
-        // 
-        // mnuShortcuts
-        // 
+
         mnuShortcuts.Name = "mnuShortcuts";
         mnuShortcuts.ShortcutKeys = Keys.F1;
         mnuShortcuts.Size = new Size(214, 22);
         mnuShortcuts.Text = "&Keyboard and mouse…";
         mnuShortcuts.ToolTipText = "Every binding, including the ones with no menu item.";
-        // 
-        // mnuProjectPage
-        // 
+
         mnuProjectPage.Name = "mnuProjectPage";
         mnuProjectPage.Size = new Size(214, 22);
         mnuProjectPage.Text = "SoftEngine on &GitHub";
-        // 
-        // mnuAbout
-        // 
+
         mnuAbout.Name = "mnuAbout";
         mnuAbout.Size = new Size(214, 22);
         mnuAbout.Text = "&About SoftEngine";
-        // 
-        // statusStrip
-        // 
+
         statusStrip.ImageScalingSize = new Size(24, 24);
         statusStrip.Items.AddRange(new ToolStripItem[] { lblZoomStatus, lblPixelStatus, lblScreenshotHint, lblBackendStatus, lblCameraStatus, lblFrameStatus });
         statusStrip.Location = new Point(0, 500);
@@ -1360,176 +1118,130 @@ public sealed partial class MainScreen
         statusStrip.Size = new Size(862, 32);
         statusStrip.SizingGrip = false;
         statusStrip.TabIndex = 11;
-        // 
-        // lblZoomStatus
-        // 
+
         lblZoomStatus.AutoSize = false;
         lblZoomStatus.Name = "lblZoomStatus";
         lblZoomStatus.Size = new Size(210, 27);
         lblZoomStatus.Text = "Zoom: 100%";
         lblZoomStatus.TextAlign = ContentAlignment.MiddleLeft;
-        // 
-        // lblPixelStatus
-        // 
+
         lblPixelStatus.AutoSize = false;
         lblPixelStatus.Name = "lblPixelStatus";
         lblPixelStatus.Size = new Size(1, 27);
         lblPixelStatus.Spring = true;
         lblPixelStatus.Text = "Selected pixel: none";
         lblPixelStatus.TextAlign = ContentAlignment.MiddleLeft;
-        // 
-        // lblScreenshotHint
-        // 
+
         lblScreenshotHint.Name = "lblScreenshotHint";
         lblScreenshotHint.Size = new Size(89, 27);
         lblScreenshotHint.Text = "F12: Screenshot";
         lblScreenshotHint.TextAlign = ContentAlignment.MiddleRight;
         lblScreenshotHint.ToolTipText = "Save the current view as a PNG (File → Save screenshot…)";
-        // 
-        // lblBackendStatus
-        // 
+
         lblBackendStatus.AutoSize = false;
         lblBackendStatus.Name = "lblBackendStatus";
         lblBackendStatus.Size = new Size(230, 27);
         lblBackendStatus.Text = "CPU";
         lblBackendStatus.TextAlign = ContentAlignment.MiddleRight;
         lblBackendStatus.ToolTipText = "What the viewport is being rasterized by (View → Rendered by)";
-        // 
-        // lblCameraStatus
-        // 
+
         lblCameraStatus.AutoSize = false;
         lblCameraStatus.Name = "lblCameraStatus";
         lblCameraStatus.Size = new Size(240, 27);
         lblCameraStatus.Text = "Camera:";
         lblCameraStatus.TextAlign = ContentAlignment.MiddleRight;
-        // 
-        // lblFrameStatus
-        // 
+
         lblFrameStatus.AutoSize = false;
         lblFrameStatus.Name = "lblFrameStatus";
         lblFrameStatus.Size = new Size(190, 27);
         lblFrameStatus.Text = "Frame:";
         lblFrameStatus.TextAlign = ContentAlignment.MiddleRight;
-        // 
-        // splitMain
-        // 
+
         splitMain.Dock = DockStyle.Fill;
         splitMain.FixedPanel = FixedPanel.Panel1;
         splitMain.Location = new Point(0, 24);
         splitMain.Name = "splitMain";
-        // 
-        // splitMain.Panel1
-        // 
+
         splitMain.Panel1.Controls.Add(splitLeft);
         splitMain.Panel1MinSize = 180;
-        // 
-        // splitMain.Panel2
-        // 
+
         splitMain.Panel2.Controls.Add(splitRight);
         splitMain.Panel2MinSize = 320;
         splitMain.Size = new Size(1546, 812);
         splitMain.SplitterDistance = 290;
         splitMain.SplitterWidth = 6;
         splitMain.TabIndex = 0;
-        // 
-        // splitLeft
-        // 
+
         splitLeft.Dock = DockStyle.Fill;
         splitLeft.Location = new Point(0, 0);
         splitLeft.Name = "splitLeft";
         splitLeft.Orientation = Orientation.Horizontal;
-        // 
-        // splitLeft.Panel1
-        // 
+
         splitLeft.Panel1.Controls.Add(pnlSidebar);
         splitLeft.Panel1MinSize = 160;
-        // 
-        // splitLeft.Panel2
-        // 
+
         splitLeft.Panel2.Controls.Add(pixelHistoryPanel);
         splitLeft.Panel2MinSize = 120;
         splitLeft.Size = new Size(290, 812);
         splitLeft.SplitterDistance = 469;
         splitLeft.SplitterWidth = 6;
         splitLeft.TabIndex = 0;
-        // 
-        // pixelHistoryPanel
-        // 
+
         pixelHistoryPanel.BackColor = Color.FromArgb(37, 37, 43);
         pixelHistoryPanel.Dock = DockStyle.Fill;
         pixelHistoryPanel.Location = new Point(0, 0);
         pixelHistoryPanel.Name = "pixelHistoryPanel";
         pixelHistoryPanel.Size = new Size(290, 337);
         pixelHistoryPanel.TabIndex = 0;
-        // 
-        // splitRight
-        // 
+
         splitRight.Dock = DockStyle.Fill;
         splitRight.FixedPanel = FixedPanel.Panel2;
         splitRight.Location = new Point(0, 0);
         splitRight.Name = "splitRight";
-        // 
-        // splitRight.Panel1
-        // 
+
         splitRight.Panel1.Controls.Add(splitCenter);
         splitRight.Panel1MinSize = 240;
-        // 
-        // splitRight.Panel2
-        // 
+
         splitRight.Panel2.Controls.Add(eventListPanel);
         splitRight.Panel2MinSize = 120;
         splitRight.Size = new Size(1250, 812);
         splitRight.SplitterDistance = 862;
         splitRight.SplitterWidth = 6;
         splitRight.TabIndex = 1;
-        // 
-        // splitCenter
-        // 
+
         splitCenter.Dock = DockStyle.Fill;
         splitCenter.FixedPanel = FixedPanel.Panel2;
         splitCenter.Location = new Point(0, 0);
         splitCenter.Name = "splitCenter";
         splitCenter.Orientation = Orientation.Horizontal;
-        // 
-        // splitCenter.Panel1
-        // 
+
         splitCenter.Panel1.Controls.Add(pnlViewport);
         splitCenter.Panel1.Controls.Add(statusStrip);
         splitCenter.Panel1MinSize = 160;
-        // 
-        // splitCenter.Panel2
-        // 
+
         splitCenter.Panel2.Controls.Add(objectTablePanel);
         splitCenter.Panel2MinSize = 80;
         splitCenter.Size = new Size(862, 812);
         splitCenter.SplitterDistance = 532;
         splitCenter.SplitterWidth = 6;
         splitCenter.TabIndex = 0;
-        // 
-        // objectTablePanel
-        // 
+
         objectTablePanel.BackColor = Color.FromArgb(37, 37, 43);
         objectTablePanel.Dock = DockStyle.Fill;
         objectTablePanel.Location = new Point(0, 0);
         objectTablePanel.Name = "objectTablePanel";
         objectTablePanel.Size = new Size(862, 274);
         objectTablePanel.TabIndex = 0;
-        // 
-        // eventListPanel
-        // 
+
         eventListPanel.BackColor = Color.FromArgb(37, 37, 43);
         eventListPanel.Dock = DockStyle.Fill;
         eventListPanel.Location = new Point(0, 0);
         eventListPanel.Name = "eventListPanel";
         eventListPanel.Size = new Size(382, 812);
         eventListPanel.TabIndex = 0;
-        // 
-        // tmrDebugRefresh
-        // 
+
         tmrDebugRefresh.Interval = 120;
-        // 
-        // MainScreen
-        // 
+
         AutoScaleDimensions = new SizeF(96F, 96F);
         AutoScaleMode = AutoScaleMode.Dpi;
         ClientSize = new Size(1546, 836);

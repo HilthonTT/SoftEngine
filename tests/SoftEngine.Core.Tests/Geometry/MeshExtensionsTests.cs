@@ -3,13 +3,6 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Tests.Geometry;
 
-/// <summary>
-/// The two flat-array readers every importer funnels its geometry through. Both used to run
-/// off the end of their input whenever its length did not divide evenly — which is what a
-/// truncated <c>float_array</c>, a clipped <c>&lt;p&gt;</c> stream or a face list ending
-/// mid-triangle produces — and an importer that throws there fails to open the whole model
-/// over its last corner.
-/// </summary>
 public class MeshExtensionsTests
 {
     [Fact]
@@ -39,12 +32,6 @@ public class MeshExtensionsTests
     public void BuildTriangleIndices_FewerThanThreeIndices_IsEmpty() =>
         Assert.Empty(new[] { 0, 1 }.BuildTriangleIndices(vertexCount: 2));
 
-    /// <summary>
-    /// A face reaching past the vertices it indexes into is dropped, and the faces around it
-    /// still load. The alternative is the whole model failing to open — from inside the mesh
-    /// constructor's own normal calculation, which is where an out-of-range corner used to
-    /// surface, several frames of stack away from the file that carried it.
-    /// </summary>
     [Theory]
     [InlineData(6)]
     [InlineData(-1)]

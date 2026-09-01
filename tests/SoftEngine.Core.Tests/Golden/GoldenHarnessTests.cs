@@ -3,12 +3,6 @@ using SoftEngine.Core.Tests.Golden;
 
 namespace SoftEngine.Core.Tests.Golden;
 
-/// <summary>
-/// The harness is code, and a golden-image suite that silently compares nothing is worse than
-/// no suite at all — it reports success on every run and is believed. These cover the two ways
-/// that happens: an encoder that does not round-trip, and a gate that admits everything or
-/// nothing without saying so.
-/// </summary>
 public class GoldenHarnessTests
 {
     private static int[] Noise(int width, int height, uint seed)
@@ -66,13 +60,6 @@ public class GoldenHarnessTests
         Assert.True(comparison.IsWithin(GoldenTolerance.Exact));
     }
 
-    /// <summary>
-    /// The bug this exists for was real and was mine: <c>GoldenTolerance</c> began life as a
-    /// record <em>struct</em>, whose implicit parameterless constructor skips the primary
-    /// constructor and its defaults. <c>Default</c> was initialised with <c>new()</c> and came
-    /// out as all zeros — indistinguishable from <see cref="GoldenTolerance.Exact"/>, and
-    /// reported as such in every failure message before anyone noticed.
-    /// </summary>
     [Fact]
     public void DefaultTolerance_IsActuallyLenient()
     {
@@ -83,13 +70,6 @@ public class GoldenHarnessTests
         Assert.NotEqual(GoldenTolerance.Exact, GoldenTolerance.Default);
     }
 
-    /// <summary>
-    /// Rounding that lands differently on another machine is <em>scattered</em> — a shaded
-    /// value near a channel boundary falls one way here and the other way there, on whichever
-    /// pixels happen to sit on the boundary. It is not a bias, and modelling it as one (every
-    /// channel of every pixel a step brighter) would be modelling something else entirely: a
-    /// systematic shift, which is a real change and which the mean is there to fail on.
-    /// </summary>
     [Fact]
     public void DefaultTolerance_AbsorbsScatteredRoundingDifferences()
     {
@@ -106,7 +86,6 @@ public class GoldenHarnessTests
             state ^= state >> 17;
             state ^= state << 5;
 
-            // A tenth of the pixels, up or down, by a step or two.
             if (state % 10 != 0)
             {
                 continue;
@@ -138,8 +117,6 @@ public class GoldenHarnessTests
 
         var actual = (int[])expected.Clone();
 
-        // 64 pixels of 4,096 — a tenth of a percent of the frame is well inside the mean, and
-        // the point of counting pixels separately is that this still fails.
         for (var i = 0; i < 64; i++)
         {
             actual[i] = unchecked((int)0xFFFFFFFF);
@@ -161,8 +138,6 @@ public class GoldenHarnessTests
 
         var actual = new int[size * size];
 
-        // Three channels off by three everywhere: no single pixel is dramatic, and a metric
-        // that only asked "how bad is the worst one" would wave it through.
         Array.Fill(actual, unchecked((int)0xFF434343));
 
         var comparison = ImageDiff.Compare(expected, actual, size, size, GoldenTolerance.Default);

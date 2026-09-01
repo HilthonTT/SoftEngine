@@ -10,7 +10,6 @@ namespace SoftEngine.Core.Tests.Rasterization;
 
 public class MultipleLightsTests
 {
-    /// <summary>A surface at the origin facing +Z, viewed from in front of it.</summary>
     private static PhongVarying Surface() => new(Vector3.Zero, Vector3.UnitZ);
 
     private static BlinnPhongShader Shader(LightSet lights, float specularStrength = 0f) =>
@@ -28,8 +27,6 @@ public class MultipleLightsTests
 
         Assert.True(two.R > one.R);
 
-        // Nothing clamps the sum: two lights facing the surface head-on deliver twice the
-        // diffuse, over the ambient they share.
         Assert.Equal(one.R * 2f - 0.1f, two.R, 4);
     }
 
@@ -38,7 +35,6 @@ public class MultipleLightsTests
     {
         var shaded = Shader(LightSet.Of(Facing(ColorRGB.Red), Facing(ColorRGB.Green))).Shade(Surface());
 
-        // Red and green light on a white surface: both channels lit, blue only ambient.
         Assert.True(shaded.R > 1f);
         Assert.True(shaded.G > 1f);
         Assert.Equal(0.1f, shaded.B, 4);
@@ -85,8 +81,6 @@ public class MultipleLightsTests
         Assert.True(near > mid);
         Assert.True(mid > 0f);
 
-        // Exactly zero at the range, and stays there — not a value small enough to ignore
-        // but large enough to show as a ring.
         Assert.Equal(0f, light.AttenuationAt(new Vector3(10f, 0, 0)));
         Assert.Equal(0f, light.AttenuationAt(new Vector3(25f, 0, 0)));
     }
@@ -102,10 +96,9 @@ public class MultipleLightsTests
             OuterAngle = 0.3f,
         };
 
-        Assert.Equal(1f, spot.AttenuationAt(Vector3.Zero), 4);          // straight down the axis
-        Assert.Equal(0f, spot.AttenuationAt(new Vector3(20f, 0, 0)));   // far outside the cone
+        Assert.Equal(1f, spot.AttenuationAt(Vector3.Zero), 4);
+        Assert.Equal(0f, spot.AttenuationAt(new Vector3(20f, 0, 0)));
 
-        // Between the two angles the beam ramps rather than stepping.
         var edge = spot.AttenuationAt(new Vector3(10f * MathF.Tan(0.2f), 0, 0));
         Assert.InRange(edge, 0.01f, 0.99f);
     }
@@ -149,8 +142,6 @@ public class MultipleLightsTests
     [Fact]
     public void Specular_TakesTheColorOfTheLightNotTheSurface()
     {
-        // A red light on a white surface: the highlight is red, so the blue channel gets
-        // only ambient however strong the highlight is.
         var shaded = Shader(LightSet.Of(Facing(ColorRGB.Red)), specularStrength: 2f).Shade(Surface());
 
         Assert.True(shaded.R > shaded.B);

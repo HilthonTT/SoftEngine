@@ -6,7 +6,6 @@ namespace SoftEngine.Core.Tests.Pipeline;
 
 public class PostProcessTests
 {
-    /// <summary>An enabled effect that changes nothing — isolates the stack's own decode/encode.</summary>
     private sealed class NoOpEffect : IPostEffect
     {
         public string Name => "No-op";
@@ -77,7 +76,6 @@ public class PostProcessTests
             var before = ColorRGB.FromPacked(expected[i]);
             var after = ColorRGB.FromPacked(surface.Screen[i]);
 
-            // The encode table quantizes to 4096 steps, so a byte may move by one.
             Assert.InRange(after.R, before.R - 1, before.R + 1);
             Assert.InRange(after.G, before.G - 1, before.G + 1);
             Assert.InRange(after.B, before.B - 1, before.B + 1);
@@ -99,7 +97,6 @@ public class PostProcessTests
 
         stack.Apply(surface);
 
-        // White is linear 1, and 1 / (1 + 1) is half the light — visibly darker than white.
         var (r, _, _) = At(surface, 4, 4);
         Assert.InRange(r, 170, 200);
     }
@@ -143,7 +140,6 @@ public class PostProcessTests
         var surface = new FrameBuffer(64, 64);
         surface.Clear();
 
-        // One small bright block, so the downsampled bright pass has something to catch.
         for (var y = 30; y < 34; y++)
         {
             for (var x = 30; x < 34; x++)
@@ -157,11 +153,9 @@ public class PostProcessTests
 
         stack.Apply(surface);
 
-        // Pixels that were black now carry some of the block's light.
         Assert.True(At(surface, 26, 32).R > 0);
         Assert.True(At(surface, 32, 26).R > 0);
 
-        // Far away it has faded back out.
         Assert.Equal(0, At(surface, 2, 2).R);
     }
 
@@ -204,7 +198,6 @@ public class PostProcessTests
     {
         var surface = new FrameBuffer(32, 32);
 
-        // A black/white step down the middle of the image.
         for (var y = 0; y < 32; y++)
         {
             for (var x = 0; x < 32; x++)

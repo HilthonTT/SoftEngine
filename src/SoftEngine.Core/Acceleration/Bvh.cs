@@ -4,43 +4,10 @@ using System.Runtime.CompilerServices;
 
 namespace SoftEngine.Core.Acceleration;
 
-/// <summary>
-/// A bounding volume hierarchy over a <see cref="SceneGeometry"/>: the tree that turns "which of
-/// these hundred thousand triangles does this ray hit" from a hundred thousand tests into about
-/// twenty.
-///
-/// <para>
-/// Every node holds a box containing its subtree. A ray that misses the box misses everything
-/// inside it, so one test discards half the scene, and the same argument applies again to whatever
-/// is left. The tree is built once and read by every ray, which is the opposite of the trade the
-/// renderer makes everywhere else — the rasterizer's culling is rebuilt per frame because it is
-/// asked one question per frame, and this is asked millions.
-/// </para>
-///
-/// <para>
-/// Splits are chosen by the <b>surface area heuristic</b>: the chance a random ray hits a box is
-/// proportional to its surface area, so the expected cost of a split is the area of each side times
-/// how many triangles it holds. Candidates are binned rather than sorted — twelve bins per axis
-/// across the centroids, sweeping the partial sums — which finds a split within a few percent of
-/// the best one for a fraction of the cost of considering every position.
-/// </para>
-///
-/// <para>
-/// Ray distances are in the units of the ray's own direction, exactly as <see cref="Ray"/>
-/// promises. Traversal never renormalizes, so a caller that hands over an unnormalized direction
-/// gets its parameter back on the same scale it gave.
-/// </para>
-/// </summary>
 public sealed class Bvh
 {
-    /// <summary>Candidate split positions considered per axis.</summary>
     private const int BinCount = 12;
 
-    /// <summary>
-    /// Traversal stack depth. A tree deep enough to overflow this would have to be 2⁶⁴ triangles
-    /// wide if it were balanced, so reaching it means the build has degenerated, not that a scene
-    /// was large.
-    /// </summary>
     private const int MaxStackDepth = 64;
 
     private readonly Node[] _nodes;
@@ -58,40 +25,21 @@ public sealed class Bvh
         MaxDepth = depth;
     }
 
-    /// <summary>The geometry this tree indexes.</summary>
     public SceneGeometry Geometry => _geometry;
 
     public int NodeCount { get; }
 
     public int LeafCount { get; }
 
-    /// <summary>
-    /// The box around everything in the tree — the root's own bounds, which the build already
-    /// measured.
-    ///
-    /// An empty tree reports an inverted box (min above max), which is what an empty box <em>is</em>
-    /// here: it is the identity the build starts from, and every test against it fails, which is the
-    /// right answer for a world with nothing in it. Callers that need a region to work over, like
-    /// <see cref="Baking.IrradianceBaker"/> choosing where to put probes, have to notice that rather
-    /// than take the difference.
-    /// </summary>
     public (Vector3 Min, Vector3 Max) Bounds => (_nodes[0].Min, _nodes[0].Max);
 
-    /// <summary>Deepest path from the root, which is what the traversal stack has to hold.</summary>
     public int MaxDepth { get; }
 
-    /// <summary>What a ray ran into: the triangle, how far along, and where on it.</summary>
     public readonly record struct Hit(int Triangle, float Distance, float U, float V)
     {
-        /// <summary>The third barycentric weight, which the other two determine.</summary>
         public float W => 1f - U - V;
     }
 
-    /// <summary>
-    /// Builds the tree. <paramref name="maxLeafSize"/> is the point below which splitting stops
-    /// paying for itself — a handful of triangles tested straight through beats another box test
-    /// and two more nodes to walk.
-    /// </summary>
     public static Bvh Build(SceneGeometry geometry, int maxLeafSize = 4)
     {
         ArgumentNullException.ThrowIfNull(geometry, nameof(geometry));
@@ -112,19 +60,15 @@ public sealed class Bvh
             minimums[i] = Vector3.Min(a, Vector3.Min(b, c));
             maximums[i] = Vector3.Max(a, Vector3.Max(b, c));
 
-            // The centroid of the *box*, not of the triangle. They differ, and the box's is what
-            // the bins are measured against, so it is what the split has to be chosen on.
             centroids[i] = (minimums[i] + maximums[i]) * 0.5f;
         }
 
-        // A binary tree over n leaves of at least one triangle has at most 2n − 1 nodes.
         var nodes = new List<Node>(System.Math.Max(1, 2 * (count / maxLeafSize + 1)));
 
         var builder = new Builder(nodes, order, centroids, minimums, maximums, maxLeafSize);
 
         if (count == 0)
         {
-            // An empty tree still needs a root, so every query has a box to miss.
             nodes.Add(new Node(new Vector3(float.PositiveInfinity), new Vector3(float.NegativeInfinity), 0, 0));
         }
         else
@@ -136,20 +80,10 @@ public sealed class Bvh
         return new Bvh([.. nodes], order, geometry, builder.Leaves, builder.Depth);
     }
 
-    /// <summary>
-    /// The nearest triangle the ray runs into within <paramref name="maxDistance"/>, or false when
-    /// it hits nothing.
-    ///
-    /// Both faces count, as they do for picking: a ray is a question about geometry, not about
-    /// winding, and a light bouncing around the inside of a room is hitting the backs of its walls.
-    /// </summary>
     public bool Intersect(in Ray ray, float maxDistance, out Hit hit)
     {
         hit = default;
 
-        // An empty tree's root is neither a leaf nor an interior node — it has no triangles to
-        // report and no children to descend to — so it is answered here rather than given a box
-        // that every ray would have to test and no ray could ever miss.
         if (_geometry.TriangleCount == 0)
         {
             return false;
@@ -195,9 +129,6 @@ public sealed class Bvh
                 continue;
             }
 
-            // Children are adjacent, so pushing both costs one bounds test each on the way out.
-            // The near one is pushed last so it is popped first: finding a close hit early is what
-            // lets the far child's box test reject it outright.
             var left = node.Start;
             var right = left + 1;
 
@@ -208,8 +139,6 @@ public sealed class Bvh
 
             if (depth + 2 > MaxStackDepth)
             {
-                // Cannot happen for a tree this build produces; dropping the far child would
-                // silently lose geometry, so say so instead.
                 throw new InvalidOperationException($"BVH traversal exceeded {MaxStackDepth} levels.");
             }
 
@@ -220,17 +149,8 @@ public sealed class Bvh
         return found;
     }
 
-    /// <summary>The nearest hit anywhere along the ray.</summary>
     public bool Intersect(in Ray ray, out Hit hit) => Intersect(ray, float.PositiveInfinity, out hit);
 
-    /// <summary>
-    /// Whether <em>anything</em> lies within <paramref name="maxDistance"/> along the ray — the
-    /// question a shadow ray asks.
-    ///
-    /// It returns on the first hit rather than the nearest one, which is most of why shadow rays
-    /// are cheaper than camera rays: there is nothing to compare, so the traversal can stop the
-    /// moment it finds an occluder rather than proving one is closest.
-    /// </summary>
     public bool IsOccluded(in Ray ray, float maxDistance)
     {
         if (_geometry.TriangleCount == 0)
@@ -281,11 +201,6 @@ public sealed class Bvh
         return false;
     }
 
-    /// <summary>
-    /// Möller-Trumbore, keeping the barycentric coordinates: the same solve
-    /// <see cref="ScenePicker.IntersectsTriangle"/> does, except that a ray which is going to shade
-    /// what it hits needs to know <em>where</em> on the triangle it landed, not just how far along.
-    /// </summary>
     public static bool IntersectsTriangle(
         in Ray ray, Vector3 a, Vector3 b, Vector3 c,
         out float distance, out float u, out float v)
@@ -329,11 +244,6 @@ public sealed class Bvh
         return distance > epsilon;
     }
 
-    /// <summary>
-    /// One over each component of the direction, which turns every slab test into a multiply.
-    /// A zero component becomes an infinity on purpose: the comparisons below are written so that
-    /// a ray running exactly parallel to a slab is inside it or outside it, never both.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector3 Reciprocal(Vector3 direction) =>
         new(1f / direction.X, 1f / direction.Y, 1f / direction.Z);
@@ -342,11 +252,6 @@ public sealed class Bvh
     private static bool IntersectsBox(in Node node, Vector3 origin, Vector3 inverse, float limit) =>
         Distance(node, origin, inverse) < limit;
 
-    /// <summary>
-    /// Where the ray enters the box, or <see cref="float.PositiveInfinity"/> when it misses. A ray
-    /// starting inside enters at zero, which is what keeps a camera indoors from seeing through the
-    /// walls it is between.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static float Distance(in Node node, Vector3 origin, Vector3 inverse)
     {
@@ -362,25 +267,16 @@ public sealed class Bvh
         return near <= far ? near : float.PositiveInfinity;
     }
 
-    /// <summary>
-    /// One node: the box, and either a run of triangles (a leaf) or the first of two adjacent
-    /// children. <see cref="Count"/> tells them apart, which is why a leaf may never be empty.
-    /// </summary>
     private readonly struct Node(Vector3 min, Vector3 max, int start, int count)
     {
         public readonly Vector3 Min = min;
         public readonly Vector3 Max = max;
 
-        /// <summary>First triangle of a leaf, or the left child of an interior node.</summary>
         public readonly int Start = start;
 
-        /// <summary>Triangles in a leaf; zero marks an interior node.</summary>
         public readonly int Count = count;
     }
 
-    /// <summary>
-    /// The recursive build, carrying the scratch arrays so the recursion does not have to.
-    /// </summary>
     private sealed class Builder(
         List<Node> nodes,
         int[] order,
@@ -393,14 +289,6 @@ public sealed class Bvh
 
         public int Depth { get; private set; }
 
-        /// <summary>
-        /// Fills the already-reserved node at <paramref name="index"/> with the range
-        /// <c>order[start, end)</c>, reserving and filling its children if it splits.
-        ///
-        /// The two children are reserved <em>together</em>, before either subtree is built, which
-        /// is what makes them adjacent — traversal names only the left one and reaches the right by
-        /// adding one, so a node costs one index rather than two.
-        /// </summary>
         public void Fill(int index, int start, int end, int depth)
         {
             Depth = System.Math.Max(Depth, depth);
@@ -429,11 +317,6 @@ public sealed class Bvh
             Fill(left + 1, middle, end, depth + 1);
         }
 
-        /// <summary>
-        /// Chooses a split and partitions the range around it, or reports that no split is worth
-        /// making — which happens when every centroid sits at the same point, and when the best
-        /// candidate costs more than testing the triangles where they are.
-        /// </summary>
         private bool TrySplit(int start, int end, out int middle)
         {
             middle = 0;
@@ -459,8 +342,6 @@ public sealed class Bvh
             Span<Vector3> binMin = stackalloc Vector3[BinCount];
             Span<Vector3> binMax = stackalloc Vector3[BinCount];
 
-            // Allocated once for all three axes: this runs per node of the build, and a stackalloc
-            // inside the loop would grow the frame three times over for no reason.
             Span<float> leftArea = stackalloc float[BinCount];
             Span<int> leftCount = stackalloc int[BinCount];
 
@@ -490,8 +371,6 @@ public sealed class Bvh
                     binMax[bin] = Vector3.Max(binMax[bin], maximums[triangle]);
                 }
 
-                // Sweep from the left, then from the right, so every candidate's two halves are
-                // known without re-accumulating either.
                 var runningMin = new Vector3(float.PositiveInfinity);
                 var runningMax = new Vector3(float.NegativeInfinity);
                 var running = 0;
@@ -521,8 +400,6 @@ public sealed class Bvh
                         continue;
                     }
 
-                    // The heuristic itself: area × population on each side. The constant cost of
-                    // the box tests is left out because it is the same for every candidate.
                     var cost = leftArea[bin - 1] * leftCount[bin - 1] + SurfaceArea(runningMin, runningMax) * running;
 
                     if (cost < bestCost)
@@ -541,8 +418,6 @@ public sealed class Bvh
 
             var (nodeMin, nodeMax) = Bounds(start, end);
 
-            // Splitting is only worth it if the two halves together are expected to cost less than
-            // testing the whole range where it is.
             if (bestCost >= SurfaceArea(nodeMin, nodeMax) * count)
             {
                 return false;
@@ -551,7 +426,6 @@ public sealed class Bvh
             var splitScale = BinCount / Component(extent, bestAxis);
             var splitOrigin = Component(centroidMin, bestAxis);
 
-            // Partition in place: everything left of the chosen bin to the front.
             var pivot = start;
 
             for (var i = start; i < end; i++)
@@ -598,10 +472,6 @@ public sealed class Bvh
             _ => v.Z,
         };
 
-        /// <summary>
-        /// Half the box's surface area — the factor of two is common to every candidate, so it is
-        /// left out. An empty box has none.
-        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static float SurfaceArea(Vector3 min, Vector3 max)
         {

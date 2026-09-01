@@ -3,14 +3,6 @@ using System.Runtime.CompilerServices;
 
 namespace SoftEngine.Core.Rasterization.Varyings;
 
-/// <summary>
-/// The light arriving at a vertex, interpolated across the triangle (Gouraud).
-///
-/// A colour rather than a scalar, because lights have colours: a scene lit by a warm key
-/// and a cool fill cannot be described by one number per vertex, however many lights it
-/// was summed from. The float constructor still exists for white light of a given
-/// intensity, which is what this carried when it was one.
-/// </summary>
 public readonly struct IntensityVarying : IVarying<IntensityVarying>
 {
     public readonly LinearColor Light;
@@ -18,7 +10,6 @@ public readonly struct IntensityVarying : IVarying<IntensityVarying>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public IntensityVarying(LinearColor light) => Light = light;
 
-    /// <summary>White light of the given intensity.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public IntensityVarying(float intensity) => Light = new LinearColor(intensity, intensity, intensity);
 

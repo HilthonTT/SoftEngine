@@ -12,7 +12,6 @@ public class TextureFilteringTests
 {
     private static readonly ColorRGB Black = new(0, 0, 0);
 
-    /// <summary>2×2 texture: white top-left, black top-right, black bottom-left, white bottom-right.</summary>
     private static Texture MakeQuad() => new(2, 2,
     [
         ColorRGB.White.Color, Black.Color,
@@ -29,7 +28,6 @@ public class TextureFilteringTests
     {
         var texture = MakeQuad();
 
-        // (0.25, 0.75) is the center of the top-left texel (V grows upward).
         var texel = ShadeBilinear(texture, 0.25f, 0.75f);
 
         Assert.Equal(ColorRGB.White.Color, texel.Color);
@@ -42,7 +40,6 @@ public class TextureFilteringTests
 
         var center = ShadeBilinear(texture, 0.5f, 0.5f);
 
-        // Two white and two black texels at equal weight: 255 / 2, rounded up.
         Assert.Equal(128, center.R);
         Assert.Equal(128, center.G);
         Assert.Equal(128, center.B);
@@ -53,8 +50,6 @@ public class TextureFilteringTests
     {
         var texture = MakeQuad();
 
-        // (0, 0) sits between all four texels through wrap addressing, so the
-        // result is the same four-way average as the middle of the texture.
         var corner = ShadeBilinear(texture, 0f, 0f);
 
         Assert.Equal(128, corner.R);
@@ -73,10 +68,6 @@ public class TextureFilteringTests
         }
     }
 
-    /// <summary>
-    /// A triangle whose texel footprint is 8× its screen area — exactly 1.5 levels up, so the
-    /// two selections have something to disagree about.
-    /// </summary>
     private static MipSelection SelectFor(Texture texture, TextureFiltering filtering) =>
         MipSelector.SelectBlended(
             texture,
@@ -111,17 +102,14 @@ public class TextureFilteringTests
     [Fact]
     public void Trilinear_HalfwayBetweenLevels_MixesBothOfThem()
     {
-        // Level 0 is single-texel white and black; every level-1 texel averages a 2×2 block of
-        // it, so it is a uniform 128. Half of each is the midpoint between the two.
         var texture = Texture.Checkerboard(4, 4, ColorRGB.White, Black);
         texture.EnsureMipMaps();
 
         var sampler = new TextureSampler(texture, new MipSelection(0, 0.5f), TextureFiltering.Trilinear);
 
-        // (0.125, 0.875) is the center of the top-left texel — white at level 0.
         var texel = sampler.Sample(0.125f, 0.875f);
 
-        Assert.Equal(192, texel.R); // (255 + 128) / 2, rounded
+        Assert.Equal(192, texel.R);
         Assert.Equal(192, texel.G);
         Assert.Equal(192, texel.B);
     }
@@ -153,8 +141,6 @@ public class TextureFilteringTests
 
         var last = texture.MipCount - 1;
 
-        // GetMip clamps past the end of the chain, so asking the last level to blend upward
-        // would blend it with itself — a second tap that cannot change the answer.
         var blended = new TextureSampler(texture, new MipSelection(last, 0.75f), TextureFiltering.Trilinear);
         var plain = new TextureSampler(texture, last, TextureFiltering.Bilinear);
 
@@ -174,24 +160,12 @@ public class TextureFilteringTests
         Assert.Equal(0f, mip.Blend);
     }
 
-    /// <summary>
-    /// The seam this exists to remove, in the two triangles that make it. Levels are chosen per
-    /// triangle, so two neighbours whose footprints sit either side of a rounding boundary —
-    /// 1.49 and 1.51 levels — are drawn a whole level apart and their shared edge is visible as
-    /// a change in sharpness. Blended, they are drawn 0.02 of a level apart, which is what
-    /// their depths actually differ by.
-    /// </summary>
     [Fact]
     public void Trilinear_KeepsNeighbouringTrianglesFromSteppingApart()
     {
-        // Two-texel cells: level 1 is still a checkerboard, one texel to a cell, and level 2 has
-        // averaged it into flat grey. So the two levels do not merely differ, they disagree
-        // about the colour of the surface — which is what a seam between them looks like.
         var texture = Texture.Checkerboard(64, 32, ColorRGB.White, Black);
         texture.EnsureMipMaps();
 
-        // The centre of a level-1 texel, so the sample is that texel rather than a blend of it
-        // with its neighbours — the test is about levels, not about position within one.
         const float u = 5.5f / 32f;
         const float v = 1f - 5.5f / 32f;
 
@@ -210,15 +184,8 @@ public class TextureFilteringTests
         }
     }
 
-    /// <summary>
-    /// What a triangle whose footprint calls for <paramref name="exact"/> levels resolves to —
-    /// built by handing the selector a triangle of the right shape rather than by repeating its
-    /// arithmetic here, which would test this test.
-    /// </summary>
     private static MipSelection LevelFor(Texture texture, TextureFiltering filtering, float exact)
     {
-        // Screen area 50 against a texel footprint of 50 · 4^exact, since a level is a factor
-        // of four in area. The UV triangle carries the whole ratio in its width.
         const float screenArea = 50f;
 
         var texelArea = screenArea * MathF.Pow(4f, exact);
@@ -240,7 +207,7 @@ public class TextureFilteringTests
 
         texture.EnsureMipMaps();
 
-        Assert.Equal(3, texture.MipCount); // 4×4, 2×2, 1×1
+        Assert.Equal(3, texture.MipCount);
         Assert.Equal(2, texture.GetMip(1).Width);
         Assert.Equal(1, texture.GetMip(2).Width);
     }
@@ -248,8 +215,6 @@ public class TextureFilteringTests
     [Fact]
     public void EnsureMipMaps_HalvedLevelAveragesEachBlock()
     {
-        // A single-texel checkerboard: every 2×2 block holds two whites and two
-        // blacks, so every level-1 texel is the same mid gray.
         var texture = Texture.Checkerboard(4, 4, ColorRGB.White, Black);
         texture.EnsureMipMaps();
 

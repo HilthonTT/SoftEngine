@@ -2,7 +2,6 @@
 
 namespace SoftEngine.Core.Textures;
 
-/// <summary>One level of a texture's mip chain: packed ARGB texels and their dimensions.</summary>
 public readonly struct TextureMip(int[] pixels, int width, int height)
 {
     public readonly int[] Pixels = pixels;
@@ -10,13 +9,8 @@ public readonly struct TextureMip(int[] pixels, int width, int height)
     public readonly int Height = height;
 }
 
-/// <summary>
-/// A CPU-side texture: packed 32-bit ARGB texels sampled by UV with wrap addressing.
-/// Platform-neutral — the front-end (or a factory here) supplies the pixels.
-/// </summary>
 public sealed class Texture
 {
-    // Level 0 is the full-resolution image; built on demand by EnsureMipMaps.
     private TextureMip[]? _mips;
 
     public Texture(int width, int height, int[] pixels)
@@ -39,13 +33,8 @@ public sealed class Texture
 
     public int[] Pixels { get; }
 
-    /// <summary>Number of available mip levels; 1 until <see cref="EnsureMipMaps"/> has run.</summary>
     public int MipCount => _mips?.Length ?? 1;
 
-    /// <summary>
-    /// Nearest-neighbour sample with wrap addressing. V grows upward (V = 0 is the
-    /// bottom row), matching the usual UV convention.
-    /// </summary>
     public ColorRGB Sample(float u, float v)
     {
         u -= MathF.Floor(u);
@@ -57,10 +46,6 @@ public sealed class Texture
         return ColorRGB.FromPacked(Pixels[x + y * Width]);
     }
 
-    /// <summary>
-    /// Builds the mip chain by successive 2×2 box halving, down to 1×1. Idempotent, and
-    /// meant to be called from a painter's Prepare — before the parallel paint phase.
-    /// </summary>
     public void EnsureMipMaps()
     {
         if (_mips is not null)
@@ -80,10 +65,6 @@ public sealed class Texture
         _mips = [.. levels];
     }
 
-    /// <summary>
-    /// The requested mip level, clamped to the chain. Level 0 (the full image) is always
-    /// available, whether or not the chain has been built.
-    /// </summary>
     public TextureMip GetMip(int level)
     {
         if (_mips is null || level <= 0)
@@ -102,8 +83,6 @@ public sealed class Texture
 
         for (var y = 0; y < height; y++)
         {
-            // For odd (or already 1-wide) sources the second sample clamps to the edge,
-            // so every destination texel still averages four in-range source texels.
             var y0 = System.Math.Min(y * 2, source.Height - 1);
             var y1 = System.Math.Min(y * 2 + 1, source.Height - 1);
 
@@ -129,7 +108,6 @@ public sealed class Texture
         return new TextureMip(pixels, width, height);
     }
 
-    /// <summary>A procedural checkerboard, handy as a default and for eyeballing UV mapping.</summary>
     public static Texture Checkerboard(int size, int cells, ColorRGB even, ColorRGB odd)
     {
         var pixels = new int[size * size];
@@ -147,11 +125,6 @@ public sealed class Texture
         return new Texture(size, size, pixels);
     }
 
-    /// <summary>
-    /// A greyscale height map of domes on a grid — the quickest way to see whether normal
-    /// mapping is working, since a dome's shading depends on the light from every direction.
-    /// Feed it through <see cref="NormalMapBuilder.FromHeight"/> to get a normal map.
-    /// </summary>
     public static Texture Bumps(int size, int cells)
     {
         var pixels = new int[size * size];
@@ -161,7 +134,6 @@ public sealed class Texture
         {
             for (var x = 0; x < size; x++)
             {
-                // Position within this cell, remapped to [-1, 1] from its centre.
                 var u = (x % cellSize) / cellSize * 2f - 1f;
                 var v = (y % cellSize) / cellSize * 2f - 1f;
 

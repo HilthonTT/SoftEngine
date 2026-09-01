@@ -3,13 +3,6 @@ using System.Runtime.CompilerServices;
 
 namespace SoftEngine.Core.Rasterization.Varyings;
 
-/// <summary>
-/// Everything a per-pixel material shade needs interpolated: world position and normal for
-/// the lighting, the tangent frame for reading a normal map, and the UV for every map.
-///
-/// The bitangent is not carried — it is <c>cross(normal, tangent) * tangent.W</c>, one
-/// cross product in the shader against three more floats through the whole rasterizer.
-/// </summary>
 public readonly struct MaterialVarying(Vector3 world, Vector3 normal, Vector4 tangent, Vector2 uv)
     : IVarying<MaterialVarying>, ITexturedVarying
 {
@@ -18,7 +11,6 @@ public readonly struct MaterialVarying(Vector3 world, Vector3 normal, Vector4 ta
     public readonly Vector4 Tangent = tangent;
     public readonly Vector2 UV = uv;
 
-    /// <inheritdoc/>
     public Vector2 TexCoord => UV;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

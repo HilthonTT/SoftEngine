@@ -4,11 +4,6 @@ using System.Numerics;
 
 namespace SoftEngine.WinForms.Debugging;
 
-/// <summary>
-/// The pixel history: every write attempt the frame made at the selected pixel — clears,
-/// triangles the depth test accepted, and the ones it rejected — with the vertex data and
-/// the colour blend behind each one.
-/// </summary>
 internal sealed class PixelHistoryPanel : UserControl
 {
     private readonly Panel _summary;
@@ -65,13 +60,8 @@ internal sealed class PixelHistoryPanel : UserControl
         Controls.Add(new DockPanelHeader("Pixel History"));
     }
 
-    /// <summary>Raised when the user picks a write, so the event list can jump to its event.</summary>
     public event EventHandler<PixelWrite>? WriteSelected;
 
-    /// <summary>
-    /// Shows the history of the frame just rendered. Rebuilds the tree once per frame,
-    /// and does nothing while no pixel is selected.
-    /// </summary>
     public void SetHistory(PixelHistory? history, SceneObjectCatalog catalog)
     {
         _catalog = catalog;
@@ -228,7 +218,6 @@ internal sealed class PixelHistoryPanel : UserControl
         return null;
     }
 
-    /// <summary>Colour chips are drawn once per distinct colour and reused across the tree.</summary>
     private int SwatchFor(int argb)
     {
         if (_swatchIndices.TryGetValue(argb, out var index))
@@ -236,7 +225,6 @@ internal sealed class PixelHistoryPanel : UserControl
             return index;
         }
 
-        // ImageList.Images.Add copies the bitmap, so this one is disposed when done.
         using var bitmap = new Bitmap(_swatches.ImageSize.Width, _swatches.ImageSize.Height);
         using (var g = Graphics.FromImage(bitmap))
         {
@@ -281,8 +269,6 @@ internal sealed class PixelHistoryPanel : UserControl
             return;
         }
 
-        // The swatch forces alpha to 255 so the colour is visible; the text reports the
-        // channels actually stored in the render target, including the true alpha.
         var actual = Color.FromArgb(_history.FinalColor);
         var lines = new[]
         {

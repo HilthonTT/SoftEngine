@@ -57,8 +57,6 @@ public class TemporalTests
 
         renderer.Render(scene, new FlatPainter());
 
-        // Nothing to compare against: every velocity is zero because nothing is known, and the
-        // buffer says so rather than claiming a still frame.
         Assert.False(renderer.Velocity.IsFilled);
     }
 
@@ -93,8 +91,6 @@ public class TemporalTests
 
         var motion = velocity.At(32, 32);
 
-        // The mesh moved along +x in the world, which is to the right on screen — and the velocity
-        // points back at where the surface came from, so it is positive.
         Assert.True(motion.X > 1f, $"expected a rightward motion of several pixels, got {motion}");
         Assert.True(MathF.Abs(motion.Y) < 0.5f, $"nothing moved vertically, got {motion}");
     }
@@ -106,8 +102,6 @@ public class TemporalTests
 
         renderer.Render(scene, new FlatPainter());
 
-        // The camera slides right, so the world slides left across the frame — and a velocity that
-        // says where a surface came from points the other way again.
         camera.Position = new Vector3(1f, 0f, 12f);
         renderer.Render(scene, new FlatPainter());
 
@@ -146,7 +140,6 @@ public class TemporalTests
         renderer.Render(scene, new FlatPainter());
         renderer.Render(scene, new FlatPainter());
 
-        // The cube covers the middle of the frame and nothing covers the corner.
         Assert.True(renderer.Velocity.IsCovered(32, 32));
         Assert.False(renderer.Velocity.IsCovered(0, 0));
     }
@@ -186,8 +179,6 @@ public class TemporalTests
 
         var jittered = TemporalJitter.Apply(projection, new Vector2(0.25f, 0f), 64, 64);
 
-        // A point at any depth has to shift by the same number of pixels, which is what makes this a
-        // change to where the frame is sampled rather than a change to where anything is.
         foreach (var depth in new[] { -2f, -20f, -80f })
         {
             var view = new Vector4(0.3f, -0.2f, depth, 1f);
@@ -218,10 +209,8 @@ public class TemporalTests
             seen.Add(offset);
         }
 
-        // Every phase distinct, or the average is of fewer samples than it claims.
         Assert.Equal(TemporalJitter.Phases, seen.Count);
 
-        // And it repeats, so a still image converges instead of drifting.
         Assert.Equal(TemporalJitter.Offset(0), TemporalJitter.Offset(TemporalJitter.Phases));
     }
 
@@ -238,7 +227,6 @@ public class TemporalTests
             var before = Vector4.Transform(view, projection);
             var after = Vector4.Transform(view, jittered);
 
-            // Screen y counts downward, so a positive offset moves ndc y up by the same amount.
             var shifted = (after.Y / after.W - before.Y / before.W) * (64 - 1) * 0.5f;
 
             Assert.Equal(0.5f, shifted, 3);
@@ -248,9 +236,6 @@ public class TemporalTests
     [Fact]
     public void TemporalAntiAliasing_ConvergesTowardASupersampledFrame()
     {
-        // The claim being tested is not "the image changes" but "the image gets closer to the right
-        // answer" — and there is a right answer available to compare against, because supersampling
-        // computes the same average by rendering the area instead of the frames.
         const int size = 48;
 
         var reference = Supersampled(size, factor: 4);
@@ -265,7 +250,6 @@ public class TemporalTests
             $"temporal resolve should approach the supersampled frame: {singleError:0.###} → {temporalError:0.###}");
     }
 
-    /// <summary>The scene rendered at a multiple of the resolution and averaged down — the answer.</summary>
     private static int[] Supersampled(int size, int factor)
     {
         var world = new SimpleWorld();
@@ -282,14 +266,11 @@ public class TemporalTests
         return resolved;
     }
 
-    /// <summary>The same scene at one sample per pixel, with and without the temporal average.</summary>
     private static int[] Resolved(int size, bool temporal)
     {
         var (renderer, scene, _, _) = Setup(size);
         renderer.Settings.TemporalAntiAliasing = temporal;
 
-        // Long enough for the blend to have converged: at 10% per frame, twenty-four frames is
-        // within a percent of the limit.
         var frames = temporal ? 24 : 1;
 
         for (var frame = 0; frame < frames; frame++)
@@ -300,7 +281,6 @@ public class TemporalTests
         return [.. scene.Surface.Screen];
     }
 
-    /// <summary>Mean absolute per-channel difference between two frames, in byte levels.</summary>
     private static float MeanError(int[] frame, int[] reference)
     {
         var total = 0f;
@@ -319,8 +299,6 @@ public class TemporalTests
     [Fact]
     public void TemporalAntiAliasing_LeavesAStillFrameLookingLikeItself()
     {
-        // Converging must not mean drifting: after many frames of a still scene, the middle of a flat
-        // surface has to hold the colour it was shaded, not something the blend wandered to.
         var (renderer, scene, _, _) = Setup();
 
         renderer.Render(scene, new FlatPainter());
@@ -340,11 +318,6 @@ public class TemporalTests
     [Fact]
     public void MotionBlur_SmearsAMovingMeshAndLeavesAStillOneAlone()
     {
-        // The sharpest step along a row through the middle of the frame. A silhouette with nothing
-        // blurring it steps from background to surface in one pixel; smeared over several, the
-        // largest single step falls in proportion. Counting "partly shaded" pixels would not show it
-        // — the cube's own faces are already mid-grey — and the total variation across a monotone
-        // edge is unchanged by blurring it, which is exactly what an edge like this is.
         static float SharpestStep(float distance, bool blur)
         {
             var (renderer, scene, cube, _) = Setup();
@@ -379,7 +352,6 @@ public class TemporalTests
 
         Assert.True(smeared < sharp * 0.75f, $"a moving mesh should smear: a step of {sharp} became {smeared}");
 
-        // And a still one must come out untouched: the shutter is open over no motion at all.
         Assert.Equal(SharpestStep(0f, blur: false), SharpestStep(0f, blur: true), 1);
     }
 
@@ -392,8 +364,6 @@ public class TemporalTests
 
         renderer.Render(scene, new FlatPainter());
 
-        // First frame: the pass ran but had nothing to compare against, so the view has nothing to
-        // show and leaves the shaded image alone.
         var first = scene.Surface.GetColor(32, 32);
 
         cube.Position = new Vector3(2f, 0f, 0f);
@@ -403,7 +373,6 @@ public class TemporalTests
 
         Assert.NotEqual(first, second);
 
-        // Grey where nothing moves, coloured where something does.
         var background = ColorRGB.FromPacked(scene.Surface.GetColor(0, 0));
         Assert.Equal(0, background.R);
     }

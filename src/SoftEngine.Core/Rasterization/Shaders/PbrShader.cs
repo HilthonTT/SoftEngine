@@ -5,31 +5,6 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Rasterization.Shaders;
 
-/// <summary>
-/// Per-pixel Cook-Torrance shading over a metallic-roughness material: GGX microfacet
-/// specular from every light in the scene, plus the environment as both a diffuse and a
-/// specular source.
-///
-/// What makes it different from <see cref="MaterialShader"/> is not the number of terms but
-/// what they are answerable to. Blinn-Phong's specular strength and shininess are two dials
-/// with no units, tuned until a surface looks right under the light it was tuned under, and
-/// wrong again when the light moves. Here the parameters describe the surface — how rough it
-/// is, whether it is metal — the same numbers hold under any lighting, and the model
-/// conserves energy: a rougher surface spreads the same reflected light over a wider lobe
-/// instead of losing it, and a metal's missing diffuse goes into its (tinted) reflection.
-///
-/// <b>One deliberate deviation.</b> The physical BRDF divides the diffuse term by π, and every
-/// other painter here multiplies albedo by n·l with no such divisor — so an identical scene
-/// would render about three times darker the moment it switched to this shader, which is not
-/// a thing a viewer should do when you click a different radio button. The whole BRDF is
-/// therefore scaled by π, which is the same as saying the engine's lights carry irradiance
-/// with the 1/π already folded in. It changes the exposure, never the relative weight of
-/// diffuse against specular — which is the part that has to be right.
-///
-/// Output is always linear light, unclamped. There is no encoded-byte path of the kind
-/// <see cref="Scenes.Scene.GammaCorrect"/> selects for the older shaders: this model is
-/// defined in linear light, and the framebuffer encodes it on the way out either way.
-/// </summary>
 public readonly struct PbrShader : IPixelShader<MaterialVarying>
 {
     private readonly TextureSampler _albedo;
@@ -89,8 +64,6 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
     {
         LinearColor albedo = _albedo.HasTexture ? _albedo.Sample(v.UV) : _baseColor;
 
-        // Metallic from blue, roughness from green: the channels glTF packs them into, and
-        // the same value in every channel of the greyscale maps an OBJ brings.
         var metallic = _metallic;
         if (_metallicMap.HasTexture)
         {
@@ -111,13 +84,8 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
         var n = ShadingNormal(v);
         var view = Normalize(_eye - v.World, n);
 
-        // Clamped away from zero: at exactly grazing incidence every term below divides by
-        // it, and a surface seen edge-on is one pixel wide, not a stripe of infinities.
         var nDotV = MathF.Max(Vector3.Dot(n, view), 1e-4f);
 
-        // A dielectric reflects the same few percent whatever colour it is, and keeps its
-        // albedo for the diffuse it scatters. A metal has no diffuse at all, and tints its
-        // reflection with the albedo instead. This one interpolation is the whole difference.
         var f0 = LinearColor.Lerp(new LinearColor(Ggx.DielectricF0, Ggx.DielectricF0, Ggx.DielectricF0), albedo, metallic);
         var diffuseColor = albedo * (1f - metallic);
 
@@ -138,7 +106,6 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
         return result;
     }
 
-    /// <summary>The scene's lights, each one a single direction and so a single evaluation of the BRDF.</summary>
     private LinearColor Direct(
         Vector3 world,
         Vector3 n,
@@ -181,12 +148,8 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
 
             var fresnel = Ggx.Fresnel(f0, vDotH);
 
-            // D · V · F is the specular BRDF; the π is the exposure correction the summary
-            // describes, applied to both terms so their ratio is untouched.
             var specularWeight = MathF.PI * Ggx.Distribution(nDotH, alpha) * Ggx.Visibility(nDotV, nDotL, alpha);
 
-            // Whatever Fresnel reflects cannot also be transmitted and scattered back out,
-            // so the diffuse term gets what the specular left.
             var diffuse = new LinearColor(
                 diffuseColor.R * (1f - fresnel.R),
                 diffuseColor.G * (1f - fresnel.G),
@@ -200,19 +163,6 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
         return total;
     }
 
-    /// <summary>
-    /// The environment, as both halves of what it contributes: the light arriving from
-    /// everywhere at once, and the image of itself the surface reflects.
-    ///
-    /// The specular half is the split-sum approximation —
-    /// <see cref="PrefilteredEnvironment"/> for the light, <see cref="BrdfLut"/> for the
-    /// surface's response to it. With no environment to prefilter, both halves fall back to
-    /// the <see cref="AmbientField"/>, evaluated along the reflection direction rather than
-    /// the normal: six directional averages are a poor mirror, but a surface reflecting the
-    /// bright side of the room stays brighter than one reflecting the dark side, which is
-    /// the part that reads. A baked volume makes that fallback a good deal less poor — the
-    /// six averages are then the ones measured where the surface actually is.
-    /// </summary>
     private LinearColor Ambient(
         Vector3 world,
         Vector3 n,
@@ -222,9 +172,6 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
         LinearColor f0,
         LinearColor diffuseColor)
     {
-        // Fresnel with roughness folded in. The plain form assumes a perfect mirror and
-        // sends every grazing pixel of a rough surface to white; this keeps the edge
-        // brightening a smooth surface deserves and a rough one does not.
         var weight = Ggx.FresnelWeight(nDotV);
         var ceiling = MathF.Max(1f - roughness, Ggx.DielectricF0);
 
@@ -240,7 +187,6 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
             diffuseColor.G * irradiance.G * (1f - fresnel.G),
             diffuseColor.B * irradiance.B * (1f - fresnel.B));
 
-        // The direction the surface would reflect the eye along.
         var reflection = 2f * Vector3.Dot(n, view) * n - view;
 
         var incoming = _environment is { } environment
@@ -259,11 +205,6 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
         return diffuse + specular;
     }
 
-    /// <summary>
-    /// The interpolated vertex normal, tilted by the normal map when there is one and the
-    /// mesh brought a usable tangent — identical to <see cref="MaterialShader"/>'s, because
-    /// a normal map describes geometry and knows nothing about the lighting model reading it.
-    /// </summary>
     private Vector3 ShadingNormal(in MaterialVarying v)
     {
         var n = Normalize(v.Normal, Vector3.UnitY);

@@ -2,13 +2,6 @@ using System.Reflection;
 
 namespace SoftEngine.WinForms.Dialogs;
 
-/// <summary>
-/// What this is, what it is running on, and where to find the rest of it.
-///
-/// The runtime and adapter lines are the point: "it looks wrong on my machine" is a bug report
-/// that needs to say <em>which</em> machine, and this is somewhere to copy that from without
-/// knowing where else to look.
-/// </summary>
 internal sealed class AboutDialog : Form
 {
     public const string ProjectUrl = "https://github.com/HilthonTT/SoftEngine";
@@ -122,13 +115,6 @@ internal sealed class AboutDialog : Form
         ("Licence", "MIT"),
     ];
 
-    /// <summary>
-    /// Hands the project page to whatever the machine opens links with.
-    ///
-    /// <c>UseShellExecute</c> is required: without it <see cref="System.Diagnostics.Process"/>
-    /// tries to execute the URL as a program. A machine with no browser association is a
-    /// shrug rather than a crash — nothing here is worth an error dialog.
-    /// </summary>
     public static void OpenProjectPage()
     {
         try

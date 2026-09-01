@@ -61,9 +61,6 @@ public class FogTests
 
         var foggy = state.ApplyFog(ColorRGB.Red, 15f);
 
-        // Halfway in linear light, which is where mixing light is defined — not halfway in
-        // sRGB bytes. Half the light of a full-intensity channel encodes to about 188, not
-        // to 128; the latter is a good deal darker than half the light.
         Assert.Equal(0.5f, foggy.R, 3);
         Assert.Equal(0f, foggy.G);
         Assert.Equal(0.5f, foggy.B, 3);
@@ -90,7 +87,7 @@ public class FogTests
 
         Assert.True(near.R > far.R);
         Assert.True(near.B < far.B);
-        Assert.InRange(far.B, 250, 255); // e^-5 leaves under 1% of the surface color
+        Assert.InRange(far.B, 250, 255);
     }
 
     [Fact]
@@ -103,7 +100,6 @@ public class FogTests
 
         var state = RasterState.From(LinearFog(10f, 20f));
 
-        // All three vertices at w = 30, well past the fog end.
         ScanlineRasterizer.Fill(
             surface,
             new Vector3(10, 10, 100), new Vector3(30, 10, 100), new Vector3(10, 30, 100),

@@ -29,20 +29,12 @@ public partial class Panel3D : UserControl
 
     private const float MoveInterval = 16f;
 
-    /// <summary>
-    /// How often the animation clock ticks. The renderer will not keep up with 60 Hz on a
-    /// dense scene, and that is fine: the clip is advanced by elapsed wall-clock time rather
-    /// than per tick, so a slow frame skips ahead instead of playing in slow motion.
-    /// </summary>
     private const float AnimationInterval = 16f;
 
-    /// <summary>One notch of a standard mouse wheel.</summary>
     private const int WheelNotch = 120;
 
-    /// <summary>How much of the distance to the scene a wheel notch closes.</summary>
     private const float ZoomPerNotch = 1.15f;
 
-    /// <summary>How close the camera may get to what it is looking at.</summary>
     private const float MinCameraDistance = 0.001f;
 
     private readonly StringBuilder StatDisplay;
@@ -50,23 +42,14 @@ public partial class Panel3D : UserControl
     private readonly System.Windows.Forms.Timer _animationTimer;
     private readonly HashSet<Keys> _heldKeys = [];
 
-    // Wall-clock, so playback runs at the clip's authored speed however long a frame takes.
-    // A software renderer's frame time swings by an order of magnitude between a 200-triangle
-    // scene and a 30k one, and stepping the clip by a fixed amount per tick would make the
-    // same animation play at a different speed in each.
     private readonly Stopwatch _animationClock = new();
     private TimeSpan _lastAnimationTick;
 
     private Size _bufferSize;
     private int _superSampling = 1;
 
-    // Set when the render target has to be rebuilt for a reason the control's size doesn't
-    // show — a change of sample count, which resizes the target but not the viewport.
     private bool _renderTargetStale;
 
-    // The frame at display resolution, when it is rendered at a higher one. Reused across
-    // frames, and left empty while supersampling is off — the render target is presentable
-    // as it stands then.
     private int[] _resolved = [];
 
     private Bitmap? bmp;
@@ -76,16 +59,11 @@ public partial class Panel3D : UserControl
     private Point _mouseDownAt;
     private bool _mouseDragged;
 
-    /// <summary>Set when a press ended a modal gesture, so its release is not also read as a pick.</summary>
     private bool _endedTransform;
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Scene? Scene { get; set; }
 
-    /// <summary>
-    /// The counters for the frame just drawn. Read off the current renderer rather than
-    /// captured once, because switching backends replaces it.
-    /// </summary>
     public RenderStats Stats => Renderer.Stats;
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -98,7 +76,6 @@ public partial class Panel3D : UserControl
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public IPainter? Painter { get; set; }
 
-    /// <summary>The full-screen effects applied after every frame; toggled individually.</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public PostProcessStack PostProcess { get; }
 
@@ -112,24 +89,6 @@ public partial class Panel3D : UserControl
 
     private RenderBackend _backend = RenderBackend.Cpu;
 
-    /// <summary>
-    /// Which rasterizer draws the viewport: this engine's own, on the CPU, or a graphics
-    /// adapter through OpenGL.
-    ///
-    /// <para>
-    /// Setting it rebuilds the renderer, carrying the settings, the post-process stack and
-    /// the debugger's own switches across — switching backends is a statement about where the
-    /// triangles are filled, and nothing else about the viewport should move. Read it back
-    /// afterwards: asking for the GPU on a machine that has none leaves this on
-    /// <see cref="RenderBackend.Cpu"/>, and <see cref="BackendFallback"/> says why.
-    /// </para>
-    ///
-    /// <para>
-    /// It defaults to the CPU rather than to whatever is available. The viewer is a
-    /// demonstration of a software rasterizer, and starting it on the graphics card would
-    /// quietly show you something else.
-    /// </para>
-    /// </summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public RenderBackend Backend
     {
@@ -137,15 +96,12 @@ public partial class Panel3D : UserControl
         set => SetBackend(value);
     }
 
-    /// <summary>The adapter the viewport is rendering on, or null on the CPU.</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public GpuAdapter? Adapter { get; private set; }
 
-    /// <summary>Why the last GPU request fell back to the CPU, or null when nothing did.</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string? BackendFallback { get; private set; }
 
-    /// <summary>One line naming what the viewport is being drawn by.</summary>
     public string BackendDescription => _backend switch
     {
         RenderBackend.Gpu when Adapter is { } adapter => $"GPU · {adapter.Describe()}",
@@ -154,18 +110,9 @@ public partial class Panel3D : UserControl
         _ => "CPU · software rasterizer",
     };
 
-    /// <summary>
-    /// Paths per pixel the viewport refines to before it stops redrawing itself.
-    ///
-    /// A path-traced viewport cannot produce a finished frame in the time a paint has, so it
-    /// produces a noisy one and then keeps averaging more samples into it for as long as nothing
-    /// moves — which is what makes an unusably slow renderer usable to look at. This is where it
-    /// gives up and leaves the image alone.
-    /// </summary>
     [DefaultValue(512)]
     public int TraceSampleTarget { get; set; } = 512;
 
-    /// <summary>Raised after <see cref="Backend"/> settles, whether or not it is what was asked for.</summary>
     public event EventHandler? BackendChanged;
 
     private void SetBackend(RenderBackend requested)
@@ -179,9 +126,6 @@ public partial class Panel3D : UserControl
 
         if (result.Renderer is PathTracer tracer)
         {
-            // A handful of paths per paint, averaged into what is already there. Enough to see the
-            // frame take shape immediately, and small enough that dragging the camera stays
-            // responsive — every drag throws the accumulation away anyway.
             tracer.Trace.SamplesPerPixel = 2;
             tracer.Trace.MaxBounces = 2;
             tracer.Trace.Accumulate = true;
@@ -189,9 +133,6 @@ public partial class Panel3D : UserControl
 
         var previous = Renderer;
 
-        // Carried across rather than left behind: these are the viewport's state, not the
-        // renderer's, and a mode switch that reset the wireframe overlay or forgot that the
-        // event log was being recorded would read as a bug.
         result.Renderer.Settings = previous.Settings;
         result.Renderer.PostProcess = previous.PostProcess;
 
@@ -208,10 +149,8 @@ public partial class Panel3D : UserControl
         Adapter = result.Adapter;
         BackendFallback = result.Fallback;
 
-        // The old one may hold an OpenGL context, a window and a pile of buffers.
         (previous as IDisposable)?.Dispose();
 
-        // The render target carries a reference to the old renderer's counters.
         _renderTargetStale = true;
 
         BackendChanged?.Invoke(this, EventArgs.Empty);
@@ -220,16 +159,9 @@ public partial class Panel3D : UserControl
 
     #endregion
 
-    /// <summary>Draws the per-frame counters over the top-left of the viewport.</summary>
     [DefaultValue(true)]
     public bool ShowStatsOverlay { get; set; } = true;
 
-    /// <summary>
-    /// Samples per screen pixel along each axis. 1 renders one framebuffer pixel per screen
-    /// pixel; 2 renders four and averages them down, which anti-aliases everything the
-    /// pipeline produces — silhouettes, highlights and texture detail alike — for four times
-    /// the fill. Everything the control exposes stays in screen pixels either way.
-    /// </summary>
     [DefaultValue(1)]
     public int SuperSampling
     {
@@ -251,11 +183,6 @@ public partial class Panel3D : UserControl
         }
     }
 
-    /// <summary>
-    /// Whether the world's animations advance. Turning it off holds the current pose rather
-    /// than resetting it, so a frame can be inspected in the debugger while it is stopped.
-    /// Has no effect on a world with nothing to animate.
-    /// </summary>
     [DefaultValue(true)]
     public bool Animate
     {
@@ -274,10 +201,6 @@ public partial class Panel3D : UserControl
 
     private bool _animate = true;
 
-    /// <summary>
-    /// Starts or stops the animation clock to match the current world and
-    /// <see cref="Animate"/>. Call after loading a world.
-    /// </summary>
     public void SyncAnimationTimer()
     {
         var run = _animate && Scene?.World is { IsAnimated: true };
@@ -311,14 +234,11 @@ public partial class Panel3D : UserControl
         var delta = (float)(now - _lastAnimationTick).TotalSeconds;
         _lastAnimationTick = now;
 
-        // A long stall — the window dragged, a model loaded — should not fling the clip
-        // forward by seconds; capping the step keeps a resumed animation continuous.
         world.Update(MathF.Min(delta, 0.25f));
 
         Invalidate();
     }
 
-    /// <summary>Raised after every rendered frame, on the UI thread.</summary>
     public event EventHandler? FrameRendered;
 
     public event EventHandler? ZoomChanged;
@@ -331,8 +251,6 @@ public partial class Panel3D : UserControl
 
         Renderer = new Renderer { Settings = new RendererSettings { BackFaceCulling = true } };
 
-        // Created up front and left empty of enabled effects, so the front-end can toggle
-        // one on without having to rebuild the chain.
         PostProcess = PostProcessStack.CreateDefault();
         Renderer.PostProcess = PostProcess;
 
@@ -344,8 +262,6 @@ public partial class Panel3D : UserControl
 
         StatDisplay = new StringBuilder();
 
-        // A timer rather than key-repeat: held keys must move the camera smoothly, and
-        // the auto-repeat rate is a user setting we shouldn't inherit.
         _moveTimer = new System.Windows.Forms.Timer { Interval = (int)MoveInterval };
         _moveTimer.Tick += MoveCamera;
 
@@ -357,9 +273,6 @@ public partial class Panel3D : UserControl
 
     #region Zoom
 
-    /// <summary>
-    /// The camera distance that reads as 100% — the framing a world is loaded with.
-    /// </summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public float ReferenceDistance
     {
@@ -371,18 +284,8 @@ public partial class Panel3D : UserControl
         }
     }
 
-    /// <summary>
-    /// How much closer the camera is than the world's default framing: 100% is the view a
-    /// world loads with, 200% is half the distance to it. Purely a readout — the scene is
-    /// always rendered at one framebuffer pixel per screen pixel.
-    /// </summary>
     public float Zoom => _referenceDistance / MathF.Max(0.0001f, CameraDistance);
 
-    /// <summary>
-    /// How far the camera stands off the scene, measured along the view axis rather than as
-    /// the length of its position: panning slides the camera sideways without bringing it any
-    /// closer, and the zoom readout shouldn't claim otherwise.
-    /// </summary>
     private float CameraDistance =>
         Scene?.Camera is { } camera ? MathF.Max(MinCameraDistance, MathF.Abs(camera.Position.Z)) : 1f;
 
@@ -390,7 +293,6 @@ public partial class Panel3D : UserControl
 
     public void ZoomOut() => Dolly(-1f);
 
-    /// <summary>Puts the camera back at the distance the current world was framed from.</summary>
     public void ZoomActualSize()
     {
         if (Scene?.Camera is not { } camera)
@@ -403,11 +305,6 @@ public partial class Panel3D : UserControl
         Invalidate();
     }
 
-    /// <summary>
-    /// Moves the camera along its view axis, scaling its distance rather than stepping it: one
-    /// notch covers as much ground on a 1500-unit elephant as on a 5-unit skull, the approach
-    /// slows as the camera closes in, and it can never overshoot through what it is looking at.
-    /// </summary>
     private void Dolly(float notches)
     {
         if (Scene?.Camera is not { } camera)
@@ -423,15 +320,8 @@ public partial class Panel3D : UserControl
         Invalidate();
     }
 
-    /// <summary>
-    /// Holds the camera on its own side of what it is looking at. Flying or dollying past the
-    /// pivot turns the view inside out — the scene swings around and is drawn back to front —
-    /// and there is no way to tell from the picture how to get back.
-    /// </summary>
     private static Vector3 ClampToPivot(Vector3 position, Vector3 previous)
     {
-        // Every world here is framed from negative Z, so that is the side to stay on unless
-        // the camera was explicitly placed on the other one.
         var side = previous.Z > 0f ? 1f : -1f;
 
         return position.Z * side >= MinCameraDistance
@@ -443,30 +333,14 @@ public partial class Panel3D : UserControl
 
     #region Pixel selection
 
-    /// <summary>The probed pixel, in render-target coordinates, or null when none is selected.</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Point? SelectedPixel => _selectedPixel;
 
-    /// <summary>
-    /// What the last selected pixel's ray ran into, or null when it hit nothing.
-    ///
-    /// Selecting a pixel asks two different questions at once, and both are worth answering:
-    /// the probe says what the renderer <em>did</em> at that pixel, and this says what is
-    /// <em>there</em>. They can disagree — a mesh switched off in the object table is still
-    /// geometry, and a pixel the depth test rejected still has a history — and where they do,
-    /// the disagreement is usually the bug.
-    /// </summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public PickHit? Picked { get; private set; }
 
-    /// <summary>Raised when the picked mesh changes, including when a click hits nothing.</summary>
     public event EventHandler? PickedChanged;
 
-    /// <summary>
-    /// The transform handles, or null when none are being offered. Held here rather than only
-    /// on the renderer settings because the same object answers three questions — what to
-    /// draw, what a press grabs, and what a drag moves — and they have to agree.
-    /// </summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public TransformGizmo? Gizmo
     {
@@ -474,25 +348,16 @@ public partial class Panel3D : UserControl
         set => RendererSettings.Gizmo = value;
     }
 
-    /// <summary>Raised while a gizmo drag moves the mesh, so a status bar can follow it.</summary>
     public event EventHandler? GizmoChanged;
 
-    /// <summary>
-    /// Where completed gizmo drags are recorded so they can be undone, or null to leave them
-    /// unrecorded. The viewport reports edits rather than owning the history: undo is an
-    /// application-wide gesture with a menu item and a shortcut attached to it, and this control
-    /// is only one of the things that can produce an edit.
-    /// </summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public EditHistory? History { get; set; }
 
-    /// <summary>The selected pixel as a 0..1 fraction of the render target, as the status bar shows it.</summary>
     public PointF? SelectedPixelNormalized =>
         _selectedPixel is { } pixel && _bufferSize.Width > 0 && _bufferSize.Height > 0
             ? new PointF(pixel.X / (float)_bufferSize.Width, pixel.Y / (float)_bufferSize.Height)
             : null;
 
-    /// <summary>Size of the render target, which follows the size of the control.</summary>
     public Size BufferSize => _bufferSize;
 
     public void SelectPixel(Point? pixel)
@@ -502,8 +367,6 @@ public partial class Panel3D : UserControl
             pixel = null;
         }
 
-        // Before the early-out below: the same pixel can be over something different once
-        // the camera has moved, so a second click on it is still a question worth asking.
         UpdatePick(pixel);
 
         if (pixel == _selectedPixel)
@@ -519,11 +382,6 @@ public partial class Panel3D : UserControl
         Invalidate();
     }
 
-    /// <summary>
-    /// Casts a ray through the selected pixel and records what it hits, outlining that mesh
-    /// in the viewport. Under supersampling a screen pixel is a block of samples, so the ray
-    /// goes through the one nearest its centre — the same sample the probe follows.
-    /// </summary>
     private void UpdatePick(Point? pixel)
     {
         var hit = pixel is { } p && Scene is { Surface.Width: > 0, World: not null }
@@ -545,19 +403,6 @@ public partial class Panel3D : UserControl
         }
     }
 
-    /// <summary>
-    /// Selects a mesh without a click — the same selection a pick produces, for the times the
-    /// choice was made somewhere other than under the cursor: a primitive just added, or one an
-    /// undo has put back.
-    ///
-    /// <para>
-    /// The hit it records names no triangle and no distance, because no ray was cast to find one.
-    /// Anything that reports the pick as a <em>ray result</em> has to allow for that; everything
-    /// that only asks <em>which mesh</em> — the gizmo, the object table, the outline — reads the
-    /// same fields either way. A mesh that is not in the current world clears the selection
-    /// instead, since the hit addresses it by its position in that world's list.
-    /// </para>
-    /// </summary>
     public void SelectMesh(IMesh? mesh)
     {
         var index = mesh is not null && Scene?.World is { } world ? world.Meshes.IndexOf(mesh) : -1;
@@ -575,23 +420,12 @@ public partial class Panel3D : UserControl
         Invalidate();
     }
 
-    /// <summary>
-    /// Forgets what was picked. A selection is a statement about the meshes in front of you,
-    /// so it cannot outlive them: the index it holds addresses the world's mesh list by
-    /// position, and a world swapped in under it would leave the highlight on whatever
-    /// happens to sit at that position now.
-    /// </summary>
     public void ClearPick()
     {
         RendererSettings.HighlightedMesh = -1;
 
-        // A gesture on a mesh that is no longer selected has nothing left to confirm, and the
-        // world it was moving something in may be on its way out.
         CancelTransform();
 
-        // The gizmo holds the mesh itself rather than an index, so it would happily go on
-        // drawing handles on a mesh from a world that is no longer being rendered — and
-        // dragging one would move geometry nothing can see.
         if (Gizmo is { } gizmo)
         {
             gizmo.Cancel();
@@ -610,11 +444,6 @@ public partial class Panel3D : UserControl
         Invalidate();
     }
 
-    /// <summary>
-    /// Points the renderer's probe at the selected screen pixel. Under supersampling a screen
-    /// pixel is a block of samples, so the probe takes the one nearest its centre — the
-    /// history then describes a sample that actually contributed to what was clicked.
-    /// </summary>
     private void ApplyProbe()
     {
         if (_selectedPixel is { } probe)
@@ -631,7 +460,6 @@ public partial class Panel3D : UserControl
 
     public void ClearSelectedPixel() => SelectPixel(null);
 
-    /// <summary>Maps a point in the control to the render-target pixel drawn under it.</summary>
     private static Point ToBufferPixel(Point client) => client;
 
     #endregion
@@ -653,9 +481,6 @@ public partial class Panel3D : UserControl
     {
         base.OnKeyDown(e);
 
-        // A running modal transform owns the keyboard outright, exactly as it does in Blender.
-        // Anything not part of the gesture would otherwise fly the camera or turn the view while
-        // a mesh is following the cursor — and there is always Escape to get out.
         if (Transform is { IsActive: true })
         {
             HandleTransformKey(e.KeyCode);
@@ -669,17 +494,12 @@ public partial class Panel3D : UserControl
             return;
         }
 
-        // The editing chords, which act on the selection and only on it. Two of them are also
-        // camera keys — S flies backwards, X turns the view — so they are claimed here when
-        // something is selected and left alone when nothing is, and Escape drops the selection
-        // to hand them back.
         if (HandleEditKey(e.KeyCode, e.Shift, e.Control, e.Alt))
         {
             e.Handled = true;
             return;
         }
 
-        // Somewhere to come back to when a fly-through has left the model off screen.
         if (e.KeyCode == Keys.Home)
         {
             ZoomActualSize();
@@ -700,19 +520,6 @@ public partial class Panel3D : UserControl
         }
     }
 
-    /// <summary>
-    /// The Blender chords that act on the picked mesh: G moves it, S scales it, X deletes it, and
-    /// Shift+A offers something new. Returns whether the key was one of them.
-    ///
-    /// <para>
-    /// All but Shift+A are gated on there being a selection, and that is not squeamishness about
-    /// stray keystrokes — it is how the two collisions with this viewer's own bindings are
-    /// resolved. S already flies the camera backwards and X already turns the view 15° about world
-    /// X, and both are wanted far more often than not. Tying the editing meaning to the selection
-    /// gives each key one meaning at a time, decided by something the user can see (the outlined
-    /// mesh) and change in one keystroke (Escape).
-    /// </para>
-    /// </summary>
     private bool HandleEditKey(Keys key, bool shift, bool control, bool alt)
     {
         if (control || alt)
@@ -720,8 +527,6 @@ public partial class Panel3D : UserControl
             return false;
         }
 
-        // Ahead of the fly keys rather than after them, because A is one of them: left unclaimed,
-        // Shift+A strafes four times as fast instead of offering anything.
         if (key == Keys.A && shift)
         {
             RequestAdd();
@@ -741,8 +546,6 @@ public partial class Panel3D : UserControl
             case Keys.S:
                 return BeginTransform(mesh, GizmoMode.Scale);
 
-            // Delete as well as X, because X is Blender's and Delete is what every other program
-            // on this machine uses — and a destructive key is the last one to be coy about.
             case Keys.X:
             case Keys.Delete:
                 DeleteRequested?.Invoke(this, mesh);
@@ -753,32 +556,15 @@ public partial class Panel3D : UserControl
         }
     }
 
-    /// <summary>
-    /// Raised when the viewport is asked for something to be added to the world, carrying the
-    /// screen point a menu should open at.
-    ///
-    /// <para>
-    /// The viewport reports the request rather than answering it, for the same reason it reports
-    /// edits rather than recording them: what can be added is a property of the application — its
-    /// menu, its undo stack, its idea of how big a new object should be in this world — and none
-    /// of that belongs to a control that draws triangles.
-    /// </para>
-    /// </summary>
     public event EventHandler<Point>? AddRequested;
 
-    /// <summary>Raised when the picked mesh is asked to be removed. Reported, not performed — see <see cref="AddRequested"/>.</summary>
     public event EventHandler<IMesh>? DeleteRequested;
 
     private void RequestAdd()
     {
-        // Before the menu opens, not after. A menu takes the keyboard, so the key-up that would
-        // stop a held W or A never reaches this control — and the camera would fly on behind it
-        // for as long as the menu is up.
         _heldKeys.Clear();
         _moveTimer.Enabled = false;
 
-        // At the cursor, as Blender does, unless the cursor is somewhere else entirely: the
-        // chord is a keyboard gesture and the pointer need not be over the control at all.
         var location = PointToClient(Cursor.Position);
 
         if (!ClientRectangle.Contains(location))
@@ -791,12 +577,6 @@ public partial class Panel3D : UserControl
 
     #region Modal transform
 
-    /// <summary>
-    /// The keyboard-driven move and scale, or null to leave G and S alone. Held here rather than
-    /// created here for the same reason as <see cref="Gizmo"/>: one object has to answer what is
-    /// running, what the cursor means and what a click confirms, and the application owns it
-    /// because the application owns the undo stack it feeds.
-    /// </summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public ModalTransform? Transform { get; set; }
 
@@ -814,11 +594,8 @@ public partial class Panel3D : UserControl
             return false;
         }
 
-        // The camera and the transform read the same cursor, and only one of them can have it.
         SuspendCameraGestures(true);
 
-        // Anything held when the gesture started would go on flying the camera underneath it: the
-        // keys are swallowed from here until it ends, so no key-up ever arrives to stop them.
         _heldKeys.Clear();
         _moveTimer.Enabled = false;
 
@@ -848,10 +625,6 @@ public partial class Panel3D : UserControl
                 EndTransform();
                 return;
 
-            // Blender's axis constraints, and pressing the same one again lets it go. The gesture
-            // is re-applied straight away because the cursor has not moved but now means something
-            // different, and waiting for the next mouse message would leave the mesh mid-gesture
-            // in the shape the previous constraint gave it.
             case Keys.X:
             case Keys.Y:
             case Keys.Z:
@@ -870,7 +643,6 @@ public partial class Panel3D : UserControl
         }
     }
 
-    /// <summary>Feeds the cursor's current position to a running gesture.</summary>
     private void UpdateTransform()
     {
         if (Transform is not { IsActive: true } transform || Scene is not { } scene)
@@ -885,16 +657,6 @@ public partial class Panel3D : UserControl
         Invalidate();
     }
 
-    /// <summary>
-    /// Throws away a running gesture, for a caller about to change the world out from under it.
-    ///
-    /// <para>
-    /// Undo is the case this exists for. It is a menu shortcut, and those are dispatched ahead of
-    /// the control's own key handling — so Ctrl+Z reaches the history even while the viewport
-    /// believes it has the keyboard, and would otherwise leave the gesture holding a mesh against
-    /// a transform the history had just put back.
-    /// </para>
-    /// </summary>
     public void CancelTransform()
     {
         if (Transform is not { IsActive: true } transform)
@@ -914,10 +676,6 @@ public partial class Panel3D : UserControl
         Invalidate();
     }
 
-    /// <summary>
-    /// The cursor in render-target samples, falling back to the middle of the viewport when the
-    /// pointer is somewhere else entirely — a keyboard gesture does not require one to be here.
-    /// </summary>
     private Point CursorSamplePixel()
     {
         var location = PointToClient(Cursor.Position);
@@ -946,8 +704,6 @@ public partial class Panel3D : UserControl
     {
         base.OnLostFocus(e);
 
-        // A gesture driven by keys the control can no longer receive has no way to be confirmed or
-        // cancelled, so it is thrown away rather than left holding a mesh to the cursor.
         if (Transform is { IsActive: true } transform)
         {
             transform.Cancel();
@@ -966,9 +722,6 @@ public partial class Panel3D : UserControl
         _mouseDownAt = e.Location;
         _mouseDragged = false;
 
-        // A running gesture is confirmed by a click and thrown away by the other button — the
-        // press, not the release, because that is the half of the click Blender acts on and the
-        // half that must not also be read as the start of an orbit or a pick.
         if (Transform is { IsActive: true } running)
         {
             if (e.Button == MouseButtons.Left)
@@ -980,19 +733,12 @@ public partial class Panel3D : UserControl
                 running.Cancel();
             }
 
-            // The release is still to come, and a click that ends a gesture must not go on to be
-            // read as a pick — landing on empty background, it would deselect the mesh that was
-            // just moved.
             _endedTransform = true;
 
             EndTransform();
             return;
         }
 
-        // The gizmo gets first refusal on a left press. Grabbing a handle and orbiting are the
-        // same gesture on the same button, so the only way to have both is for one of them to
-        // be able to claim the drag — and it has to be the gizmo, since orbiting is what
-        // happens everywhere else in the viewport.
         if (e.Button == MouseButtons.Left && Gizmo is { IsActive: true } gizmo && Scene is { } scene)
         {
             var pixel = ToSamplePixel(e.Location);
@@ -1014,8 +760,6 @@ public partial class Panel3D : UserControl
             _mouseDragged = true;
         }
 
-        // A modal gesture follows the bare cursor, with no button held — so it is answered before
-        // the gizmo's hover, which would otherwise light up handles the click can no longer take.
         if (Transform is { IsActive: true })
         {
             UpdateTransform();
@@ -1037,8 +781,6 @@ public partial class Panel3D : UserControl
             return;
         }
 
-        // Highlighting the handle under the cursor is what makes it obvious a gizmo can be
-        // grabbed at all, and which of three overlapping handles a click would take.
         var before = gizmo.HoveredAxis;
         gizmo.Hover(scene, pixel.X, pixel.Y);
 
@@ -1060,8 +802,6 @@ public partial class Panel3D : UserControl
 
         if (e.Button == MouseButtons.Left && Gizmo is { IsDragging: true } gizmo)
         {
-            // Null when the drag moved nothing, and Push ignores it — a handle grabbed and
-            // released in place must not put an entry on the stack that undoes nothing.
             History?.Push(gizmo.End());
 
             SuspendCameraGestures(false);
@@ -1071,18 +811,12 @@ public partial class Panel3D : UserControl
             return;
         }
 
-        // A left click that didn't orbit the camera picks the pixel under the cursor.
         if (e.Button == MouseButtons.Left && !_mouseDragged)
         {
             SelectPixel(ToBufferPixel(e.Location));
         }
     }
 
-    /// <summary>
-    /// A client point in render-target samples. Under supersampling one screen pixel is a
-    /// block of them, and the gizmo's ray has to go through the same sample the picker's does
-    /// or the handle you grab is not the handle you clicked.
-    /// </summary>
     private Point ToSamplePixel(Point client)
     {
         var pixel = ToBufferPixel(client);
@@ -1104,17 +838,13 @@ public partial class Panel3D : UserControl
     {
         base.OnMouseWheel(e);
 
-        // Keep the notch out of the parent chain, so the viewport is the only thing it drives.
         if (e is HandledMouseEventArgs handled)
         {
             handled.Handled = true;
         }
 
-        // Accumulate, so a high-resolution wheel that reports fractions of a notch dollies
-        // once per notch rather than once per message.
         _wheelDelta += e.Delta;
 
-        // The same modifiers the keyboard fly uses, for a coarse sweep or a fine approach.
         var notch = SpeedModifier();
 
         while (_wheelDelta >= WheelNotch)
@@ -1130,7 +860,6 @@ public partial class Panel3D : UserControl
         }
     }
 
-    /// <summary>Shift for a coarse move, Control for a fine one.</summary>
     private static float SpeedModifier()
     {
         var speed = 1f;
@@ -1155,11 +884,6 @@ public partial class Panel3D : UserControl
         _ => false,
     };
 
-    /// <summary>
-    /// Flies the camera with WASD (+ Q/E for down/up). The view matrix translates by the
-    /// camera position after rotating, so the position is already expressed along the
-    /// camera's own axes — moving the camera one way shifts the world the other.
-    /// </summary>
     private void MoveCamera(object? sender, EventArgs e)
     {
         if (Scene?.Camera is not { } camera || _heldKeys.Count == 0)
@@ -1181,8 +905,6 @@ public partial class Panel3D : UserControl
             return;
         }
 
-        // Step with the scale of the scene: models here range from a 2-unit skull to a
-        // 1500-unit elephant, and a fixed step would be useless for one of them.
         var speed = MathF.Max(0.02f, CameraDistance * 0.015f) * SpeedModifier();
 
         var position = camera.Position;
@@ -1196,13 +918,10 @@ public partial class Panel3D : UserControl
 
     #region View orientation
 
-    /// <summary>How far one keyed turn takes the view.</summary>
     public const float RotationStep = 15f * MathF.PI / 180f;
 
-    /// <summary>The scene's camera when it is one that can be aimed; null for any other.</summary>
     private ArcBallCamera? ArcBall => Scene?.Camera as ArcBallCamera;
 
-    /// <summary>Snaps the view straight down a world axis, keeping what it is centred on.</summary>
     public void LookAlong(AxisView view)
     {
         if (ArcBall is not { } camera)
@@ -1214,7 +933,6 @@ public partial class Panel3D : UserControl
         Invalidate();
     }
 
-    /// <summary>Swings the view round to the other side of what it is centred on.</summary>
     public void FlipView()
     {
         if (ArcBall is not { } camera)
@@ -1226,7 +944,6 @@ public partial class Panel3D : UserControl
         Invalidate();
     }
 
-    /// <summary>Turns the model one step about a world axis, leaving the other two alone.</summary>
     public void RotateAroundWorldAxis(Vector3 axis, float radians)
     {
         if (ArcBall is not { } camera)
@@ -1238,7 +955,6 @@ public partial class Panel3D : UserControl
         Invalidate();
     }
 
-    /// <summary>Turns the view one step about an axis of the screen.</summary>
     public void RotateInView(Vector3 axis, float radians)
     {
         if (ArcBall is not { } camera)
@@ -1250,10 +966,6 @@ public partial class Panel3D : UserControl
         Invalidate();
     }
 
-    /// <summary>
-    /// The keys that aim the view rather than fly it, following the numpad Blender uses as
-    /// closely as a Y-up world allows. Returns whether the key was one of them.
-    /// </summary>
     private bool HandleViewKey(Keys key, bool shift, bool control)
     {
         if (ArcBall is null)
@@ -1263,22 +975,17 @@ public partial class Panel3D : UserControl
 
         switch (key)
         {
-            // Down an axis, or with Control down the axis facing it.
             case Keys.NumPad1: LookAlong(control ? AxisView.Back : AxisView.Front); return true;
             case Keys.NumPad3: LookAlong(control ? AxisView.Left : AxisView.Right); return true;
             case Keys.NumPad7: LookAlong(control ? AxisView.Bottom : AxisView.Top); return true;
             case Keys.NumPad9: FlipView(); return true;
 
-            // Orbit a step at a time: 4 and 6 spin the model on its turntable, 8 and 2 tip it
-            // towards the viewer and away.
             case Keys.NumPad4: RotateAroundWorldAxis(Vector3.UnitY, RotationStep); return true;
             case Keys.NumPad6: RotateAroundWorldAxis(Vector3.UnitY, -RotationStep); return true;
             case Keys.NumPad8: RotateInView(Vector3.UnitX, RotationStep); return true;
             case Keys.NumPad2: RotateInView(Vector3.UnitX, -RotationStep); return true;
         }
 
-        // A step about the world axis the key names — the whole point of turning by keyboard —
-        // and the other way round with Shift.
         if (control)
         {
             return false;
@@ -1297,12 +1004,6 @@ public partial class Panel3D : UserControl
 
     #endregion
 
-    /// <summary>
-    /// Saves the last rendered frame as a PNG. The capture is the bare render target:
-    /// the stats overlay and the pixel-selection marker are drawn over the control, not
-    /// into the framebuffer, so they never appear in the file. Returns false when no
-    /// frame has been rendered yet.
-    /// </summary>
     public bool SaveScreenshot(string path)
     {
         if (Scene?.Surface is not { Width: > 0, Height: > 0 } || _bufferSize.Width <= 0 || _bufferSize.Height <= 0)
@@ -1315,17 +1016,12 @@ public partial class Panel3D : UserControl
             return false;
         }
 
-        // The resolved frame rather than the render target: a supersampled capture should be
-        // the image on screen, not the larger one it was averaged down from.
         var width = _bufferSize.Width;
         var height = _bufferSize.Height;
 
         var screen = PresentablePixels();
         var pixels = new int[width * height];
 
-        // The codec takes the framebuffer's own packed ARGB and does the swizzle to PNG's byte
-        // order itself, so all that is left here is forcing alpha opaque: cleared background
-        // pixels are 0x00000000, which would otherwise save as transparent.
         for (var i = 0; i < pixels.Length; i++)
         {
             pixels[i] = screen[i] | unchecked((int)0xFF000000);
@@ -1357,10 +1053,8 @@ public partial class Panel3D : UserControl
 
             _bufferSize = bufferSize;
 
-            // A history buffer of a different size is not a history of this frame.
             ResetTemporalHistory();
 
-            // The selection is in render-target space, which just changed under it.
             if (_selectedPixel is { } pixel &&
                 (pixel.X >= bufferSize.Width || pixel.Y >= bufferSize.Height))
             {
@@ -1392,26 +1086,12 @@ public partial class Panel3D : UserControl
         KeepRefining();
     }
 
-    /// <summary>
-    /// Forgets what the previous frame looked like, for the renderers that remember one.
-    ///
-    /// Anything that changes the picture without moving the camera or the geometry — a new world, a
-    /// change of shading, a setting toggled — leaves a history that is of a different image, and a
-    /// temporal pass would spend the next few frames blending it in.
-    /// </summary>
     public void ResetTemporalHistory()
     {
         (Renderer as Renderer)?.ResetHistory();
         (Renderer as PathTracer)?.Reset();
     }
 
-    /// <summary>
-    /// Asks for another paint while the path tracer still has samples worth adding.
-    ///
-    /// Posted rather than called: invalidating from inside a paint handler would recurse, and the
-    /// point is to let the message loop run — so a click, a drag or a resize is handled between two
-    /// passes instead of after all of them.
-    /// </summary>
     private void KeepRefining()
     {
         if (Renderer is not PathTracer tracer ||
@@ -1426,10 +1106,6 @@ public partial class Panel3D : UserControl
         BeginInvoke(Invalidate);
     }
 
-    /// <summary>
-    /// The last rendered frame at display resolution: the render target itself, or the
-    /// average of each block of samples when it was drawn larger than the control.
-    /// </summary>
     private int[] PresentablePixels()
     {
         if (Scene?.Surface is not { } surface)
@@ -1446,7 +1122,6 @@ public partial class Panel3D : UserControl
         return _resolved;
     }
 
-    /// <summary>Releases the render bitmap and the timers; called from the designer's Dispose.</summary>
     private void DisposeRenderResources()
     {
         _moveTimer.Dispose();
@@ -1454,7 +1129,6 @@ public partial class Panel3D : UserControl
         bmp?.Dispose();
         bmp = null;
 
-        // The GPU renderer owns an OpenGL context and a window; the software one owns nothing.
         (Renderer as IDisposable)?.Dispose();
     }
 
@@ -1465,7 +1139,6 @@ public partial class Panel3D : UserControl
             return;
         }
 
-        // A single pixel is too small to see, so the marker is a box drawn around it.
         var box = new Rectangle(pixel.X - 3, pixel.Y - 3, 7, 7);
 
         g.SmoothingMode = SmoothingMode.None;

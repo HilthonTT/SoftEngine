@@ -4,28 +4,10 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Geometry.Skinning;
 
-/// <summary>
-/// A tube rigged to a chain of joints, generated rather than loaded.
-///
-/// Every part of skinning can be wrong in a way that still produces a picture — a transposed
-/// bind matrix, a joint order that does not match the weights, a blend that normalizes when it
-/// should not. Debugging that against a 30,000-vertex figure from a file means guessing which
-/// of the two is at fault. This builds the smallest thing that exercises the whole path, with
-/// geometry whose correct answer is obvious: a straight tube, bent by a chain of joints.
-/// </summary>
 public static class BoneChain
 {
-    /// <param name="Root">The chain's root node; the first joint is this node itself.</param>
     public sealed record Rig(SceneNode Root, Skeleton Skeleton, SkinnedMesh Mesh);
 
-    /// <param name="boneCount">Joints in the chain, each driving one segment of the tube.</param>
-    /// <param name="boneLength">Length of one segment, along +Y.</param>
-    /// <param name="radius">Radius of the tube.</param>
-    /// <param name="sides">Vertices around the tube — its smoothness in cross-section.</param>
-    /// <param name="ringsPerBone">
-    /// Rings of vertices per segment. One ring per bone would make each segment rigid and the
-    /// chain fold at hard corners; the intermediate rings are where the blend is visible.
-    /// </param>
     public static Rig Create(
         int boneCount = 6,
         float boneLength = 2f,
@@ -63,8 +45,6 @@ public static class BoneChain
             }
         }
 
-        // Caps, so the tube is a solid with back-face culling on rather than a pipe you can
-        // see the inside of.
         var bottomCenter = vertices.Count;
         vertices.Add(Vector3.Zero);
         normals.Add(-Vector3.UnitY);
@@ -89,15 +69,6 @@ public static class BoneChain
         return new Rig(root, skeleton, mesh);
     }
 
-    /// <summary>
-    /// A clip that sends a travelling wave down the chain — each joint swinging about Z, and
-    /// each one lagging the one before it, which is what reads as a whip rather than a wiper.
-    /// </summary>
-    /// <param name="phasePerBone">Radians of lag added per joint down the chain.</param>
-    /// <param name="keysPerCycle">
-    /// Keyframes sampled across one period. The clip is linearly interpolated, so this is how
-    /// finely a sine wave is approximated by straight lines.
-    /// </param>
     public static AnimationClip Wave(
         int boneCount,
         float amplitudeDegrees = 24f,
@@ -115,8 +86,6 @@ public static class BoneChain
 
         for (var bone = 0; bone < boneCount; bone++)
         {
-            // One extra key, holding the value of the first, so the loop point is seamless
-            // rather than a step from the last sample back to the start.
             var times = new float[keysPerCycle + 1];
             var rotations = new Quaternion[keysPerCycle + 1];
 
@@ -147,8 +116,6 @@ public static class BoneChain
 
         for (var bone = 1; bone < boneCount; bone++)
         {
-            // Each joint sits one segment above its parent, so rotating a joint swings
-            // everything above it — the property that makes a chain a chain.
             joints[bone] = joints[bone - 1].Add(new SceneNode($"bone{bone}")
             {
                 Position = new Vector3(0f, boneLength, 0f),
@@ -160,11 +127,6 @@ public static class BoneChain
         return root;
     }
 
-    /// <summary>
-    /// Splits a vertex between the joint below it and the one above, by how far along the
-    /// segment it sits. A blend spanning the whole segment is wider than a rigger would paint,
-    /// and deliberately so: it makes the bend smooth and the weighting visible.
-    /// </summary>
     private static void Weight(SkinWeights.Builder weights, int vertex, float y, float boneLength, int boneCount)
     {
         var position = y / boneLength;
@@ -173,7 +135,6 @@ public static class BoneChain
 
         if (lower + 1 >= boneCount)
         {
-            // Past the last joint there is nothing to blend toward, so the tip is rigid.
             weights.Add(vertex, lower, 1f);
             return;
         }
@@ -197,8 +158,6 @@ public static class BoneChain
                 var upperLeft = (ring + 1) * sides + side;
                 var upperRight = (ring + 1) * sides + next;
 
-                // Wound so that the cross product of the first two edges points away from the
-                // axis, which is what the back-face test reads as facing the camera.
                 triangles.Add(new Triangle(lowerLeft, upperLeft, lowerRight));
                 triangles.Add(new Triangle(lowerRight, upperLeft, upperRight));
             }

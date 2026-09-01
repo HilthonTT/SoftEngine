@@ -10,11 +10,6 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Tests.Gizmos;
 
-/// <summary>
-/// The keyboard-driven move and scale. It has no handles, so there is nothing to hit-test and
-/// nothing to draw — which leaves exactly one question worth asking of it, in several forms: does
-/// the mesh end up where the cursor says it should, and does everything else about it stay put.
-/// </summary>
 public class ModalTransformTests
 {
     private const int Size = 256;
@@ -27,7 +22,6 @@ public class ModalTransformTests
         public Matrix4x4 ViewMatrix => Matrix4x4.CreateLookAt(Position, Vector3.Zero, Vector3.UnitY);
     }
 
-    /// <summary>A cube at the origin seen straight down -Z, so screen X is world X and screen Y is world -Y.</summary>
     private static (Scene Scene, ModalTransform Transform, Cube Cube) Setup()
     {
         var cube = new Cube();
@@ -64,11 +58,6 @@ public class ModalTransformTests
         Assert.False(transform.IsActive);
     }
 
-    /// <summary>
-    /// The whole point of the free gesture: the mesh follows the cursor across the frame, in the
-    /// plane facing the viewer. Dragging right takes it along +X, dragging up along +Y — screen Y
-    /// grows downward and world Y upward — and the depth it was at is left alone.
-    /// </summary>
     [Fact]
     public void Translate_Free_FollowsTheCursorInThePlaneFacingTheViewer()
     {
@@ -82,10 +71,6 @@ public class ModalTransformTests
         Assert.Equal(0f, cube.Position.Z, 4);
     }
 
-    /// <summary>
-    /// Constrained, the same cursor may only move it one way. The mesh has to stay on the axis
-    /// however far off it the pointer wanders, which is the entire reason to press X.
-    /// </summary>
     [Fact]
     public void Translate_ConstrainedToX_MovesOnlyAlongX()
     {
@@ -100,10 +85,6 @@ public class ModalTransformTests
         Assert.Equal(0f, cube.Position.Z, 4);
     }
 
-    /// <summary>
-    /// Blender's "X, X". Releasing the constraint has to give the free gesture back rather than
-    /// leaving the mesh stuck on the axis it was pressed against.
-    /// </summary>
     [Fact]
     public void Constrain_TheSameAxisTwice_LetsItGoAgain()
     {
@@ -121,11 +102,6 @@ public class ModalTransformTests
         Assert.True(cube.Position.X > 0f, "Released, it should be free to move on X again.");
     }
 
-    /// <summary>
-    /// A constraint applied half way through re-reads the gesture from where it began rather than
-    /// from where the mesh had got to — so naming the axis late lands it exactly where naming it
-    /// at the start would have, instead of adding whatever it had already travelled.
-    /// </summary>
     [Fact]
     public void Constrain_MidGesture_LandsWhereConstrainingFromTheStartWould()
     {
@@ -146,10 +122,6 @@ public class ModalTransformTests
         Assert.Equal(cubeB.Position.Y, cubeA.Position.Y, 4);
     }
 
-    /// <summary>
-    /// Scale reads the cursor's distance from the mesh's centre, so pushing away from it grows the
-    /// mesh and coming back in shrinks it — on all three axes at once, unconstrained.
-    /// </summary>
     [Fact]
     public void Scale_Free_GrowsWithTheCursorsDistanceFromTheCentre()
     {
@@ -184,7 +156,6 @@ public class ModalTransformTests
         Assert.Equal(1f, cube.Scale.Z, 4);
     }
 
-    /// <summary>A scale can approach zero but must never arrive: a zero matrix cannot be inverted.</summary>
     [Fact]
     public void Scale_DraggingThroughTheCentre_NeverReachesZero()
     {
@@ -196,12 +167,6 @@ public class ModalTransformTests
         Assert.True(cube.Scale.X > 0f, $"Scale collapsed to {cube.Scale.X}.");
     }
 
-    /// <summary>
-    /// The case that rules out measuring a scale as the ratio of two distances from the centre:
-    /// pressing S with the pointer on the mesh you are looking at leaves that ratio a pixel or two
-    /// over a pixel or two, and the next small movement multiplies the mesh by tens. Measuring the
-    /// cursor's <em>travel</em> against a handle length has no such point to avoid.
-    /// </summary>
     [Fact]
     public void Scale_StartedDeadOnTheCentre_StillScalesByHandFuls()
     {
@@ -235,10 +200,6 @@ public class ModalTransformTests
         Assert.Equal(moved, cube.Position);
     }
 
-    /// <summary>
-    /// A G pressed and confirmed without touching the mouse is not an edit, and putting one on the
-    /// history would make the next Ctrl+Z appear to do nothing.
-    /// </summary>
     [Fact]
     public void Confirm_WithoutMoving_HandsBackNothing()
     {
@@ -266,11 +227,6 @@ public class ModalTransformTests
         Assert.Equal(new Vector3(2f, 2f, 2f), cube.Scale);
     }
 
-    /// <summary>
-    /// Starting a second gesture while one is running must not leave the first one's half-finished
-    /// change behind — the keystroke that starts it is the user changing their mind, not adding to
-    /// it.
-    /// </summary>
     [Fact]
     public void Begin_WhileAnotherIsRunning_AbandonsTheFirst()
     {
@@ -285,10 +241,6 @@ public class ModalTransformTests
         Assert.Equal(GizmoMode.Scale, transform.Mode);
     }
 
-    /// <summary>
-    /// Snapping rounds the mesh's <em>resulting</em> position rather than the distance it
-    /// travelled, which is what makes two meshes moved onto the same gridline actually meet.
-    /// </summary>
     [Fact]
     public void Translate_Snapped_LandsOnTheGridRatherThanBesideIt()
     {
@@ -306,10 +258,6 @@ public class ModalTransformTests
         Assert.Equal(MathF.Round(cube.Position.X), cube.Position.X, 4);
     }
 
-    /// <summary>
-    /// The edit is named after what it did, because the Edit menu shows that name and "Undo" on
-    /// its own tells you nothing about which change is about to come back.
-    /// </summary>
     [Theory]
     [InlineData(GizmoMode.Translate, "Move Cube")]
     [InlineData(GizmoMode.Scale, "Scale Cube")]

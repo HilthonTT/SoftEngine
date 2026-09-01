@@ -5,10 +5,6 @@ using SoftEngine.Gpu;
 
 namespace SoftEngine.Cli.Rendering;
 
-/// <summary>
-/// What the program says once the pixels are written: where they went, and — with
-/// <c>--stats</c> — what they cost.
-/// </summary>
 internal static class RenderReport
 {
     public static void Print(
@@ -58,8 +54,6 @@ internal static class RenderReport
         Console.WriteLine($"  tris    {stats.TotalTriangleCount} total, {stats.DrawnTriangleCount} drawn");
         Console.WriteLine($"  pixels  {stats.DrawnPixelCount} drawn");
 
-        // Only when the frame actually stored fragments. The overflow count goes with them
-        // because it is the one number that says the resolve was approximate.
         if (stats.TransparentFragmentCount > 0)
         {
             Console.WriteLine(
@@ -70,16 +64,6 @@ internal static class RenderReport
         }
     }
 
-    /// <summary>
-    /// What <c>--gpu-info</c> prints: the adapter a render would land on, and — on a machine
-    /// with more than one — what else there is and how to ask for it.
-    ///
-    /// <para>
-    /// The installed list is printed before the probe rather than after it, because it is the
-    /// answer to the question somebody with two adapters is actually asking. The probe below
-    /// says which one they are getting; this says which ones there are.
-    /// </para>
-    /// </summary>
     public static int PrintGpuInfo()
     {
         PrintAdapterChoice();
@@ -98,15 +82,9 @@ internal static class RenderReport
         Console.WriteLine("  no graphics adapter is available for rendering.");
         Console.WriteLine($"  {error}");
 
-        // Not an error: "there is no GPU here" is a true answer to the question that was asked.
         return 0;
     }
 
-    /// <summary>
-    /// The adapters this machine has drivers for and the preference in force, on a machine
-    /// where that is a choice. Silent on a machine with one adapter, where naming it twice
-    /// would only be noise.
-    /// </summary>
     private static void PrintAdapterChoice()
     {
         if (!GpuDevices.HasChoice)

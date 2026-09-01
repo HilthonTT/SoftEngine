@@ -10,30 +10,16 @@ using System.Numerics;
 
 namespace SoftEngine.Cli.Rendering;
 
-/// <summary>
-/// Frames the model and builds the <see cref="Scene"/> that gets rendered.
-///
-/// The framing is the part with no second attempt at it: a person in the viewer can orbit and
-/// dolly until the model looks right, and a command line writes the frame it was asked for.
-/// </summary>
 internal static class SceneBuilder
 {
-    /// <summary>The vertical field of view every framed render uses.</summary>
     public const float FieldOfView = 40f * MathF.PI / 180f;
 
-    /// <summary>The scene, the camera in it, and the distance the camera was framed at.</summary>
-    /// <param name="Scene">Ready to render.</param>
-    /// <param name="Camera">The same camera the scene holds, typed so a turntable can re-orbit it.</param>
-    /// <param name="Distance">What framing solved for, which a turntable must keep constant.</param>
     internal sealed record Framed(Scene Scene, OrbitCamera Camera, float Distance);
 
     public static Framed Build(RenderOptions options, LoadedWorld loaded, IRenderer renderer, int factor)
     {
         var camera = new OrbitCamera { Target = loaded.Center };
 
-        // The distance at which a sphere of that radius exactly fills the frame's vertical extent is
-        // r / sin(fov/2) — solved rather than guessed at with a multiplier, because the multiplier
-        // that frames one model crops the next. The margin is the air around it.
         const float margin = 1.08f;
 
         var distance = MathF.Max(loaded.Radius / MathF.Sin(FieldOfView * 0.5f) * margin * options.Zoom, 1e-3f);
@@ -51,9 +37,6 @@ internal static class SceneBuilder
             Camera = camera,
             World = loaded.World,
 
-            // The far plane contains the model from wherever the camera ended up, with headroom: a
-            // far plane closer than the geometry slices the model visibly, and nothing about a
-            // one-shot render gives the user a chance to notice and fix it.
             Projection = new PerspectiveProjection(
                 FieldOfView,
                 MathF.Max(loaded.Radius * 0.001f, 1e-4f),
@@ -82,8 +65,6 @@ internal static class SceneBuilder
             }
             catch (Exception error) when (error is IOException or InvalidDataException)
             {
-                // A panorama that will not decode is worth saying out loud and worth continuing past:
-                // the frame is still renderable, it is just lit by nothing but its lights.
                 Console.Error.WriteLine($"softengine: could not read '{environmentPath}': {error.Message}");
             }
 
@@ -95,8 +76,6 @@ internal static class SceneBuilder
             return;
         }
 
-        // The sun goes where the world's key light points. A sky whose sun is somewhere other
-        // than where the shadows come from is the one thing that reads as obviously wrong.
         var sun = loaded.World.Lights.OfType<DirectionalLight>().FirstOrDefault()?.Direction
             ?? new Vector3(-0.35f, -0.6f, -1f);
 

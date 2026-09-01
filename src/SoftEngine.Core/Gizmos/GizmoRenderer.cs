@@ -26,15 +26,6 @@ public static class GizmoRenderer
         WireFramePainter.DrawLine(surface, color, projectionP0, projectionP1);
     }
 
-    /// <summary>
-    /// A gizmo line drawn over the scene rather than into it: clipped in clip space as usual,
-    /// but written without a depth test.
-    ///
-    /// A grid or a skeleton is describing where things are, so hiding behind them is right. A
-    /// manipulator is not — you grab its handles with a ray that knows nothing about depth, so
-    /// a handle buried inside the mesh it is attached to would be a control you can use and
-    /// cannot see.
-    /// </summary>
     private static void DrawLineOnTop(FrameBuffer surface, Matrix4x4 world2Projection, Vector3 worldP0, Vector3 worldP1, ColorRGB color)
     {
         var p0 = Vector4.Transform(worldP0, world2Projection);
@@ -50,27 +41,12 @@ public static class GizmoRenderer
 
     private static readonly LiangBarskyClippingHomogeneous _liangBarskyClipping = new();
 
-    /// <summary>
-    /// Draws a node hierarchy as bones: a line from each node to its parent, and a small
-    /// three-axis tick at each joint so a node with no children — the end of a finger, the tip
-    /// of a tail — is still visible.
-    ///
-    /// A skeleton is invisible in the rendered image by construction: it is the thing that
-    /// moves the vertices, never a thing that gets drawn. Which makes a rig that is subtly
-    /// wrong indistinguishable from a mesh that is subtly wrong, unless you can see it.
-    /// </summary>
-    /// <param name="tickSize">
-    /// Length of each joint's tick in world units. Skeletons are authored at wildly different
-    /// scales — a 2-unit skull and a 170-unit figure — so this is the caller's to set.
-    /// </param>
     public static void DrawSkeleton(FrameBuffer surface, Matrix4x4 world2Projection, SceneNode root, float tickSize = 1f)
     {
         ArgumentNullException.ThrowIfNull(root, nameof(root));
 
         foreach (var node in root.SelfAndDescendants())
         {
-            // The lights and cameras exported alongside the rig sit far outside the model and
-            // are not part of it; bones drawn out to them swamp everything else in the view.
             if (node.Kind is SceneNodeKind.Light or SceneNodeKind.Camera)
             {
                 continue;
@@ -78,8 +54,6 @@ public static class GizmoRenderer
 
             var origin = node.WorldMatrix.Translation;
 
-            // Not the root itself: it has no bone leading to it, and the synthetic root an
-            // importer wraps a scene in sits at the origin rather than anywhere anatomical.
             if (node.Parent is { } parent && !ReferenceEquals(node, root))
             {
                 DrawLine(surface, world2Projection, parent.WorldMatrix.Translation, origin, ColorRGB.Yellow);
@@ -91,18 +65,8 @@ public static class GizmoRenderer
         }
     }
 
-    /// <summary>The colour a grabbed or hovered handle is drawn in — the amber a picked mesh is outlined with.</summary>
     private static readonly ColorRGB GizmoHighlight = new(255, 190, 60);
 
-    /// <summary>
-    /// Draws a transform gizmo's handles at <paramref name="origin"/>, sized to
-    /// <paramref name="scale"/> world units per handle.
-    ///
-    /// The shape says what the drag will do before it happens: arrows slide, a ring turns, a
-    /// box on a stick stretches. That matters more here than it would in an editor with a
-    /// toolbar, because the mode is the only thing distinguishing one gizmo from another and
-    /// the handles are all in the same three places.
-    /// </summary>
     public static void DrawTransformGizmo(
         FrameBuffer surface,
         Matrix4x4 world2Projection,
@@ -150,7 +114,6 @@ public static class GizmoRenderer
         }
     }
 
-    /// <summary>Four barbs back from the tip — enough to read as an arrow from any angle.</summary>
     private static void DrawArrowHead(
         FrameBuffer surface,
         Matrix4x4 world2Projection,
@@ -171,7 +134,6 @@ public static class GizmoRenderer
         DrawLineOnTop(surface, world2Projection, tip, back - v * spread, color);
     }
 
-    /// <summary>A wireframe box on the end of a scale arm.</summary>
     private static void DrawHandleBox(
         FrameBuffer surface,
         Matrix4x4 world2Projection,
@@ -182,8 +144,6 @@ public static class GizmoRenderer
     {
         var (u, v) = Basis(direction);
 
-        // Two squares — one across the arm at each end of the box — plus the four struts
-        // joining them. Cheaper than eight transformed corners and reads the same.
         foreach (var offset in stackalloc[] { -half, half })
         {
             var plane = center + direction * offset;
@@ -195,10 +155,6 @@ public static class GizmoRenderer
         }
     }
 
-    /// <summary>
-    /// A circle in the plane the axis is normal to, as a closed run of short lines. Thirty-two
-    /// segments is where the corners stop being visible at the size these are drawn at.
-    /// </summary>
     private static void DrawRing(
         FrameBuffer surface,
         Matrix4x4 world2Projection,
@@ -222,7 +178,6 @@ public static class GizmoRenderer
         }
     }
 
-    /// <summary>Two unit vectors perpendicular to <paramref name="direction"/> and to each other.</summary>
     private static (Vector3 U, Vector3 V) Basis(Vector3 direction)
     {
         var reference = MathF.Abs(direction.X) < 0.9f ? Vector3.UnitX : Vector3.UnitY;

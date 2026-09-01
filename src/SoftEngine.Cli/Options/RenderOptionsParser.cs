@@ -4,16 +4,6 @@ using System.Numerics;
 
 namespace SoftEngine.Cli.Options;
 
-/// <summary>
-/// Reads an argument list into a <see cref="RenderOptions"/>.
-///
-/// <para>
-/// Nothing here throws. A flag that cannot be read adds to <see cref="RenderOptions.Errors"/> and
-/// leaves the value at its default, so the whole command line is read before anything is reported
-/// — one run of the program tells you everything wrong with the line you typed, instead of one
-/// thing per attempt.
-/// </para>
-/// </summary>
 internal static class RenderOptionsParser
 {
     public static RenderOptions Parse(string[] args)
@@ -158,8 +148,7 @@ internal static class RenderOptionsParser
                     break;
 
                 case "--turntable":
-                    // Degrees here rather than radians: this one is swept across a sequence and the
-                    // number people mean by it is 360.
+
                     options.Turntable = Float(args, ref i, options, arg, 360f);
                     break;
 
@@ -209,9 +198,6 @@ internal static class RenderOptionsParser
                     {
                         options.GpuPreference = preference;
 
-                        // Naming an adapter is asking for one, so it selects the backend the way
-                        // --samples selects the tracer. Saying which GPU and then being given
-                        // the CPU because nothing said --gpu would be a poor reading of it.
                         options.Backend = RenderBackend.Gpu;
                     }
                     else
@@ -343,7 +329,6 @@ internal static class RenderOptionsParser
         return value;
     }
 
-    /// <summary>An angle typed in degrees, which is the only unit anybody types one in.</summary>
     private static float Degrees(string[] args, ref int i, RenderOptions options, string flag, float fallback) =>
         Float(args, ref i, options, flag, fallback * 180f / MathF.PI) * MathF.PI / 180f;
 

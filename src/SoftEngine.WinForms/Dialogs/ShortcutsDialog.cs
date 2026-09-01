@@ -1,23 +1,5 @@
 namespace SoftEngine.WinForms.Dialogs;
 
-/// <summary>
-/// The keyboard and mouse reference.
-///
-/// <para>
-/// The viewer had roughly thirty bindings and no way to find out about any of them. The menu
-/// carries about a third — the ones that happen to be menu items — and the rest live only in
-/// <see cref="Panel3D"/>'s key handler: the numpad axis views, the X/Y/Z turns, the WASD fly, the
-/// Shift and Control speed modifiers, and every mouse gesture there is. A control nobody can
-/// discover is a control nobody has.
-/// </para>
-///
-/// <para>
-/// The table is written out here rather than derived from the menu, because the menu is not where
-/// most of these live and a reference assembled from the half that are would be worse than none:
-/// it would look complete. The trade is that this list has to be kept in step with
-/// <c>Panel3D.HandleViewKey</c> and <c>Panel3D.MoveCamera</c> by hand.
-/// </para>
-/// </summary>
 internal sealed class ShortcutsDialog : Form
 {
     private sealed record Section(string Title, (string Keys, string Action)[] Rows);
@@ -60,9 +42,6 @@ internal sealed class ShortcutsDialog : Form
             ("Ctrl+G", "Snap edits to a grid: whole units, 15°, tenths of scale"),
         ]),
 
-        // Worth its own section because of the rule at the top of it: two of these keys mean
-        // something else entirely when nothing is selected, and that is the only thing about
-        // them a reader has to be told rather than left to discover.
         new("With a mesh selected", [
             ("G", "Move it with the cursor — no handle to grab"),
             ("S", "Scale it with the cursor (S flies the camera back when nothing is selected)"),
@@ -102,9 +81,6 @@ internal sealed class ShortcutsDialog : Form
         ForeColor = Theme.TextPrimary;
         Font = new Font("Segoe UI", 9.75f);
 
-        // One column of stacked sections inside a scrolling host. AutoSize on the stack and
-        // AutoScroll on the host is what lets the list be longer than the dialog without any
-        // of it needing to know how long it is.
         var stack = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.TopDown,
@@ -132,8 +108,6 @@ internal sealed class ShortcutsDialog : Form
 
         host.Controls.Add(stack);
 
-        // The stack is as wide as the host allows rather than as wide as its widest row, so a
-        // resize widens the description column instead of leaving it ragged.
         void FitStack(object? sender, EventArgs e) =>
             stack.MaximumSize = stack.MinimumSize = new Size(
                 Math.Max(240, host.ClientSize.Width - host.Padding.Horizontal - SystemInformation.VerticalScrollBarWidth),
@@ -186,11 +160,6 @@ internal sealed class ShortcutsDialog : Form
         Margin = new Padding(2, 14, 0, 6),
     };
 
-    /// <summary>
-    /// One section's rows: the chord on the left sized to its own content, the description
-    /// taking whatever is left. Two auto-sized columns would let a long description push the
-    /// keys column around from row to row, which is exactly what makes a reference unscannable.
-    /// </summary>
     private static TableLayoutPanel BuildRows((string Keys, string Action)[] rows)
     {
         var table = new TableLayoutPanel

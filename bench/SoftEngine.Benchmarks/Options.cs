@@ -12,7 +12,6 @@ internal sealed record Options(
     string? CsvPath,
     bool ShowHelp)
 {
-    /// <summary>The column heading for whatever <c>--compare</c> turned off.</summary>
     public string ComparisonLabel => Compare switch
     {
         ComparedFeature.Occlusion => "no cull",
@@ -62,8 +61,7 @@ internal sealed record Options(
                     break;
 
                 case "--compare":
-                    // Bare --compare keeps meaning hierarchical-Z, which is what it meant
-                    // before there was a second thing to compare.
+
                     compare = NextText(args, ref i) switch
                     {
                         "occlusion" or "cull" or "culling" => ComparedFeature.Occlusion,

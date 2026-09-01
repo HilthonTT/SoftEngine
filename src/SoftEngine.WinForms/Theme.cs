@@ -2,7 +2,6 @@ using System.Drawing.Drawing2D;
 
 namespace SoftEngine.WinForms;
 
-/// <summary>Shared color palette and paint helpers for the dark UI.</summary>
 internal static class Theme
 {
     public static readonly Color Background = Color.FromArgb(30, 30, 34);

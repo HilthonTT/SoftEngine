@@ -2,10 +2,6 @@ using System.Runtime.CompilerServices;
 
 namespace SoftEngine.Core.Diagnostics;
 
-/// <summary>
-/// A packed 32-bit ARGB colour. A value type so it can be produced per pixel in the
-/// shader hot path without allocating on the managed heap.
-/// </summary>
 public readonly struct ColorRGB
 {
     private const int ARGBAlphaShift = 24;
@@ -29,7 +25,6 @@ public readonly struct ColorRGB
         _value = packed;
     }
 
-    /// <summary>Wraps a packed 32-bit ARGB value (e.g. a texture texel) without re-encoding.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ColorRGB FromPacked(int argb) => new(unchecked((uint)argb));
 
@@ -47,14 +42,12 @@ public readonly struct ColorRGB
             (byte)System.Math.Clamp(f * color.G, 0f, 255f),
             (byte)System.Math.Clamp(f * color.B, 0f, 255f));
 
-    /// <summary>Saturating add — channels clamp at 255 instead of wrapping.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ColorRGB operator +(ColorRGB x, ColorRGB y) =>
         new((byte)System.Math.Min(255, x.R + y.R),
             (byte)System.Math.Min(255, x.G + y.G),
             (byte)System.Math.Min(255, x.B + y.B));
 
-    /// <summary>Per-channel blend from <paramref name="from"/> to <paramref name="to"/>; <paramref name="t"/> must be in [0, 1].</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ColorRGB Lerp(ColorRGB from, ColorRGB to, float t) =>
         new((byte)(from.R + (to.R - from.R) * t),

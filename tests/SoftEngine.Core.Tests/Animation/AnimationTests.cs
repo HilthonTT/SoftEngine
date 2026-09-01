@@ -22,7 +22,6 @@ public class AnimationTests
     {
         var track = Track((1f, new Vector3(4, 0, 0)), (3f, new Vector3(8, 0, 0)));
 
-        // Held, not extrapolated: a clip says nothing about what happens outside its own span.
         Approx.Equal(new Vector3(4, 0, 0), track.Sample(-5f));
         Approx.Equal(new Vector3(8, 0, 0), track.Sample(99f));
     }
@@ -33,7 +32,6 @@ public class AnimationTests
         var keys = Enumerable.Range(0, 50).Select(i => ((float)i, new Vector3(i, 0, 0))).ToArray();
         var track = Track(keys);
 
-        // The binary search has to land on key 37, not merely somewhere plausible.
         Approx.Equal(new Vector3(37.25f, 0, 0), track.Sample(37.25f));
     }
 
@@ -78,7 +76,6 @@ public class AnimationTests
         var from = Quaternion.Identity;
         var to = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2f);
 
-        // Same rotation, opposite hemisphere. Blending naively would swing the long way.
         var track = new QuaternionTrack([0f, 1f], [from, -to]);
 
         Approx.EqualRotation(Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 4f), track.Sample(0.5f));
@@ -147,8 +144,6 @@ public class AnimationTests
             [0f, 2f],
             [Matrix4x4.Identity, Matrix4x4.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2f)]);
 
-        // Blending the matrices component-wise would shrink the vector toward the origin;
-        // decomposing first and slerping keeps it on the unit circle where a rotation lives.
         var rotated = Vector3.Transform(Vector3.UnitX, half.Rotation!.Sample(1f));
 
         Assert.Equal(1f, rotated.Length(), 4);

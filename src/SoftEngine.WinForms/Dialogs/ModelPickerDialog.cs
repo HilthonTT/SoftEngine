@@ -2,11 +2,6 @@
 
 namespace SoftEngine.WinForms.Dialogs;
 
-/// <summary>
-/// Picks what to render: one of the bundled demo worlds, or any OBJ/Collada file the
-/// user browses to. Replaces the sidebar list, which had no room left once the
-/// debugger panels moved in.
-/// </summary>
 internal sealed class ModelPickerDialog : Form
 {
     private readonly ListBox _list;
@@ -16,17 +11,12 @@ internal sealed class ModelPickerDialog : Form
         Text = "Load model";
         StartPosition = FormStartPosition.CenterParent;
 
-        // Sizable rather than fixed: the list is the point of the dialog, and a longer one
-        // is worth more room.
         FormBorderStyle = FormBorderStyle.Sizable;
         SizeGripStyle = SizeGripStyle.Show;
         MinimizeBox = false;
         MaximizeBox = false;
         ClientSize = new Size(520, 560);
 
-        // Wide enough for the whole button row — the browse button's label is the longest
-        // thing in the dialog, and the row is the part that has no way to degrade: the list
-        // above it can always give up a few entries, while a clipped button is unusable.
         MinimumSize = new Size(540, 420);
         BackColor = Theme.Background;
         ForeColor = Theme.TextPrimary;
@@ -73,16 +63,6 @@ internal sealed class ModelPickerDialog : Form
         var browse = MakeButton("Open file from my PC…");
         browse.Click += (s, e) => Browse();
 
-        // Browse on the left, the two verbs on the right, in one row of three columns: the
-        // two button groups size to their own content and an empty column between them takes
-        // whatever is left over.
-        //
-        // Docking them to opposite edges of a plain panel is what this replaces, and the
-        // reason is that docking resolves one edge at a time. Whichever of the two is laid
-        // out first takes the width it wants, and the other gets the remainder — so on a
-        // narrow dialog the longest label ends up underneath its neighbour with its right
-        // half cut off. Columns cannot do that: neither group can be given less than it
-        // asked for, and the slack is all in the column that has nothing in it.
         var confirm = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -103,8 +83,6 @@ internal sealed class ModelPickerDialog : Form
             ColumnCount = 3,
             RowCount = 1,
 
-            // Sized by what it holds rather than to a number that has to be kept in step
-            // with the buttons' own height — the row cannot end up shorter than they are.
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             Padding = new Padding(14, 14, 14, 16),
@@ -130,10 +108,8 @@ internal sealed class ModelPickerDialog : Form
         CancelButton = cancel;
     }
 
-    /// <summary>What the user picked, or null when the dialog was cancelled.</summary>
     public ModelChoice? Choice { get; private set; }
 
-    // Sized from its own text, so a longer label widens the button instead of being cut off.
     private Button MakeButton(string text, bool accent = false) => new()
     {
         Text = text,

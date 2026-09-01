@@ -1,17 +1,11 @@
 namespace SoftEngine.Core.Pipeline.PostProcess;
 
-/// <summary>
-/// Scales the image by an exposure and rolls the result back into [0, 1] with a curve
-/// instead of a clamp. Clamping flattens everything above white into a single flat patch;
-/// a tone-map curve keeps the ordering of those values, so bright regions stay shaped.
-/// </summary>
 public sealed class ToneMapEffect : IPostEffect
 {
     public string Name => "Tone map";
 
     public bool Enabled { get; set; }
 
-    /// <summary>Linear multiplier applied before the curve. 1 leaves the image's brightness alone.</summary>
     public float Exposure { get; set; } = 1.4f;
 
     public ToneMapOperator Operator { get; set; } = ToneMapOperator.Aces;
@@ -36,10 +30,6 @@ public sealed class ToneMapEffect : IPostEffect
         });
     }
 
-    /// <summary>
-    /// Narkowicz's fit of the ACES filmic curve — the usual stand-in for the real thing,
-    /// which is a chain of matrices and splines far too heavy to run per channel per pixel.
-    /// </summary>
     private static float Aces(float x)
     {
         const float a = 2.51f;

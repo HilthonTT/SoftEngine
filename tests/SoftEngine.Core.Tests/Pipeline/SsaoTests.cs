@@ -25,9 +25,6 @@ public class SsaoTests
 
     private static Scene Corner(int size = 96)
     {
-        // Two walls meeting at a right angle behind the camera's line of sight — a crease,
-        // which is exactly the geometry a shadow map at any sane resolution cannot resolve
-        // and screen-space occlusion can.
         var world = new SimpleWorld();
 
         world.Meshes.Add(new Cube { Position = new Vector3(0, -3f, 0), Scale = new Vector3(6f, 0.25f, 6f) });
@@ -55,13 +52,11 @@ public class SsaoTests
         var depth = new float[scene.Surface.Width * scene.Surface.Height];
         scene.Surface.ReadViewDepth(depth);
 
-        // The floor and back wall sit around 12 to 15 units from the camera.
         var centre = depth[scene.Surface.Width / 2 + scene.Surface.Height / 2 * scene.Surface.Width];
 
         Assert.True(float.IsFinite(centre));
         Assert.InRange(centre, 5f, 25f);
 
-        // A corner of the frame the geometry does not reach is background.
         Assert.True(float.IsPositiveInfinity(depth[0]));
     }
 
@@ -97,10 +92,6 @@ public class SsaoTests
             BlurRadius = 2,
         });
 
-        // The two renders have to take the same path through the stack, or they differ by
-        // the resolve rather than by the occlusion: a stack with nothing enabled is skipped
-        // whole, and never encodes. A vignette of zero intensity is the neutral effect that
-        // keeps it running.
         renderer.PostProcess.Effects.Add(new VignetteEffect { Enabled = true, Intensity = 0f });
 
         renderer.Render(scene, new GouraudPainter());
@@ -136,8 +127,6 @@ public class SsaoTests
             }
         }
 
-        // Occlusion only ever multiplies by something at or below 1, so a brighter pixel
-        // would mean the effect is doing something other than occluding.
         Assert.Equal(0, brightened);
         Assert.True(darkened > 0, "the corner produced no occlusion at all");
     }
@@ -148,8 +137,6 @@ public class SsaoTests
         var with = RenderWithSsao(enabled: true);
         var without = RenderWithSsao(enabled: false);
 
-        // The top-left corner is background in both: nothing was drawn there, so there is
-        // no surface to occlude.
         Assert.Equal(without.Surface.GetColor(1, 1), with.Surface.GetColor(1, 1));
     }
 
@@ -173,8 +160,6 @@ public class SsaoTests
     [Fact]
     public void Ssao_IsDeterministic()
     {
-        // The kernel and its per-pixel rotations are fixed, so two renders of one scene are
-        // identical — an effect seeded from a live random source would not be.
         var first = RenderWithSsao(enabled: true);
         var second = RenderWithSsao(enabled: true);
 
@@ -192,22 +177,14 @@ public class SsaoTests
         var stack = new PostProcessStack();
         stack.Effects.Add(new SsaoEffect { Enabled = true, Strength = 1f, Radius = 1.5f });
 
-        // No projection: the depth buffer cannot be turned back into positions, so there is
-        // nothing for the effect to work from.
         stack.Apply(scene.Surface, null);
 
-        // Compared without the alpha byte, which the stack's encode forces opaque whether
-        // or not any effect changed a colour.
         for (var i = 0; i < before.Length; i++)
         {
             Assert.Equal(before[i] & 0x00FFFFFF, scene.Surface.Screen[i] & 0x00FFFFFF);
         }
     }
 
-    /// <summary>
-    /// A frame drawn by hand rather than rendered, so the depth pattern is exactly the one
-    /// under test: a single lit pixel somewhere on the border, background everywhere else.
-    /// </summary>
     private static FrameBuffer BorderPixel(int width, int height, int x, int y)
     {
         var surface = new FrameBuffer(width, height) { Stats = new RenderStats() };
@@ -228,33 +205,23 @@ public class SsaoTests
     }
 
     [Theory]
-    [InlineData(16, 16, 8, 15)]   // bottom edge, the one that used to throw
-    [InlineData(16, 16, 15, 8)]   // right edge
-    [InlineData(16, 16, 15, 15)]  // bottom-right corner, both at once
-    [InlineData(16, 16, 0, 0)]    // top-left corner, the opposite border
-    [InlineData(16, 16, 8, 0)]    // top edge
+    [InlineData(16, 16, 8, 15)]
+    [InlineData(16, 16, 15, 8)]
+    [InlineData(16, 16, 15, 15)]
+    [InlineData(16, 16, 0, 0)]
+    [InlineData(16, 16, 8, 0)]
     public void Ssao_GeometryOnTheFrameBorder_DoesNotReadPastTheBuffer(int width, int height, int x, int y)
     {
-        // Reconstructing a normal reads the pixels either side. A lit pixel on the last row
-        // has background above it and no row below at all, so both neighbours are at infinity
-        // — and the tie-break used to resolve to the pixel that does not exist, one past the
-        // end of the depth buffer. The buffer is only ever grown, so this read landed in a
-        // stale larger frame's data most of the time and threw the rest of the time, which is
-        // why it only surfaced after zooming with ambient occlusion on.
         var surface = BorderPixel(width, height, x, y);
 
         RunSsao(surface);
 
-        // A pixel with no usable neighbour gets no normal and therefore no occlusion, so it
-        // has to come through the effect unchanged rather than merely not crashing.
         Assert.NotEqual(0, surface.Screen[x + y * width] & 0x00FFFFFF);
     }
 
     [Fact]
     public void Ssao_AfterALargerFrame_StillDoesNotReadPastTheBuffer()
     {
-        // The depth buffer is grown and never shrunk, so a smaller frame that follows a
-        // larger one leaves readable slack past its end. That slack is what hid this.
         var stack = new PostProcessStack();
         stack.Effects.Add(new SsaoEffect { Enabled = true, Radius = 0.5f });
 
@@ -282,14 +249,12 @@ public class SsaoTests
 
         Assert.NotNull(captured);
 
-        // There is no recorded geometry outside the frame, which is what background means.
         foreach (var (x, y) in new[] { (-1, 0), (0, -1), (captured!.Width, 0), (0, captured.Height) })
         {
             Assert.True(float.IsNegativeInfinity(captured.ViewPositionAt(x, y).Z));
         }
     }
 
-    /// <summary>An effect that does nothing but hand the target it was given to a callback.</summary>
     private sealed class DepthProbeEffect(Action<PostProcessTarget> inspect) : IPostEffect
     {
         public string Name => "Probe";
@@ -316,7 +281,6 @@ public class SsaoTests
         var target = captured!;
         Assert.True(target.HasDepth);
 
-        // Every pixel showing geometry must project back onto itself.
         var checkedAny = false;
 
         for (var y = 4; y < target.Height - 4; y += 5)

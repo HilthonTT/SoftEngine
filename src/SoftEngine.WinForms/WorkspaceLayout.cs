@@ -1,17 +1,5 @@
 namespace SoftEngine.WinForms;
 
-/// <summary>
-/// Which panels were open, how the space between them was divided, and which sidebar sections
-/// were rolled up.
-///
-/// <para>
-/// All of it is nullable so that a file written by an older build — or by a build that did not
-/// know about a panel yet — leaves that piece at its default instead of reading a 0 as "the
-/// sidebar is zero pixels wide". The distances are in pixels and are clamped against the
-/// splitters' own minimums when they are applied, because a layout saved on a large monitor is
-/// routinely reopened on a smaller one.
-/// </para>
-/// </summary>
 internal sealed class WorkspaceLayout
 {
     public bool? ShowPixelHistory { get; set; }

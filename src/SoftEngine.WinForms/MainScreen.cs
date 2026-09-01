@@ -8,6 +8,7 @@ using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.Core.Textures;
 using SoftEngine.WinForms.Cameras;
 using SoftEngine.WinForms.Controls;
+using SoftEngine.WinForms.Demos;
 using SoftEngine.WinForms.Dialogs;
 using System.Numerics;
 
@@ -15,26 +16,15 @@ namespace SoftEngine.WinForms;
 
 public sealed partial class MainScreen : Form
 {
-    /// <summary>
-    /// The vertical field of view every world is rendered with. The camera solves its pan
-    /// against this too, so the two have to stay the same number.
-    /// </summary>
-    private const float FieldOfView = 40f * MathF.PI / 180f;
+    private const float FieldOfView = DemoDefaults.FieldOfView;
 
     private readonly Label lblLoading;
     private readonly FlatProgressBar prgLoading;
 
-    /// <summary>Id of the bundled world on screen, so the picker reopens on it.</summary>
     private string _currentDemoId = "skull";
 
-    /// <summary>Path of the model file on screen, when the world came from one rather than from a demo.</summary>
     private string? _modelPath;
 
-    /// <summary>
-    /// The switches that outlive the session. Read once, here, because a field initializer runs
-    /// before the constructor body — and the backend has to be restored while the menu is being
-    /// wired, not after somebody has already seen the wrong item ticked.
-    /// </summary>
     private readonly ViewerSettings _settings = ViewerSettings.Load();
 
     public MainScreen()
@@ -174,8 +164,6 @@ public sealed partial class MainScreen : Form
         chkSky.Checked = true;
         chkTextureFiltering.Checked = true;
 
-        // Trilinear is a refinement of filtering rather than an alternative to it: with filtering
-        // off there is no mip chain to blend between, so the box has nothing to say.
         chkTrilinear.Enabled = chkTextureFiltering.Checked;
 
         chkFog.CheckedChanged += (s, e) => ApplyFog();
@@ -245,8 +233,6 @@ public sealed partial class MainScreen : Form
         {
             panel3D1.RendererSettings.TemporalAntiAliasing = chkTemporalAntiAliasing.Checked;
 
-            // Whatever was accumulated was accumulated against different settings, and a temporal
-            // pass that starts from it spends a few frames blending in a picture of the old ones.
             panel3D1.ResetTemporalHistory();
             panel3D1.Invalidate();
         };
@@ -265,30 +251,11 @@ public sealed partial class MainScreen : Form
 
         InitializeDebugger();
 
-        // Last, because it restores the window and the panel layout over whatever the designer
-        // and the wiring above left behind — and because the sidebar sections it builds have to
-        // exist before a saved workspace can roll any of them up.
         InitializeWorkspace();
 
         _ = PrepareWorldAsync("skull");
     }
 
-    /// <summary>
-    /// Puts the sidebar back at the top once the window is up.
-    ///
-    /// <para>
-    /// It does not start there on its own. The sidebar scrolls, and setting
-    /// <see cref="RadioButton.Checked"/> on a control inside a scrolling panel focuses it,
-    /// which WinForms answers by scrolling it into view — so wiring up the shading buttons at
-    /// startup leaves the panel parked partway down, with the title and the load button above
-    /// the fold. Scrolling back has to happen after the first layout, because before it there
-    /// is no scroll range to move within.
-    /// </para>
-    ///
-    /// The viewport takes the focus for the same reason: it is what the arrow keys and the
-    /// WASD fly controls belong to, and leaving it on a sidebar control both steals those and
-    /// invites the next scroll.
-    /// </summary>
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
@@ -297,7 +264,6 @@ public sealed partial class MainScreen : Form
         panel3D1.Focus();
     }
 
-    /// <summary>Opens the model picker: the bundled worlds, or a file from the machine.</summary>
     private async Task ShowModelPickerAsync()
     {
         using var dialog = new ModelPickerDialog(Demos, _currentDemoId);
@@ -366,7 +332,6 @@ public sealed partial class MainScreen : Form
         }
     }
 
-    /// <summary>A textured painter configured from the "Texture filtering" checkbox.</summary>
     private TexturedPainter CreateTexturedPainter()
     {
         var painter = new TexturedPainter();
@@ -374,7 +339,6 @@ public sealed partial class MainScreen : Form
         return painter;
     }
 
-    /// <summary>A material painter configured from the "Texture filtering" checkbox.</summary>
     private MaterialPainter CreateMaterialPainter()
     {
         var painter = new MaterialPainter();
@@ -382,7 +346,6 @@ public sealed partial class MainScreen : Form
         return painter;
     }
 
-    /// <summary>A physically-based painter configured from the "Texture filtering" checkbox.</summary>
     private PbrPainter CreatePbrPainter()
     {
         var painter = new PbrPainter();
@@ -390,7 +353,6 @@ public sealed partial class MainScreen : Form
         return painter;
     }
 
-    /// <summary>Applies the filtering checkboxes to whichever painter samples textures, if any.</summary>
     private void ApplyTextureFiltering(IPainter? painter)
     {
         var filtering = (chkTextureFiltering.Checked, chkTrilinear.Checked) switch
@@ -419,16 +381,11 @@ public sealed partial class MainScreen : Form
         }
     }
 
-    /// <summary>One entry of the buffer-view selector; the label is what the list shows.</summary>
     private sealed record BufferViewChoice(string Label, DebugView View)
     {
         public override string ToString() => Label;
     }
 
-    /// <summary>
-    /// Fills the buffer-view selector and points it at the renderer. Each entry is one of the
-    /// frame's own buffers presented in place of the shaded image.
-    /// </summary>
     private void InitializeBufferViews()
     {
         cboBufferView.Items.AddRange(
@@ -455,11 +412,6 @@ public sealed partial class MainScreen : Form
         };
     }
 
-    /// <summary>
-    /// Fills the shadow-cascade selector. One cascade is a single map fitted to the whole
-    /// world, which is what the engine did before cascades existed; more splits the camera's
-    /// view distance so the near slice gets a buffer of its own.
-    /// </summary>
     private void InitializeCascades()
     {
         cboCascades.Items.AddRange(
@@ -480,7 +432,6 @@ public sealed partial class MainScreen : Form
         public override string ToString() => Label;
     }
 
-    /// <summary>Points each post-processing checkbox at its effect in the viewport's stack.</summary>
     private void InitializePostProcessing()
     {
         Bind(chkReflections, panel3D1.PostProcess.Find<SsrEffect>());
@@ -507,14 +458,8 @@ public sealed partial class MainScreen : Form
         }
     }
 
-    /// <summary>
-    /// Turns shadow mapping on or off. The map's resolution scales with the viewport, so a
-    /// larger window doesn't end up with visibly coarser shadows than a small one.
-    /// </summary>
     private void ApplyShadows()
     {
-        // A scene file carries the resolution and the cascade count it was saved with, and this
-        // would derive both from the viewport instead.
         if (_applyingScene || panel3D1.Scene is not { } scene)
         {
             return;
@@ -531,14 +476,8 @@ public sealed partial class MainScreen : Form
         panel3D1.Invalidate();
     }
 
-    /// <summary>
-    /// Turns the scene's fog on or off, scaled to the distance the current world is
-    /// framed from and fading into the viewport background colour.
-    /// </summary>
     private void ApplyFog()
     {
-        // The document's fog distances were chosen against the scene it was saved from; deriving
-        // them again from the framing would throw that away.
         if (_applyingScene || panel3D1.Scene is not { } scene)
         {
             return;
@@ -564,8 +503,6 @@ public sealed partial class MainScreen : Form
         BackColor = Theme.Background;
         ForeColor = Theme.TextPrimary;
 
-        // The scrolling host takes the sidebar's colour too, or the strip below the controls
-        // shows through in the system default.
         pnlSidebar.BackColor = Theme.Surface;
         tlpSidebar.BackColor = Theme.Surface;
         lblTitle.ForeColor = Theme.TextPrimary;
@@ -595,8 +532,6 @@ public sealed partial class MainScreen : Form
             control.ForeColor = Theme.TextPrimary;
         }
 
-        // The button in the display panel is themed as a button, not as a label like its
-        // neighbours — the loop above them all would otherwise repaint its text over its fill.
         btnPanorama.ForeColor = Theme.TextPrimary;
         btnBake.ForeColor = Theme.TextPrimary;
         foreach (Control control in flpShading.Controls)

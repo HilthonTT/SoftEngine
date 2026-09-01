@@ -150,8 +150,6 @@ public class ScanlineRasterizerTests
 
         Assert.Equal(fullStats.DrawnPixelCount, tiledStats.DrawnPixelCount);
 
-        // Every pixel, not just the count: a tile must cover exactly its own share, with
-        // no pixel dropped at a seam and none drawn twice.
         for (var y = 0; y < size; y++)
         {
             for (var x = 0; x < size; x++)

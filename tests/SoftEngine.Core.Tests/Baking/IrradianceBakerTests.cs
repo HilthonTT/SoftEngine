@@ -24,7 +24,6 @@ public class IrradianceBakerTests
         public Matrix4x4 ViewMatrix => Matrix4x4.CreateLookAt(Position, target, Vector3.UnitY);
     }
 
-    /// <summary>A flat quad in the y = 0 plane with a chosen albedo, facing up.</summary>
     private static Mesh Floor(float size, ColorRGB color)
     {
         var mesh = new Mesh(
@@ -62,10 +61,6 @@ public class IrradianceBakerTests
     [Fact]
     public void Bake_UnderAUniformSkyMeasuresTheSky()
     {
-        // Nothing in the world, so every ray escapes and every face is the sky's own radiance. It is
-        // the one case with an answer that can be written down, and it is the same answer
-        // AmbientCube.FromEnvironment gives — which is what makes a baked ambient term and an
-        // environment-derived one interchangeable rather than merely similar.
         var world = new SimpleWorld();
         world.Lights.Clear();
 
@@ -87,9 +82,6 @@ public class IrradianceBakerTests
     [Fact]
     public void Bake_TakesTheColourOfWhatTheLightBouncedOff()
     {
-        // A red floor under a white light. Nothing here is red except the paint, and a probe above
-        // the floor should be lit red from below and by nothing at all from above — which is the
-        // whole of what an ambient constant cannot say and this can.
         var volume = IrradianceBaker.Bake(
             Lit(Floor(6f, new ColorRGB(230, 40, 40))),
             environment: null,
@@ -112,9 +104,6 @@ public class IrradianceBakerTests
     [Fact]
     public void Bake_DropsProbesBuriedInGeometry()
     {
-        // A solid cube with probes laid out over it: the one in the middle is inside the cube, sees
-        // the back of it in every direction, and would otherwise blend black into every surface
-        // near the cube's centre.
         var world = Lit(new Cube { Scale = new Vector3(4f, 4f, 4f) });
 
         var volume = IrradianceBaker.Bake(world, null, 0f, new BakeSettings { Resolution = 3, Rays = 32 });
@@ -149,17 +138,12 @@ public class IrradianceBakerTests
             return [.. values];
         }
 
-        // Probes are baked in parallel and seeded from their own index, so the volume does not
-        // depend on how many threads ran or in what order — the same property the frame renderer's
-        // per-pixel seeding buys, for the same reason.
         Assert.Equal(Faces(), Faces());
     }
 
     [Fact]
     public void Bake_ScalesTheGridToTheShapeOfTheWorld()
     {
-        // A corridor: long in x, shallow in z. Spending the same number of probes on both axes
-        // would put them centimetres apart across and metres apart along.
         var world = Lit(new Cube { Scale = new Vector3(40f, 4f, 4f) });
 
         var volume = IrradianceBaker.Bake(world, null, 0f, new BakeSettings { Resolution = 10, Rays = 8 });
@@ -184,10 +168,6 @@ public class IrradianceBakerTests
     [Fact]
     public void Scene_LightsTheFrameWithTheBakeInsteadOfTheEnvironment()
     {
-        // The end-to-end check: the same frame, rasterized, with and without a volume on the scene.
-        // The volume is a black one, so if the rasterizer is reading it the frame goes dark — and if
-        // it were adding it to the environment's ambient instead of replacing it, the frame would
-        // not change at all.
         static float Brightness(IrradianceVolume? volume)
         {
             var world = new SimpleWorld();
@@ -238,10 +218,6 @@ public class IrradianceBakerTests
     [Fact]
     public void Bake_AgreesWithWhatThePathTracerFindsAtTheSamePoint()
     {
-        // Both renderers' ambient light comes out of PathIntegrator, so a probe over a lit red floor
-        // and a traced frame of that floor should report the same bounced colour. This is the check
-        // that the shared walk is actually shared: if the baker grew its own copy, this is what
-        // would drift.
         var albedo = new ColorRGB(230, 40, 40);
 
         var volume = IrradianceBaker.Bake(
@@ -250,8 +226,6 @@ public class IrradianceBakerTests
             skyIntensity: 0f,
             new BakeSettings { Resolution = 4, Rays = 256, Bounces = 0 });
 
-        // A probe read where it sits rather than through the blend, so the number under test is what
-        // the rays found and not how two probes were mixed.
         var above = volume.IndexOf(1, volume.CountY - 1, 1);
 
         Assert.True(volume.IsValid(above));
@@ -259,10 +233,6 @@ public class IrradianceBakerTests
 
         var measured = volume.Probe(above)[CubeFace.NegativeY];
 
-        // A white light straight down on a Lambertian floor of this albedo reflects the albedo, less
-        // the few percent Fresnel keeps for a lobe pointing elsewhere — and the probe sees that
-        // across nearly its whole lower hemisphere, missing only the grazing directions that pass
-        // over the floor's edge and carry almost no cosine weight.
         LinearColor surface = albedo;
 
         Assert.True(measured.R > 0.6f * surface.R && measured.R < surface.R,

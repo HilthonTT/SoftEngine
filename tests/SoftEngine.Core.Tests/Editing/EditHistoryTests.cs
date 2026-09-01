@@ -38,11 +38,6 @@ public class EditHistoryTests
         Assert.Equal(new Vector3(3f, 0f, 0f), cube.Position);
     }
 
-    /// <summary>
-    /// Undo has to be exact rather than approximately reversible, which is why the commands hold
-    /// whole transforms rather than the deltas that produced them: a chain of accumulated
-    /// floating-point deltas does not return to where it started.
-    /// </summary>
     [Fact]
     public void Undo_OfManyEdits_ReturnsExactlyToTheStart()
     {
@@ -62,10 +57,6 @@ public class EditHistoryTests
         Assert.Equal(Vector3.Zero, cube.Position);
     }
 
-    /// <summary>
-    /// A new edit is a new branch. Keeping the undone future reachable would let redo apply a
-    /// change on top of a state it was never recorded against.
-    /// </summary>
     [Fact]
     public void Push_AfterAnUndo_DiscardsTheRedoStack()
     {
@@ -111,8 +102,6 @@ public class EditHistoryTests
 
         Assert.Equal(3, undone);
 
-        // The three that survived reach back to the fourth move, not to the origin — the oldest
-        // edits are gone, and with them the ability to get all the way home.
         Assert.Equal(new Vector3(3f, 0f, 0f), cube.Position);
     }
 
@@ -162,12 +151,6 @@ public class EditHistoryTests
         Assert.Equal(4, fired);
     }
 
-    /// <summary>
-    /// The trap the state exists to close. <see cref="Rotation3D"/> is a mutable class, so a
-    /// snapshot that held the mesh's own instance would record nothing at all — the next edit
-    /// would change the object the snapshot points at, and undo would restore the value it was
-    /// supposed to be replacing.
-    /// </summary>
     [Fact]
     public void TransformState_IsNotAliasedToTheMeshsOwnRotation()
     {
@@ -176,7 +159,6 @@ public class EditHistoryTests
 
         var before = TransformState.Of(cube);
 
-        // Mutated in place rather than replaced, which is the case a reference copy misses.
         cube.Rotation.YYaw = 1.5f;
 
         Assert.Equal(0.2f, before.Yaw, 6);
@@ -186,7 +168,6 @@ public class EditHistoryTests
         Assert.Equal(0.2f, cube.Rotation.YYaw, 6);
     }
 
-    /// <summary>Restoring a state must not hand two meshes the same mutable rotation object.</summary>
     [Fact]
     public void ApplyTo_GivesEachMeshItsOwnRotation()
     {

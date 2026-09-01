@@ -8,42 +8,26 @@ namespace SoftEngine.Core.Buffers;
 
 public sealed class FrameBuffer(int width, int height)
 {
-    // Number of quantization steps used to store normalized device depth (0 at the near plane,
-    // 1 at the far plane) across the full positive int range.
     public const int DepthResolution = int.MaxValue;
 
     private readonly int[] _zBuffer = new int[width * height];
     private readonly float _widthMinus1By2 = (width - 1) / 2f;
     private readonly float _heightMinus1By2 = (height - 1) / 2f;
 
-    // Device depth as a function of the view-space distance w: depth = _depthScale - _depthBias / w.
-    // Derived from the active projection's clip planes via SetDepthRange, so the buffer is defined
-    // by the near/far planes rather than a fixed range. Overwritten before the first pixel is drawn.
     private float _depthScale = 1f;
     private float _depthBias;
 
-    // Set by SetLinearDepthRange for parallel projections, where w is 1 everywhere and the
-    // formula above would collapse to a constant: the projected z is the device depth already.
     private bool _linearDepth;
 
-    // Linear RGB, three floats per pixel, allocated only in HDR mode. When it is live it —
-    // not Screen — is what the rasterizer writes to; Screen is filled once at the end of
-    // the frame by the resolve.
     private float[] _hdr = [];
     private bool _hdrEnabled;
 
-    // Write attempts per pixel, allocated only while the overdraw view is asking for them.
     private int[] _overdraw = [];
     private bool _countOverdraw;
 
-    // The mip level the last write to each pixel sampled from, -1 where nothing textured has
-    // been drawn. Allocated only while the mip-level view is asking for it.
     private sbyte[] _mipLevels = [];
     private bool _recordMips;
 
-    // Packed SurfaceReflectance per pixel — what the surface drawn there does to a reflection,
-    // zero where nothing reflective was drawn. Allocated only while something is going to read
-    // it back, which in practice means the screen-space reflection pass is enabled.
     private uint[] _reflectance = [];
     private bool _recordReflectance;
 
@@ -55,40 +39,10 @@ public sealed class FrameBuffer(int width, int height)
 
     public int Height { get; set; } = height;
 
-    /// <summary>
-    /// Whether pixels are being kept as unbounded linear floats rather than sRGB bytes.
-    /// See <see cref="SetHighDynamicRange"/>.
-    /// </summary>
     public bool IsHighDynamicRange => _hdrEnabled;
 
-    /// <summary>
-    /// Linear RGB, three floats per pixel, row-major — the render target itself while
-    /// <see cref="IsHighDynamicRange"/>, and an empty array otherwise. Exposed the same way
-    /// <see cref="Screen"/> is, so a post-process pass can read the frame without a copy.
-    /// </summary>
     public float[] HdrColor => _hdr;
 
-    /// <summary>
-    /// Switches the render target between 8-bit sRGB and unbounded linear float.
-    ///
-    /// An 8-bit target cannot hold a value above white, so a specular highlight five times
-    /// paper white and one exactly at it are the same pixel by the time anything downstream
-    /// sees them. Every effect that claims to work with brightness — bloom deciding what is
-    /// bright enough to bleed, tone mapping compressing a range — is then working on an
-    /// image whose brights have already been flattened. In HDR mode the rasterizer writes
-    /// linear floats instead, and the range survives to <see cref="ResolveToScreen"/> or to
-    /// the post-process stack, whichever ends the frame.
-    ///
-    /// Costs one float triple per pixel of memory and the encode at resolve; take it when
-    /// the scene has highlights worth keeping.
-    ///
-    /// The buffer is allocated here rather than at the next <see cref="Clear"/>, so that
-    /// "HDR is on" and "there is somewhere to put the floats" become the same fact. They were
-    /// two facts, and between them sat the pixel probe: it records the colour a pixel held
-    /// <em>before</em> the clear, which on an HDR target means reading the float buffer the
-    /// clear had not allocated yet. The first HDR frame on a new render target — one per
-    /// window resize, one per change of supersampling — read off the end of an empty array.
-    /// </summary>
     public void SetHighDynamicRange(bool enabled)
     {
         _hdrEnabled = enabled;
@@ -106,19 +60,6 @@ public sealed class FrameBuffer(int width, int height)
         }
     }
 
-    /// <summary>
-    /// Whether every write is also counted per pixel, for
-    /// <see cref="Pipeline.Debugging.DebugView.Overdraw"/>. The counters are allocated here
-    /// and reset by <see cref="Clear"/>, so turning counting on mid-frame reports the rest of
-    /// that frame rather than throwing on the next write.
-    ///
-    /// What it counts is <em>writes the rasterizer attempted</em>, not the triangles that
-    /// geometrically cover the pixel. A triangle the tile's coarse depth bound dropped whole,
-    /// or a run of pixels the vectorized depth test rejected together, never reaches a pixel
-    /// and so never shows up here. That is the intended reading: the view answers "what did
-    /// this frame actually pay for", which is the question overdraw is asked for, rather than
-    /// "what covers this pixel", which the geometry already told you.
-    /// </summary>
     public void SetOverdrawCounting(bool enabled)
     {
         _countOverdraw = enabled;
@@ -136,24 +77,8 @@ public sealed class FrameBuffer(int width, int height)
         }
     }
 
-    /// <summary>Whether <see cref="Overdraw"/> holds counts for the current frame.</summary>
     public bool IsCountingOverdraw => _countOverdraw;
 
-    /// <summary>
-    /// Replaces the per-pixel write counts, for a frame counted somewhere other than here.
-    ///
-    /// <para>
-    /// The counters exist because <see cref="PutPixel"/> increments them, and a frame drawn
-    /// on a graphics adapter never calls it — the depth test happens inside the hardware,
-    /// which has nowhere to write a tally. The GPU backend counts the same thing with a
-    /// second pass that additively blends one per fragment, and hands the result here, so
-    /// <see cref="Pipeline.Debugging.DebugView.Overdraw"/> shows the frame that was actually
-    /// drawn rather than an empty buffer.
-    /// </para>
-    ///
-    /// Does nothing unless <see cref="SetOverdrawCounting"/> has turned counting on — with
-    /// it off there is nothing asking for these, and no buffer to put them in.
-    /// </summary>
     public void WriteOverdraw(ReadOnlySpan<int> counts)
     {
         if (!_countOverdraw)
@@ -172,13 +97,9 @@ public sealed class FrameBuffer(int width, int height)
         counts[..length].CopyTo(_overdraw.AsSpan(0, length));
     }
 
-    /// <summary>
-    /// Write attempts per pixel, row-major, or an empty span when counting is off.
-    /// </summary>
     public ReadOnlySpan<int> Overdraw =>
         _countOverdraw ? _overdraw.AsSpan(0, Width * Height) : ReadOnlySpan<int>.Empty;
 
-    /// <summary>Counts one write attempt at a pixel. Tiles never overlap, so this needs no interlock.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void CountWrite(int index)
     {
@@ -188,14 +109,6 @@ public sealed class FrameBuffer(int width, int height)
         }
     }
 
-    /// <summary>
-    /// Whether the mip level each drawn pixel was sampled at is recorded, for
-    /// <see cref="Pipeline.Debugging.DebugView.MipLevel"/>.
-    ///
-    /// It is the one thing the frame produces that nothing else keeps: the level is chosen per
-    /// triangle inside the painter, used for one fill, and gone. Every other buffer view reads
-    /// something the frame needed anyway.
-    /// </summary>
     public void SetMipLevelRecording(bool enabled)
     {
         _recordMips = enabled;
@@ -213,46 +126,20 @@ public sealed class FrameBuffer(int width, int height)
         }
     }
 
-    /// <summary>Whether <see cref="MipLevels"/> holds levels for the current frame.</summary>
     public bool IsRecordingMipLevels => _recordMips;
 
-    /// <summary>
-    /// The mip level sampled at each pixel, row-major, with -1 where nothing textured was
-    /// drawn — or an empty span when recording is off.
-    /// </summary>
     public ReadOnlySpan<sbyte> MipLevels =>
         _recordMips ? _mipLevels.AsSpan(0, Width * Height) : ReadOnlySpan<sbyte>.Empty;
 
-    /// <summary>
-    /// Records the level a write at (x, y) sampled. Called by the rasterizer only for writes
-    /// that landed, and only while recording — the caller hoists
-    /// <see cref="IsRecordingMipLevels"/> out of its pixel loop rather than paying a call per
-    /// pixel to be told nothing is listening.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void RecordMipLevel(int x, int y, int level)
     {
         if (_recordMips)
         {
-            // Clamped rather than widened: a chain deep enough to overflow a signed byte would
-            // be a texture 2^127 texels across.
             _mipLevels[x + y * Width] = (sbyte)System.Math.Clamp(level, -1, sbyte.MaxValue);
         }
     }
 
-    /// <summary>
-    /// Whether what each drawn pixel's surface does to a reflection is recorded, for
-    /// <see cref="Pipeline.PostProcess.SsrEffect"/>.
-    ///
-    /// <para>
-    /// The finished image cannot answer it. A pixel's colour says what the surface ended up
-    /// looking like, not whether it was a mirror or a brick — and a reflection pass that
-    /// guessed would either mirror the whole frame or nothing in it. This is the one channel
-    /// the rasterizer keeps that describes the <em>surface</em> rather than the picture, and
-    /// it is off unless something is going to read it, because it is four bytes a pixel and a
-    /// branch per write to fill.
-    /// </para>
-    /// </summary>
     public void SetReflectanceRecording(bool enabled)
     {
         _recordReflectance = enabled;
@@ -270,22 +157,11 @@ public sealed class FrameBuffer(int width, int height)
         }
     }
 
-    /// <summary>Whether <see cref="Reflectance"/> holds this frame's surfaces.</summary>
     public bool IsRecordingReflectance => _recordReflectance;
 
-    /// <summary>
-    /// Packed <see cref="SurfaceReflectance"/> at each pixel, row-major, zero where nothing
-    /// reflective was drawn — or an empty span when recording is off.
-    /// </summary>
     public ReadOnlySpan<uint> Reflectance =>
         _recordReflectance ? _reflectance.AsSpan(0, Width * Height) : ReadOnlySpan<uint>.Empty;
 
-    /// <summary>
-    /// Records what the surface written at (x, y) reflects. Called by the rasterizer only for
-    /// writes that landed, and only while recording — the caller hoists
-    /// <see cref="IsRecordingReflectance"/> out of its pixel loop rather than paying a call per
-    /// pixel to be told nothing is listening.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void RecordReflectance(int x, int y, uint packed)
     {
@@ -295,10 +171,6 @@ public sealed class FrameBuffer(int width, int height)
         }
     }
 
-    /// <summary>
-    /// Copies this frame's reflectance into <paramref name="destination"/>, or fills it with
-    /// zero — a frame of surfaces that reflect nothing — when none was recorded.
-    /// </summary>
     public void ReadReflectance(uint[] destination)
     {
         ArgumentNullException.ThrowIfNull(destination, nameof(destination));
@@ -320,11 +192,6 @@ public sealed class FrameBuffer(int width, int height)
         }
     }
 
-    /// <summary>
-    /// Defines the depth mapping from the active projection's clip planes. Device depth is 0 at
-    /// <paramref name="zNear"/> and 1 at <paramref name="zFar"/>, and stays linear in 1/w so it
-    /// interpolates correctly in screen space. Call once per frame before rasterizing.
-    /// </summary>
     public void SetDepthRange(float zNear, float zFar)
     {
         _depthScale = zFar / (zFar - zNear);
@@ -332,24 +199,8 @@ public sealed class FrameBuffer(int width, int height)
         _linearDepth = false;
     }
 
-    /// <summary>
-    /// Whether stored depth can be turned back into a view-space distance — true under a
-    /// perspective projection, where <see cref="SetDepthRange"/> defined the mapping, and
-    /// false under a parallel one, whose depth carries no w to recover.
-    /// </summary>
     public bool HasRecoverableDepth => !_linearDepth && _depthBias > 0f;
 
-    /// <summary>
-    /// Fills <paramref name="destination"/> with the view-space distance at every pixel —
-    /// the clip-space w the rasterizer had — inverting the mapping
-    /// <see cref="SetDepthRange"/> set up. Pixels nothing drew get
-    /// <see cref="float.PositiveInfinity"/>, so a screen-space effect can tell background
-    /// from geometry without a second buffer.
-    ///
-    /// This is what makes the depth buffer usable by something other than the depth test.
-    /// A screen-space effect does not want a number that is only monotonic in distance; it
-    /// wants the distance, because the radius it works over is measured in world units.
-    /// </summary>
     public void ReadViewDepth(float[] destination)
     {
         ArgumentNullException.ThrowIfNull(destination, nameof(destination));
@@ -387,7 +238,6 @@ public sealed class FrameBuffer(int width, int height)
                     continue;
                 }
 
-                // depth = scale - bias / w, inverted.
                 var denominator = scale - stored * toNormalized;
 
                 destination[i] = denominator > 1e-9f ? bias / denominator : float.PositiveInfinity;
@@ -395,12 +245,6 @@ public sealed class FrameBuffer(int width, int height)
         });
     }
 
-    /// <summary>
-    /// Depth mapping for a parallel projection: the projection matrix has already mapped
-    /// the near plane to z = 0 and the far plane to z = 1, so the buffer takes the
-    /// projected z as-is. Call instead of <see cref="SetDepthRange"/> when the scene's
-    /// projection reports <c>IsOrthographic</c>.
-    /// </summary>
     public void SetLinearDepthRange()
     {
         _depthScale = 1f;
@@ -410,23 +254,15 @@ public sealed class FrameBuffer(int width, int height)
 
     public Vector3 ToScreen3(Vector4 vector)
     {
-        // Using width - 1 to prevent overflow by -1 and 1 NDC coordinates
         float x = _widthMinus1By2 * (vector.X / vector.W + 1);
 
-        // Using height - 1 to prevent overflow by -1 and 1 NDC coordinates
         float y = -_heightMinus1By2 * (vector.Y / vector.W - 1);
 
-        // Normalized device depth from the near/far planes, quantized to the buffer resolution.
         float z = DepthResolution * (_linearDepth ? vector.Z / vector.W : _depthScale - _depthBias / vector.W);
 
         return new Vector3(x, y, z);
     }
 
-    /// <summary>
-    /// Rows a clear worker takes at a time. Clearing is memory-bandwidth bound, so the bands
-    /// have to be big enough that the scheduling costs less than the writes — and small
-    /// enough that a tall frame still spreads over every core.
-    /// </summary>
     private const int ClearBandRows = 32;
 
     public void Clear()
@@ -466,14 +302,8 @@ public sealed class FrameBuffer(int width, int height)
             }
         }
 
-        // Every one of these is a sweep of megabytes — at 1080p the depth buffer alone is
-        // 8 MB — and a single thread clearing them cannot saturate the memory controller.
-        // Splitting into bands of rows does, and the bands are disjoint, so nothing needs
-        // coordinating beyond the join.
         var bands = (Height + ClearBandRows - 1) / ClearBandRows;
 
-        // The one case where the sequential path wins: a viewport small enough that the
-        // scheduling costs more than the writes.
         if (bands <= 1 || Environment.ProcessorCount <= 1)
         {
             ClearBand(0, Height);
@@ -487,14 +317,6 @@ public sealed class FrameBuffer(int width, int height)
         });
     }
 
-    /// <summary>
-    /// Resets the depth buffer to the far plane, leaving the colour alone.
-    ///
-    /// For a backend that rasterized somewhere else and did not transfer its depth back: an
-    /// untouched z-buffer reads as zero, which is the <em>near</em> plane, and a buffer
-    /// claiming every pixel has geometry pressed against the lens is worse than one saying
-    /// it has none.
-    /// </summary>
     public void ClearDepth() => _zBuffer.AsSpan(0, Width * Height).Fill(DepthResolution);
 
     private void ClearBand(int rowFrom, int rowTo)
@@ -514,11 +336,6 @@ public sealed class FrameBuffer(int width, int height)
         }
         else
         {
-            // Only when the rasterizer is going to write here. On an HDR target the shaded
-            // pixels live in the float buffer and Screen holds nothing until the frame
-            // resolves — which rewrites every pixel of it, whether through the post-process
-            // stack's encode or through ResolveToScreen. Clearing it first would be a sweep
-            // of the whole image thrown away later in the same frame.
             Screen.AsSpan(from, count).Clear();
         }
 
@@ -529,27 +346,17 @@ public sealed class FrameBuffer(int width, int height)
 
         if (_recordMips)
         {
-            // -1, not 0: "nothing textured here" and "sampled level 0" are different answers,
-            // and a cleared zero would report every background pixel as a full-resolution
-            // texture.
             _mipLevels.AsSpan(from, count).Fill(-1);
         }
 
         if (_recordReflectance)
         {
-            // Zero is "reflects nothing", which is the right answer for background and for
-            // every pixel a matte surface is about to be drawn on.
             _reflectance.AsSpan(from, count).Clear();
         }
 
         _zBuffer.AsSpan(from, count).Fill(DepthResolution);
     }
 
-    /// <summary>
-    /// Encodes the HDR buffer into <see cref="Screen"/>, clamping anything above white.
-    /// Ends an HDR frame that no post-process stack is going to end for it — with a stack,
-    /// its own encode does this job after the effects have had the unclamped range.
-    /// </summary>
     public void ResolveToScreen()
     {
         if (!_hdrEnabled)
@@ -568,8 +375,6 @@ public sealed class FrameBuffer(int width, int height)
 
             for (var x = 0; x < width; x++, pixel++, i += 3)
             {
-                // Alpha is forced opaque, as in the post-process encode: the render target
-                // is presented, never composited.
                 screen[pixel] = unchecked((int)0xFF000000)
                     | (ColorSpace.ToSrgb(hdr[i]) << 16)
                     | (ColorSpace.ToSrgb(hdr[i + 1]) << 8)
@@ -578,15 +383,8 @@ public sealed class FrameBuffer(int width, int height)
         });
     }
 
-    /// <summary>Reads back one pixel of the render target, packed ARGB.</summary>
     public int GetColor(int x, int y) => Screen[x + y * Width];
 
-    /// <summary>
-    /// One pixel of the render target as packed sRGB, wherever it currently lives. In HDR
-    /// mode that means encoding it, because <see cref="Screen"/> holds nothing until the
-    /// frame resolves — the pixel history records sRGB, so it has to ask this rather than
-    /// read Screen directly.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int PackedAt(int index)
     {
@@ -602,7 +400,6 @@ public sealed class FrameBuffer(int width, int height)
             | ColorSpace.ToSrgb(_hdr[i + 2]);
     }
 
-    /// <summary>The colour currently stored at a pixel, in the space the shader works in.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private LinearColor LoadAt(int index)
     {
@@ -630,26 +427,8 @@ public sealed class FrameBuffer(int width, int height)
         _hdr[i + 2] = color.B;
     }
 
-    /// <summary>Reads back one pixel of the z-buffer, in raw depth units.</summary>
     public int GetDepth(int x, int y) => _zBuffer[x + y * Width];
 
-    /// <summary>
-    /// Replaces the whole depth buffer from normalized device depth — 0 at the near plane,
-    /// 1 at the far — quantized to the buffer's own <see cref="DepthResolution"/> steps.
-    ///
-    /// <para>
-    /// This is how a frame drawn somewhere other than here hands its depth back. The GPU
-    /// backend rasterizes into an OpenGL depth attachment, which holds exactly this
-    /// normalized value, and everything downstream of the fill — the overlays' depth test,
-    /// the screen-space effects that need a view distance, the depth and occlusion debug
-    /// views — reads the z-buffer rather than the renderer that filled it. Restoring the
-    /// buffer is what lets all of them go on working, unchanged, over a frame the CPU never
-    /// rasterized.
-    /// </para>
-    ///
-    /// A depth of 1 (or anything above it) is stored as the cleared value, so
-    /// <see cref="IsBackground"/> keeps agreeing with what was actually drawn.
-    /// </summary>
     public void WriteNormalizedDepth(ReadOnlySpan<float> normalized)
     {
         var count = Width * Height;
@@ -663,8 +442,6 @@ public sealed class FrameBuffer(int width, int height)
         var zBuffer = _zBuffer;
         var width = Width;
 
-        // Copied out of the span before the parallel loop: a ref struct cannot be captured
-        // by the lambda, and the source is a pinned readback buffer that outlives the call.
         var source = normalized[..count];
 
         for (var y = 0; y < Height; y++)
@@ -683,19 +460,9 @@ public sealed class FrameBuffer(int width, int height)
         }
     }
 
-    /// <summary>
-    /// Whether nothing has been drawn at (x, y) yet — the depth is still the value
-    /// <see cref="Clear"/> left. What the sky pass uses to find the pixels it owns.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool IsBackground(int x, int y) => _zBuffer[x + y * Width] >= DepthResolution;
 
-    /// <summary>
-    /// Writes a pixel with no depth test and without touching the depth buffer, for a pass
-    /// that has already established it owns the pixel — the sky, which draws only where
-    /// <see cref="IsBackground"/> holds and must leave the depth cleared so transparent
-    /// geometry can still blend over it.
-    /// </summary>
     public void PutBackground(int x, int y, LinearColor color)
     {
         var index = x + y * Width;
@@ -710,47 +477,13 @@ public sealed class FrameBuffer(int width, int height)
         StoreAt(index, color);
     }
 
-    /// <summary>
-    /// Whether the incoming depth would pass the depth test at (x, y). Lets the
-    /// rasterizer reject occluded pixels before paying for interpolation and shading;
-    /// <see cref="PutPixel"/> re-runs the test, so passing here is a hint, not a claim.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool DepthTest(int x, int y, int z) => z <= _zBuffer[x + y * Width];
 
-    /// <summary>
-    /// Which of the <see cref="Vector{T}.Count"/> pixels starting at (x, y) would pass the
-    /// depth test against <paramref name="depths"/> — all bits set in a lane that passes,
-    /// zero in one that does not. The caller must keep the run inside one row:
-    /// <c>x + Vector&lt;int&gt;.Count ≤ Width</c>.
-    ///
-    /// <para>
-    /// One load answers two questions the rasterizer asks together. A mask of all zeros means
-    /// the whole run is behind what is already drawn, and it can be skipped without
-    /// interpolating or shading any of it — the case that pays for itself in a scene with
-    /// depth complexity. A mask with bits in it says which lanes are worth shading, which
-    /// spares each of them the separate scalar load and compare that asking per pixel would
-    /// cost.
-    /// </para>
-    ///
-    /// Advisory, exactly as the scalar <see cref="DepthTest"/> is: <see cref="PutPixel"/>
-    /// re-runs the test on the pixel it is given. Lanes are distinct pixels, so no write made
-    /// from this mask can invalidate another lane of it.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal Vector<int> DepthPassMask(int x, int y, in Vector<int> depths) =>
         Vector.LessThanOrEqual(depths, new Vector<int>(_zBuffer.AsSpan(x + y * Width, Vector<int>.Count)));
 
-    /// <summary>
-    /// The farthest depth currently stored anywhere in the given rectangle. Nothing behind
-    /// it can be seen there, so a triangle whose nearest point is farther still can be
-    /// dropped without rasterizing it at all.
-    ///
-    /// The scan stops at the first row holding a pixel nothing has written yet: the clear
-    /// value is the largest depth the buffer can hold, so the answer is already known, and
-    /// a rectangle that is still partly background — the case where the bound would buy
-    /// nothing — is left after a handful of reads instead of a full sweep.
-    /// </summary>
     internal int MaxDepthIn(int xFrom, int yFrom, int xTo, int yTo)
     {
         var max = 0;
@@ -790,17 +523,6 @@ public sealed class FrameBuffer(int width, int height)
         return max;
     }
 
-    /// <summary>
-    /// Writes a pixel over whatever is there, testing nothing and leaving the depth buffer
-    /// alone.
-    ///
-    /// This is for an overlay that is not part of the scene — the transform gizmo. Its handles
-    /// have to be visible where they are grabbable, and they are grabbable by a ray that knows
-    /// nothing about depth, so a handle hidden inside the mesh it is attached to would be a
-    /// control you can use but cannot see. Depth is left untouched rather than overwritten
-    /// because a screen-space effect reading the buffer afterwards must not find a line of
-    /// geometry that was never in the scene.
-    /// </summary>
     public bool PutPixelOnTop(int x, int y, LinearColor color)
     {
         if ((uint)x >= (uint)Width || (uint)y >= (uint)Height)
@@ -814,8 +536,6 @@ public sealed class FrameBuffer(int width, int height)
 
         if (index == _probeIndex)
         {
-            // Nothing was compared, so the history records the write as one that passed at
-            // the depth already stored — which is what happened.
             RecordProbe(index, _zBuffer[index], color, _zBuffer[index], passed: true);
         }
 
@@ -823,11 +543,6 @@ public sealed class FrameBuffer(int width, int height)
         return true;
     }
 
-    /// <summary>
-    /// Depth-tests and writes one pixel. Returns true when the pixel was drawn, false
-    /// when it was behind the z-buffer — callers batch these into stats themselves, so
-    /// parallel rasterization doesn't contend on shared counters per pixel.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool PutPixel(int x, int y, int z, LinearColor color)
     {
@@ -844,8 +559,6 @@ public sealed class FrameBuffer(int width, int height)
 
         CountWrite(index);
 
-        // One int compare against a field that is -1 unless a pixel is being probed:
-        // predictable enough not to show up next to the depth test itself.
         if (index == _probeIndex)
         {
             RecordProbe(index, z, color, previousDepth, passed);
@@ -861,34 +574,17 @@ public sealed class FrameBuffer(int width, int height)
         return true;
     }
 
-    // The per-pixel fragment list this thread's transparent writes are being stored into, or
-    // null when they blend immediately. Thread-static for the same reason the probe context is:
-    // the transparent fill runs a worker per tile, and a tile's pixels belong to its own arena.
     [ThreadStatic]
     private static FragmentBuffer.Arena? _fragmentArena;
 
-    /// <summary>
-    /// Sends this thread's subsequent <see cref="PutPixelBlend"/> calls into
-    /// <paramref name="arena"/> instead of blending them, or restores immediate blending when
-    /// given null. See <see cref="FragmentBuffer"/> for why a transparent fragment is worth
-    /// storing rather than blending.
-    /// </summary>
     internal static void SetFragmentArena(FragmentBuffer.Arena? arena) => _fragmentArena = arena;
 
-    /// <summary>
-    /// Blends one stored fragment over the pixel, at the point in the resolve its depth puts it.
-    /// The colour is taken as already shaded and fogged — it was both, at the moment it was
-    /// stored — so this is the blend <see cref="PutPixelBlend"/> would have done, deferred.
-    /// </summary>
     internal void BlendStoredFragment(int index, int depth, LinearColor color, float alpha, in ProbeContext context)
     {
         var blended = LinearColor.Lerp(LoadAt(index), color, alpha);
 
         if (index == _probeIndex)
         {
-            // The write is recorded with the context captured when the fragment was stored, so
-            // the history names the triangle that shaded it rather than the resolve that
-            // blended it — and the entries arrive in the order the blends actually happened.
             RecordProbeWith(
                 index,
                 depth,
@@ -901,18 +597,6 @@ public sealed class FrameBuffer(int width, int height)
         StoreAt(index, blended);
     }
 
-    /// <summary>
-    /// Depth-tests and alpha-blends one pixel over the current contents. The depth
-    /// buffer is read but never written: transparent surfaces must not occlude what
-    /// is drawn after them, only sit behind opaque geometry.
-    ///
-    /// <para>
-    /// With a fragment arena active (see <see cref="SetFragmentArena"/>) the fragment is stored
-    /// instead of blended, and the blend happens in the resolve once every transparent surface
-    /// covering the pixel is known. Without one the blend is immediate, and the caller is
-    /// responsible for having drawn transparent geometry back to front.
-    /// </para>
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool PutPixelBlend(int x, int y, int z, LinearColor color, float alpha)
     {
@@ -933,9 +617,6 @@ public sealed class FrameBuffer(int width, int height)
         {
             if (!passed)
             {
-                // Recorded here rather than at the resolve, which never sees it: a fragment the
-                // opaque depth buffer rejected is exactly the kind of write a pixel history is
-                // being read to find.
                 if (index == _probeIndex)
                 {
                     RecordProbe(index, z, color, previousDepth, passed: false);
@@ -969,20 +650,14 @@ public sealed class FrameBuffer(int width, int height)
 
     #region Pixel probe
 
-    // What is currently drawing, for the pixel history. Thread-static because the paint
-    // phase runs in parallel: each worker owns a disjoint set of screen rows, so the one
-    // worker that owns the probed pixel's row is also the one that sets this context, and
-    // the writes it appends stay in draw order.
     [ThreadStatic]
     private static ProbeContext _probeContext;
 
     private int _probeIndex = -1;
     private PixelHistory? _probeHistory;
 
-    /// <summary>Whether a pixel probe is recording this frame (see <see cref="BeginProbe"/>).</summary>
     public bool IsProbing => _probeIndex >= 0;
 
-    /// <summary>Starts recording every write attempt at <see cref="PixelHistory.X"/>, <see cref="PixelHistory.Y"/>.</summary>
     public void BeginProbe(PixelHistory history)
     {
         ArgumentNullException.ThrowIfNull(history, nameof(history));
@@ -997,15 +672,9 @@ public sealed class FrameBuffer(int width, int height)
         _probeHistory = null;
     }
 
-    /// <summary>
-    /// Tags the writes that follow on this thread with the object drawing them. The vertex
-    /// buffer is only referenced, never copied: a probed pixel is hit by a handful of the
-    /// thousands of triangles that call this, so vertices are snapshotted on a hit instead.
-    /// </summary>
     internal static void SetProbeContext(int eventIndex, PixelWriteSource source, int objectId, int triangleIndex, VertexBuffer? vertexBuffer) =>
         _probeContext = new ProbeContext(eventIndex, source, objectId, triangleIndex, vertexBuffer);
 
-    /// <summary>Appends a write the pipeline made outside <see cref="PutPixel"/> (a buffer clear).</summary>
     internal void RecordProbeClear(int eventIndex)
     {
         var history = _probeHistory;
@@ -1028,14 +697,8 @@ public sealed class FrameBuffer(int width, int height)
         });
     }
 
-    /// <summary>The current colour of the probed pixel; 0 when nothing is being probed.</summary>
     internal int GetProbedColor() => _probeIndex >= 0 ? PackedAt(_probeIndex) : 0;
 
-    /// <summary>
-    /// Appends a write for a stage that rewrote the probed pixel outside the rasterizer — a
-    /// full-screen post-process pass, which has already replaced the colour by the time it
-    /// is recorded, hence the caller-supplied <paramref name="previousColor"/>.
-    /// </summary>
     internal void RecordProbeOverwrite(int eventIndex, PixelWriteSource source, int objectId, int previousColor)
     {
         var history = _probeHistory;
@@ -1050,8 +713,7 @@ public sealed class FrameBuffer(int width, int height)
             Source = source,
             ObjectId = objectId,
             TriangleIndex = -1,
-            // Screen, not PackedAt: by the time a full-screen pass records itself the frame
-            // has been resolved, and Screen is the only place its result lives.
+
             Color = Screen[_probeIndex],
             PreviousColor = previousColor,
             Depth = _zBuffer[_probeIndex],
@@ -1064,11 +726,6 @@ public sealed class FrameBuffer(int width, int height)
     private void RecordProbe(int index, int z, LinearColor color, int previousDepth, bool passed) =>
         RecordProbeWith(index, z, color, previousDepth, passed, _probeContext);
 
-    /// <summary>
-    /// <see cref="RecordProbe"/> with the drawing context supplied rather than read from the
-    /// thread — for a write whose context was captured earlier than the write itself, which is
-    /// every fragment the transparency resolve blends.
-    /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void RecordProbeWith(int index, int z, LinearColor color, int previousDepth, bool passed, in ProbeContext context)
     {
@@ -1133,11 +790,6 @@ public sealed class FrameBuffer(int width, int height)
 
     #endregion
 
-    /// <summary>
-    /// A line drawn over everything, ignoring depth — see <see cref="PutPixelOnTop"/> for why
-    /// an overlay would want that. Off-screen pixels are dropped rather than clipped, since
-    /// the caller has already clipped in clip space and this only guards the rounding.
-    /// </summary>
     public void DrawLineOnTop(Vector3 p0, Vector3 p1, ColorRGB color)
     {
         int x0 = (int)p0.X;
@@ -1156,9 +808,6 @@ public sealed class FrameBuffer(int width, int height)
         int ex = 0;
         int ey = 0;
 
-        // Counted from what actually landed, not from the line's length: a handle running off
-        // the side of the viewport has its off-screen pixels dropped, and reporting them as
-        // drawn would inflate the frame's pixel count by however far it overhangs.
         var drawn = 0;
 
         if (PutPixelOnTop(x0, y0, color)) { drawn++; }
@@ -1198,10 +847,6 @@ public sealed class FrameBuffer(int width, int height)
 
         int dmax = System.Math.Max(dx, dy);
 
-        // Depth spans the full quantized range — millions of units over a line of at most
-        // a few thousand pixels — so it cannot be stepped with an integer error term like
-        // x and y; it is interpolated over the dominant screen axis instead. Double keeps
-        // the cast back to int exact at the extremes of the depth range.
         double z = p0.Z;
         double zStep = dmax > 0 ? (p1.Z - (double)p0.Z) / dmax : 0d;
 

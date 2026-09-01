@@ -10,36 +10,8 @@ using System.Text.Json;
 
 namespace SoftEngine.Core.Geometry.Import.Gltf;
 
-/// <summary>
-/// A glTF 2.0 reader, for both the JSON form (<c>.gltf</c>, with buffers and images beside it
-/// or inline as data URIs) and the binary container (<c>.glb</c>).
-///
-/// glTF is the format this engine already had the shading model for. Collada carries geometry,
-/// skins and clips but describes surfaces with the specular-shininess vocabulary of a decade
-/// earlier, so the physically-based painter could only ever be pointed at procedural demos or
-/// hand-set scalars. A glTF material is metallic-roughness, and its packed texture puts
-/// roughness in green and metalness in blue — which is exactly what
-/// <see cref="Material.MetallicMap"/> and <see cref="Material.RoughnessMap"/> already read,
-/// because those channels were chosen for this format before there was a reader for it.
-///
-/// What is read: the default scene's node hierarchy, every mesh primitive as its own engine
-/// mesh, metallic-roughness materials with their base-colour, normal, metallic-roughness and
-/// emissive maps, skins with their inverse bind matrices, and animation samplers in all three
-/// interpolation modes. What is not: morph targets, cameras, lights (<c>KHR_lights_punctual</c>)
-/// and Draco-compressed geometry — the last of which is refused loudly rather than read as an
-/// empty mesh, since a file that requires an extension is a file this reader cannot honestly
-/// claim to have loaded.
-/// </summary>
 public static class GltfImporter
 {
-    /// <summary>
-    /// Decodes an encoded image (PNG or JPEG) into a texture, or returns null when it cannot.
-    ///
-    /// glTF images arrive as a file beside the model, as a <c>data:</c> URI, or as a stretch of
-    /// the binary chunk, and the importer resolves all three to bytes before asking — so a
-    /// front-end supplies one decoder rather than three loaders. The Core has no image codec of
-    /// its own, which is what keeps it platform-neutral.
-    /// </summary>
     public delegate Texture? TextureLoader(ReadOnlyMemory<byte> encodedImage);
 
     private static readonly JsonSerializerOptions _json = new()
@@ -49,16 +21,11 @@ public static class GltfImporter
         AllowTrailingCommas = true,
     };
 
-    /// <summary>Whether a path names something this importer reads.</summary>
     public static bool Handles(string fileName) =>
         Path.GetExtension(fileName) is { } extension &&
         (extension.Equals(".gltf", StringComparison.OrdinalIgnoreCase) ||
          extension.Equals(".glb", StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>Reads a glTF or GLB file as a scene: meshes, the node tree, skins and clips.</summary>
-    /// <param name="fileName">Path of the <c>.gltf</c> or <c>.glb</c> file.</param>
-    /// <param name="progress">Optional overall progress in the range 0..1.</param>
-    /// <param name="textureLoader">Decodes the file's images; without one the meshes keep their UVs and factors but get no maps.</param>
     public static ImportedScene Import(
         string fileName,
         IProgress<float>? progress = null,
@@ -74,19 +41,12 @@ public static class GltfImporter
         return Import(bytes, directory, progress, textureLoader);
     }
 
-    /// <summary>
-    /// Reads a glTF or GLB already in memory. <paramref name="baseDirectory"/> is where
-    /// external buffers and images are resolved from; a self-contained GLB never uses it.
-    /// Exists so tests can supply a document inline, as the Collada reader's overload does.
-    /// </summary>
     public static ImportedScene Import(
         ReadOnlyMemory<byte> bytes,
         string baseDirectory,
         IProgress<float>? progress = null,
         TextureLoader? textureLoader = null)
     {
-        // The container is told apart by its first four bytes rather than by the extension:
-        // a .glb served as .gltf is a real thing, and the magic number is unambiguous.
         var span = bytes.Span;
         var isBinary = span.Length >= 4 && span[0] == (byte)'g' && span[1] == (byte)'l' && span[2] == (byte)'T' && span[3] == (byte)'F';
 
@@ -99,7 +59,6 @@ public static class GltfImporter
         }
         else
         {
-            // A BOM is legal in a .gltf and JsonSerializer will not read past one.
             json = Encoding.UTF8.GetString(span).TrimStart('﻿');
         }
 
@@ -111,11 +70,6 @@ public static class GltfImporter
         return new Reader(root, binaryChunk, baseDirectory, textureLoader).Build(progress);
     }
 
-    /// <summary>
-    /// One import in progress. It exists as an object because every stage needs the buffers,
-    /// the node array and the caches, and threading six of those through a dozen static
-    /// methods is how an importer becomes unreadable.
-    /// </summary>
     private sealed class Reader(GltfRoot root, byte[]? binaryChunk, string baseDirectory, TextureLoader? textureLoader)
     {
         private readonly GltfBuffers _buffers = new(root, binaryChunk, baseDirectory);
@@ -123,8 +77,6 @@ public static class GltfImporter
         private readonly SceneNode _root = new("<scene>");
         private readonly SceneNode?[] _nodes = new SceneNode?[root.Nodes.Count];
 
-        // Images decode once however many materials sample them, and a material becomes one
-        // engine Material however many primitives share it.
         private readonly Dictionary<int, Texture?> _textures = [];
         private readonly Dictionary<int, (Material Material, float Opacity)> _materials = [];
         private readonly Dictionary<int, Skeleton> _skeletons = [];
@@ -142,8 +94,6 @@ public static class GltfImporter
             BuildMeshes();
             progress?.Report(0.75f);
 
-            // Skins index joints by node, so the hierarchy has to be posed before an inverse
-            // bind matrix means anything relative to it.
             _root.UpdateWorldMatrices();
 
             var clips = BuildAnimations();
@@ -159,15 +109,6 @@ public static class GltfImporter
             return new ImportedScene(_root, _meshes, clips, _skinned);
         }
 
-        /// <summary>
-        /// Refuses a file whose geometry this reader would silently get wrong.
-        ///
-        /// <c>extensionsRequired</c> is the author saying the file does not mean what it
-        /// appears to mean without a particular extension. Draco is the one that matters here:
-        /// a Draco primitive's accessors describe a compressed stream, and reading them as
-        /// though they were vertices produces a mesh made of noise. Failing with the
-        /// extension's name beats rendering that.
-        /// </summary>
         private void Reject()
         {
             var blocking = root.ExtensionsRequired
@@ -191,18 +132,12 @@ public static class GltfImporter
                 _nodes[i] = MakeNode(root.Nodes[i]);
             }
 
-            // Parent before rooting, so a node claimed as a child never also hangs off the root.
             var parented = new bool[_nodes.Length];
 
             for (var i = 0; i < root.Nodes.Count; i++)
             {
                 foreach (var child in root.Nodes[i].Children)
                 {
-                    // The ancestry check is the one that matters: `parented` stops a node being
-                    // claimed twice, but a file whose node list runs 0→1→2→0 claims each of them
-                    // exactly once and still closes a loop. A cycle makes UpdateWorldMatrices
-                    // recurse for ever, so the edge that would close it is dropped and the node
-                    // is left for the orphan pass below.
                     if (Node(child) is { } node && !parented[child] && child != i && !node.IsAncestorOf(_nodes[i]))
                     {
                         _nodes[i]!.Add(node);
@@ -220,8 +155,6 @@ public static class GltfImporter
                 }
             }
 
-            // A node the default scene never mentions still has to hang somewhere: a skin can
-            // name it as a joint, and a joint outside the tree never gets a world matrix.
             for (var i = 0; i < _nodes.Length; i++)
             {
                 if (!parented[i] && _nodes[i] is { } orphan)
@@ -231,10 +164,6 @@ public static class GltfImporter
             }
         }
 
-        /// <summary>
-        /// The nodes the file wants shown: the default scene's, or the first scene's, or —
-        /// for a file that is a library rather than a scene — every node at all.
-        /// </summary>
         private IEnumerable<int> RootNodeIndices()
         {
             if (root.Scene is { } index && index >= 0 && index < root.Scenes.Count)
@@ -252,7 +181,6 @@ public static class GltfImporter
                 Kind = source.Camera is not null ? SceneNodeKind.Camera : SceneNodeKind.Transform,
             };
 
-            // A node carries either a baked matrix or the three components, never both.
             if (source.Matrix is { Length: >= 16 } matrix)
             {
                 node.SetLocalMatrix(new Matrix4x4(
@@ -285,17 +213,8 @@ public static class GltfImporter
         private SceneNode? Node(int? index) =>
             index is { } i && i >= 0 && i < _nodes.Length ? _nodes[i] : null;
 
-        /// <summary>
-        /// Turns every node that instances a mesh into engine meshes — one per primitive,
-        /// because the engine keeps one material per mesh and a glTF primitive is exactly the
-        /// span of a mesh that shares one.
-        /// </summary>
         private void BuildMeshes()
         {
-            // Geometry is built once per glTF mesh and shared by every node that instances it.
-            // Two instances of a static mesh differ only in their transform, and the renderer
-            // never writes to a vertex array — so the second instance costs one small object
-            // rather than another copy of the model.
             var built = new Dictionary<int, List<Primitive>>();
 
             for (var i = 0; i < root.Nodes.Count; i++)
@@ -327,7 +246,6 @@ public static class GltfImporter
             }
         }
 
-        /// <summary>One primitive's decoded attributes, before it is bound to any particular node.</summary>
         private sealed record Primitive(
             Vector3[] Positions,
             Triangle[] Triangles,
@@ -377,8 +295,6 @@ public static class GltfImporter
                     ? _buffers.ReadVector2(uvAccessor)
                     : null;
 
-                // glTF's TANGENT is already the xyz + handedness vector the engine's tangent
-                // frame uses, so a file that ships one saves deriving it from the UVs.
                 var tangents = Attribute(primitive, "TANGENT") is { } tangentAccessor
                     ? _buffers.ReadVector4(tangentAccessor)
                     : null;
@@ -406,11 +322,6 @@ public static class GltfImporter
         private static int? Attribute(GltfPrimitive primitive, string name) =>
             primitive.Attributes.TryGetValue(name, out var index) ? index : null;
 
-        /// <summary>
-        /// The primitive's triangle list. Strips and fans are expanded here rather than
-        /// rejected — they cost four lines and a file that uses them is otherwise unreadable.
-        /// A primitive with no index accessor is drawn in vertex order, which the spec allows.
-        /// </summary>
         private Triangle[] ReadTopology(GltfPrimitive primitive, int vertexCount)
         {
             var indices = primitive.Indices is { } accessor
@@ -421,8 +332,6 @@ public static class GltfImporter
 
             void Add(int a, int b, int c)
             {
-                // A degenerate or out-of-range face is dropped rather than allowed through to
-                // index past the vertex array during the first frame.
                 if ((uint)a < (uint)vertexCount && (uint)b < (uint)vertexCount && (uint)c < (uint)vertexCount &&
                     a != b && b != c && a != c)
                 {
@@ -432,14 +341,14 @@ public static class GltfImporter
 
             switch (primitive.Mode)
             {
-                case 4: // TRIANGLES
+                case 4:
                     for (var i = 0; i + 2 < indices.Length; i += 3)
                     {
                         Add(indices[i], indices[i + 1], indices[i + 2]);
                     }
                     break;
 
-                case 5: // TRIANGLE_STRIP — every other triangle is wound the other way.
+                case 5:
                     for (var i = 0; i + 2 < indices.Length; i++)
                     {
                         if ((i & 1) == 0)
@@ -453,7 +362,7 @@ public static class GltfImporter
                     }
                     break;
 
-                case 6: // TRIANGLE_FAN
+                case 6:
                     for (var i = 1; i + 1 < indices.Length; i++)
                     {
                         Add(indices[0], indices[i], indices[i + 1]);
@@ -461,18 +370,13 @@ public static class GltfImporter
                     break;
 
                 default:
-                    // Points and lines have no area to rasterize; this engine draws surfaces.
+
                     break;
             }
 
             return [.. valid];
         }
 
-        /// <summary>
-        /// COLOR_0 as packed colours, or an empty array. glTF writes vertex colour in linear
-        /// light with an optional alpha; the engine's per-triangle colour is sRGB, and the
-        /// conversion is the same one every other colour in the file goes through.
-        /// </summary>
         private ColorRGB[] ReadVertexColors(GltfPrimitive primitive, int vertexCount)
         {
             if (Attribute(primitive, "COLOR_0") is not { } accessor ||
@@ -503,15 +407,6 @@ public static class GltfImporter
             return colors;
         }
 
-        /// <summary>
-        /// One colour per triangle: the average of its vertices' colours where the file has
-        /// them, and the material's base colour otherwise.
-        ///
-        /// The engine's unlit and per-vertex painters take a colour per triangle, so a file's
-        /// per-vertex colour has to be reduced to reach them at all. The material path
-        /// multiplies by its own base colour instead, which is why this is a fallback and not
-        /// the whole story.
-        /// </summary>
         private static ColorRGB[] TriangleColors(Triangle[] triangles, Material material, ColorRGB[] vertexColors)
         {
             var colors = new ColorRGB[triangles.Length];
@@ -539,16 +434,12 @@ public static class GltfImporter
             return colors;
         }
 
-        /// <summary>Binds one decoded primitive to one node, skinned or not.</summary>
         private IMesh Instantiate(Primitive primitive, SceneNode node, Skeleton? skeleton)
         {
             if (skeleton is not null && primitive.JointIndices is { Length: > 0 } && primitive.JointWeights is { Length: > 0 })
             {
                 var weights = BuildWeights(primitive.Positions.Length, primitive.JointIndices, primitive.JointWeights);
 
-                // A skinned mesh's vertices come out of the deformer in the skeleton's space
-                // already; the spec says the instancing node's own transform is ignored, which
-                // is also what parenting it here would wrongly apply a second time.
                 var skinnedMesh = new SkinnedMesh(
                     primitive.Positions,
                     primitive.Triangles,
@@ -562,10 +453,6 @@ public static class GltfImporter
                     Opacity = primitive.Opacity,
                     TexCoords = primitive.TexCoords,
 
-                    // Cloned, unlike the non-skinned path's: SkinnedMesh.ApplyPose rewrites the
-                    // tangent array in place every frame, so two nodes instancing one primitive
-                    // would deform the same array into two different poses and each would see
-                    // the other's.
                     Tangents = (Vector4[]?)primitive.Tangents?.Clone(),
                 };
 
@@ -573,10 +460,6 @@ public static class GltfImporter
                 return skinnedMesh;
             }
 
-            // Positions, normals and indices are shared with the other instances of this
-            // primitive; the colour array is not. Nothing in the pipeline writes to a vertex,
-            // but recolouring one mesh and finding its twin recoloured too is a trap the
-            // engine's own shared-colour primitives already lay once.
             return new Mesh(primitive.Positions, primitive.Triangles, primitive.Normals, (ColorRGB[])primitive.Colors.Clone())
             {
                 Parent = node,
@@ -587,11 +470,6 @@ public static class GltfImporter
             };
         }
 
-        /// <summary>
-        /// glTF stores exactly four influences per vertex, which is the budget
-        /// <see cref="SkinWeights"/> keeps — so this is a straight copy through the builder,
-        /// which still renormalizes because an exporter's four weights need not sum to one.
-        /// </summary>
         private static SkinWeights BuildWeights(int vertexCount, int[] joints, float[] weights)
         {
             var builder = new SkinWeights.Builder(vertexCount);
@@ -613,8 +491,6 @@ public static class GltfImporter
                 return null;
             }
 
-            // Two meshes bound to one skin must share one skeleton, or each would rebuild the
-            // same joint matrices from the same nodes every frame.
             if (_skeletons.TryGetValue(index, out var existing))
             {
                 return existing;
@@ -630,12 +506,8 @@ public static class GltfImporter
 
             for (var i = 0; i < joints.Length; i++)
             {
-                // A joint the node array never declared still needs a slot, or every weight
-                // after it would index the wrong joint. An empty node poses as the identity.
                 joints[i] = Node(skin.Joints[i]) ?? new SceneNode($"joint{i}");
 
-                // The skeleton view is the one thing that reads this, and it is what makes a
-                // real rig legible next to the transforms holding cameras and lights.
                 joints[i].Kind = SceneNodeKind.Joint;
             }
 
@@ -643,8 +515,6 @@ public static class GltfImporter
 
             if (inverseBinds.Length < joints.Length)
             {
-                // The accessor is optional: absent, every joint's inverse bind is the identity,
-                // which says the mesh was modelled in the pose the nodes are already in.
                 var filled = new Matrix4x4[joints.Length];
                 Array.Fill(filled, Matrix4x4.Identity);
                 Array.Copy(inverseBinds, filled, inverseBinds.Length);
@@ -661,15 +531,6 @@ public static class GltfImporter
             return skeleton;
         }
 
-        /// <summary>
-        /// One glTF material as an engine <see cref="Material"/>, with the opacity the mesh
-        /// carries separately.
-        ///
-        /// Every map degrades on its own: a file with no metallic-roughness texture falls back
-        /// to the material's two scalars, and one with no material at all is the engine's
-        /// default satin dielectric — the same graceful path the OBJ importer takes, so a glTF
-        /// can be opened under any of the shading modes rather than only the physical one.
-        /// </summary>
         private Material ReadMaterial(int? materialIndex, out float opacity)
         {
             opacity = 1f;
@@ -688,12 +549,6 @@ public static class GltfImporter
             var source = root.Materials[index];
             var material = new Material();
 
-            // The three modes are three different things, and only one of them is
-            // transparency. OPAQUE ignores its base colour's alpha entirely — a file whose
-            // factor ends in 0.5 with no alphaMode is opaque, and reading that alpha anyway is
-            // how a solid model arrives half see-through. BLEND is the mesh-wide opacity the
-            // transparent pass sorts and blends. MASK is neither: a per-texel cutout, drawn in
-            // the opaque pass, which the base colour map's own alpha channel decides.
             var blended = string.Equals(source.AlphaMode, "BLEND", StringComparison.Ordinal);
             var masked = string.Equals(source.AlphaMode, "MASK", StringComparison.Ordinal);
 
@@ -701,7 +556,6 @@ public static class GltfImporter
             {
                 if (pbr.BaseColorFactor is { Length: >= 3 } factor)
                 {
-                    // The factor is linear light; the engine's colours are sRGB-encoded.
                     material.Diffuse = new LinearColor(factor[0], factor[1], factor[2]).ToColorRGB();
 
                     if (blended && factor.Length >= 4)
@@ -713,17 +567,11 @@ public static class GltfImporter
                 material.Metallic = System.Math.Clamp(pbr.MetallicFactor, 0f, 1f);
                 material.Roughness = System.Math.Clamp(pbr.RoughnessFactor, 0f, 1f);
 
-                // Blinn-Phong has no notion of roughness, so the non-physical painters get the
-                // nearest thing to the same surface: a rough material has a broad, weak
-                // highlight and a smooth one a tight, strong one.
                 material.Shininess = MathF.Max(2f, 2f / MathF.Max(material.Roughness * material.Roughness, 1e-3f));
                 material.SpecularStrength = 0.04f + 0.96f * (1f - material.Roughness);
 
                 material.DiffuseMap = ReadTexture(pbr.BaseColorTexture);
 
-                // One packed texture assigned to both properties: the engine reads metalness
-                // from blue and roughness from green, which are the channels glTF packs them
-                // into — so this is one map, sampled twice, not two copies of it.
                 var packed = ReadTexture(pbr.MetallicRoughnessTexture);
                 material.MetallicMap = packed;
                 material.RoughnessMap = packed;
@@ -743,9 +591,6 @@ public static class GltfImporter
             material.EmissiveMap = ReadTexture(source.EmissiveTexture);
             material.EmissiveStrength = source.Extensions?.EmissiveStrength?.Strength ?? 1f;
 
-            // Clamped above zero because zero is how the material spells "no cutout": a file
-            // asking for MASK with a cutoff of 0 wants every texel with any alpha at all, and
-            // the smallest positive threshold says that where 0 would say the opposite.
             if (masked)
             {
                 material.AlphaCutoff = System.Math.Clamp(source.AlphaCutoff, float.Epsilon, 1f);
@@ -777,9 +622,6 @@ public static class GltfImporter
 
             var image = root.Images[imageIndex];
 
-            // Three places an image can live — a buffer view of the binary chunk, a data URI,
-            // or a file beside the model — and one decoder, because they differ only in where
-            // the encoded bytes come from.
             var bytes = image.BufferView is not null
                 ? _buffers.ViewBytes(image.BufferView)
                 : image.Uri is { } uri
@@ -792,11 +634,6 @@ public static class GltfImporter
             return texture;
         }
 
-        /// <summary>
-        /// Every animation in the file as a clip. A glTF names its animations, unlike the
-        /// Collada files this engine reads, so each becomes a clip of its own rather than all
-        /// of them being merged into one.
-        /// </summary>
         private List<AnimationClip> BuildAnimations()
         {
             var clips = new List<AnimationClip>();
@@ -825,8 +662,6 @@ public static class GltfImporter
                         continue;
                     }
 
-                    // Channels address nodes by name, which is what keeps a clip independent
-                    // of any one skeleton — and what an unnamed node breaks, so it gets one.
                     if (string.IsNullOrEmpty(node.Name))
                     {
                         node.Name = $"node{channel.Target.Node}";
@@ -864,8 +699,6 @@ public static class GltfImporter
 
             var values = _buffers.ReadFloats(sampler.Output);
 
-            // A cubic-spline sampler stores three values per key — the tangent arriving, the
-            // value, and the tangent leaving — so the key count divides differently.
             var perKey = interpolation == TrackInterpolation.CubicSpline ? 3 : 1;
 
             switch (path)
@@ -883,7 +716,7 @@ public static class GltfImporter
                     break;
 
                 default:
-                    // "weights" drives morph targets, which this engine does not deform by.
+
                     break;
             }
         }
@@ -955,7 +788,6 @@ public static class GltfImporter
 
                 inTangents[i] = new Quaternion(values[o + 0], values[o + 1], values[o + 2], values[o + 3]);
 
-                // The value is normalized; the tangents are not rotations and must not be.
                 samples[i] = Quaternion.Normalize(
                     new Quaternion(values[o + 4], values[o + 5], values[o + 6], values[o + 7]));
 

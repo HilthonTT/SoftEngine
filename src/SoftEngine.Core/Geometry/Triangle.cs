@@ -62,7 +62,6 @@ public readonly struct Triangle(int p0, int p1, int p2)
             return true;
         }
 
-        // This last one is normally not necessary when a IsTriangleBehind check is done
         if (p0.Z < 0 && p1.Z < 0 && p2.Z < 0)
         {
             return true;
@@ -75,13 +74,10 @@ public readonly struct Triangle(int p0, int p1, int p2)
     {
         var (v0, v1, v2) = (vertexBuffer.Vertices[I0].View, vertexBuffer.Vertices[I1].View, vertexBuffer.Vertices[I2].View);
 
-        // Calculate the centroid without division, since dividing by 3 doesn't affect the sign .
         var centroid = v0 + v1 + v2;
-        // Compute the triangle's unnormalized normal
+
         var normal = Vector3.Cross(v1 - v0, v2 - v0);
 
-        // The sign of the dot product is unchanged by normalization,
-        // so no need to normalize centroid or normal.
         return Vector3.Dot(centroid, normal) >= 0;
     }
 }

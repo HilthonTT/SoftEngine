@@ -1,15 +1,5 @@
 namespace SoftEngine.Cli.Options;
 
-/// <summary>
-/// Decides whether what the parser read describes a render this program can perform.
-///
-/// <para>
-/// Every bound here is also enforced by the engine, which clamps. Saying so out here is what keeps
-/// a typo from quietly producing something other than what was asked for — an image smaller than
-/// the flag requested, or a bake coarser than it. Both are minutes of work whose result looks
-/// deliberate.
-/// </para>
-/// </summary>
 internal static class RenderOptionsValidation
 {
     public static void Validate(RenderOptions options)
@@ -38,9 +28,6 @@ internal static class RenderOptionsValidation
             options.Errors.Add("width and height must be between 1 and 16384");
         }
 
-        // Supersampling multiplies both dimensions, so an unclamped factor turns a modest request
-        // into an allocation nothing can serve. The engine clamps it too; saying so here is what
-        // stops the file being silently smaller than the flag asked for.
         if (options.SuperSampling is < 1 or > 4)
         {
             options.Errors.Add("--ss must be between 1 and 4");
@@ -76,8 +63,6 @@ internal static class RenderOptionsValidation
             options.Errors.Add("--bounces must be between 0 and 64");
         }
 
-        // The engine clamps these too. Saying so here is what keeps a typo from quietly baking
-        // something other than what was asked for — a bake is minutes, not a frame you re-render.
         if (options.BakeResolution is < 2 or > 64)
         {
             options.Errors.Add("--bake-resolution must be between 2 and 64");
@@ -98,8 +83,6 @@ internal static class RenderOptionsValidation
             options.Errors.Add($"'{environment}' does not exist");
         }
 
-        // Zero means "derive it from the panorama". Anything above 512 costs the split-sum
-        // prefilter six faces of that size at 128 samples a texel, which is minutes, not seconds.
         if (options.EnvironmentSize is not 0 and (< 8 or > 512))
         {
             options.Errors.Add("--environment-size must be between 8 and 512");

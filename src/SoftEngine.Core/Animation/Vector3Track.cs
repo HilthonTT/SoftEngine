@@ -2,15 +2,11 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Animation;
 
-/// <summary>A translation or scale curve: keyed <see cref="Vector3"/> values.</summary>
 public sealed class Vector3Track
 {
     private readonly float[] _times;
     private readonly Vector3[] _values;
 
-    // Only for TrackInterpolation.CubicSpline: the tangent arriving at each key and the one
-    // leaving it. glTF stores them interleaved with the values; they are split apart at load
-    // so sampling indexes all three the same way.
     private readonly Vector3[]? _inTangents;
     private readonly Vector3[]? _outTangents;
 
@@ -34,9 +30,6 @@ public sealed class Vector3Track
             throw new ArgumentException("A track needs one value per key time.", nameof(values));
         }
 
-        // A spline without tangents is a linear track that would otherwise read off the end of
-        // a null array on its first sample. Downgrading beats throwing on a file that is merely
-        // inconsistent about a mode it barely uses.
         if (interpolation == TrackInterpolation.CubicSpline &&
             (inTangents is null || outTangents is null ||
              inTangents.Length != values.Length || outTangents.Length != values.Length))
@@ -60,7 +53,6 @@ public sealed class Vector3Track
 
     public TrackInterpolation Interpolation { get; }
 
-    /// <summary>The time of the last key, or 0 for an empty track.</summary>
     public float Duration => _times.Length == 0 ? 0f : _times[^1];
 
     public Vector3 Sample(float time)

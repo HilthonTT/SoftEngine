@@ -2,12 +2,6 @@
 
 namespace SoftEngine.Core.Math;
 
-/// <summary>
-/// Must replace with a Quaternion
-/// </summary>
-/// <param name="x"></param>
-/// <param name="y"></param>
-/// <param name="z"></param>
 public sealed class Rotation3D(float x, float y, float z)
 {
     private const float PiDeg = (float)System.Math.PI * 1f / 180f;

@@ -9,7 +9,6 @@ namespace SoftEngine.Core.Tests.Acceleration;
 
 public class BvhTests
 {
-    /// <summary>A grid of cubes, which is enough geometry that a wrong tree cannot pass by luck.</summary>
     private static SimpleWorld CubeGrid(int side, float spacing = 3f)
     {
         var world = new SimpleWorld();
@@ -34,10 +33,8 @@ public class BvhTests
         return world;
     }
 
-    /// <summary>Rays fired from a shell around the scene, aimed at points scattered through it.</summary>
     private static IEnumerable<Ray> ProbeRays(int count)
     {
-        // Fixed sequence rather than a random one: a test that fails should fail every time.
         var state = 12345u;
 
         uint Next()
@@ -74,8 +71,6 @@ public class BvhTests
 
         Assert.Equal(3 * 3 * 3 * new Cube().Triangles.Length, geometry.TriangleCount);
 
-        // Every triangle has to end up in exactly one leaf, or the tree is either losing geometry
-        // or testing some of it twice.
         Assert.True(bvh.LeafCount > 1);
         Assert.True(bvh.NodeCount >= 2 * bvh.LeafCount - 1);
     }
@@ -90,7 +85,6 @@ public class BvhTests
 
         foreach (var ray in ProbeRays(400))
         {
-            // The answer the tree is supposed to be an optimisation of: every triangle, in order.
             var expectedDistance = float.PositiveInfinity;
 
             for (var t = 0; t < geometry.TriangleCount; t++)
@@ -121,9 +115,6 @@ public class BvhTests
     [Fact]
     public void Intersect_AgreesWithThePicker()
     {
-        // The two structures answer the same question by different routes — one walks a tree in
-        // world space, the other transforms the ray into each mesh's own space — so they are each
-        // other's check.
         var world = CubeGrid(3, spacing: 2f);
         var bvh = Bvh.Build(SceneGeometry.Build(world));
 
@@ -141,9 +132,6 @@ public class BvhTests
                 Assert.Equal(pick.Distance, hit.Distance, 3);
                 Assert.Equal(pick.MeshIndex, bvh.Geometry.MeshIndex(hit.Triangle));
 
-                // And the same again through the accelerated pick, which has to produce the same
-                // record — same mesh, same triangle of it, same point — or a caller that switches
-                // to it would select something else.
                 var accelerated = ScenePicker.Pick(bvh, ray);
 
                 Assert.NotNull(accelerated);
@@ -181,7 +169,6 @@ public class BvhTests
     {
         var world = new SimpleWorld();
 
-        // One triangle in the z = 0 plane, big enough to aim at parts of.
         world.Meshes.Add(new Mesh(
             [new Vector3(0, 0, 0), new Vector3(4, 0, 0), new Vector3(0, 4, 0)],
             [new Triangle(0, 1, 2)]));
@@ -203,7 +190,6 @@ public class BvhTests
             Assert.Equal(expectedU, hit.U, 4);
             Assert.Equal(expectedV, hit.V, 4);
 
-            // The barycentric weights have to reconstruct the point the ray was aimed at.
             var (a, b, c) = geometry.Corners(hit.Triangle);
             var reconstructed = a * hit.W + b * hit.U + c * hit.V;
 
@@ -214,8 +200,6 @@ public class BvhTests
     [Fact]
     public void Intersect_FindsGeometryFromInsideIt()
     {
-        // The camera standing inside a box has to see its walls, which means a ray starting inside
-        // every bounding box in the tree still has to descend it.
         var world = new SimpleWorld();
         world.Meshes.Add(new Cube { Scale = new Vector3(20f, 20f, 20f) });
 
@@ -240,8 +224,6 @@ public class BvhTests
     [Fact]
     public void Build_HandlesCoincidentGeometry()
     {
-        // Every centroid at the same point: there is no axis to split on, so the build has to fall
-        // back to a leaf rather than recursing forever or splitting nothing off.
         var world = new SimpleWorld();
 
         for (var i = 0; i < 40; i++)
@@ -266,7 +248,6 @@ public class BvhTests
         world.Meshes.Add(new Cube { Visible = false });
         world.Meshes.Add(new Cube { Opacity = 0f });
 
-        // Transparent but not invisible: a ray can still decide what to do about it.
         world.Meshes.Add(new Cube { Opacity = 0.5f });
 
         var geometry = SceneGeometry.Build(world);
@@ -290,7 +271,6 @@ public class BvhTests
         {
             var (a, _, _) = geometry.Corners(t);
 
-            // A unit cube scaled by two and moved ten along x spans [8, 12] there.
             Assert.True(a.X is >= 7.9f and <= 12.1f, $"{a}");
         }
     }

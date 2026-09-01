@@ -5,21 +5,6 @@ using System.Runtime.CompilerServices;
 
 namespace SoftEngine.Core.Shading;
 
-/// <summary>
-/// The ambient term as six directional averages instead of one number — the light a
-/// surface receives from everything that is not a light.
-///
-/// A single ambient constant says that a ceiling and a floor in the same room receive the
-/// same light from their surroundings, which is never true: one faces the sky and the
-/// other faces the ground. Six averages, one per axis, is the cheapest correction that
-/// says otherwise, and it is what an environment map can be reduced to almost for free —
-/// average each face, and the answer for a normal is the cosine-squared blend of the
-/// three faces it points toward.
-///
-/// It is not a spherical-harmonic irradiance probe and does not pretend to be; what it
-/// buys over a constant is that surfaces facing different ways are lit differently, which
-/// is most of the visible difference.
-/// </summary>
 public readonly struct AmbientCube
 {
     private readonly LinearColor _positiveX;
@@ -42,26 +27,16 @@ public readonly struct AmbientCube
         _negativeZ = negativeZ;
     }
 
-    /// <summary>The same light from every direction — a flat ambient constant.</summary>
     public AmbientCube(LinearColor uniform)
         : this(uniform, uniform, uniform, uniform, uniform, uniform)
     {
     }
 
-    /// <summary>The same light from every direction, at the given intensity in each channel.</summary>
     public AmbientCube(float intensity)
         : this(new LinearColor(intensity, intensity, intensity))
     {
     }
 
-    /// <summary>
-    /// Reduces an environment map to its six face averages, scaled by
-    /// <paramref name="intensity"/>.
-    ///
-    /// Averaging a whole face is a crude stand-in for integrating the cosine-weighted
-    /// hemisphere around each axis, but it is the same integral over a coarser domain, and
-    /// the result — a bright sky above, a dark ground below — is the part that shows.
-    /// </summary>
     public static AmbientCube FromEnvironment(CubeMap environment, float intensity = 1f)
     {
         ArgumentNullException.ThrowIfNull(environment, nameof(environment));
@@ -75,14 +50,6 @@ public readonly struct AmbientCube
             Average(environment, CubeFace.NegativeZ, intensity));
     }
 
-    /// <summary>
-    /// One face's average, in the order <see cref="CubeFace"/> names them.
-    ///
-    /// Exposed so a backend that evaluates this somewhere other than here — the GPU's
-    /// fragment shader, which needs the six values as uniforms — can be handed the same cube
-    /// rather than reducing the environment a second time and getting a slightly different
-    /// answer.
-    /// </summary>
     public LinearColor this[CubeFace face] => face switch
     {
         CubeFace.PositiveX => _positiveX,
@@ -93,11 +60,6 @@ public readonly struct AmbientCube
         _ => _negativeZ,
     };
 
-    /// <summary>
-    /// The ambient light reaching a surface with the given normal. Weights are the squared
-    /// components of the normal, which sum to 1 for a unit vector — so a uniform cube
-    /// evaluates to exactly its constant, whichever way the surface faces.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public LinearColor Evaluate(Vector3 normal)
     {
@@ -117,9 +79,6 @@ public readonly struct AmbientCube
         float r = 0f, g = 0f, b = 0f;
         int count;
 
-        // The float faces when the environment has them: a sun occupying a handful of texels
-        // contributes most of the light a surface facing it receives, and it is exactly the
-        // part an 8-bit face clipped to white.
         if (environment.Radiance(face) is { } radiance)
         {
             count = radiance.Length / 3;
@@ -138,7 +97,6 @@ public readonly struct AmbientCube
 
             foreach (var packed in pixels)
             {
-                // Averaged in linear light: this is a sum of light, not of encoded bytes.
                 LinearColor texel = Diagnostics.ColorRGB.FromPacked(packed);
 
                 r += texel.R;

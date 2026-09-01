@@ -3,23 +3,6 @@ using SoftEngine.Core.Scenes;
 
 namespace SoftEngine.Core.Editing;
 
-/// <summary>
-/// A mesh added to or removed from the world, undoably.
-///
-/// <para>
-/// The mesh itself is kept alive by the command, which is the whole trick to making a deletion
-/// reversible: nothing has to be rebuilt or re-imported to undo one, because the object was never
-/// destroyed — only unlisted. The cost is that a deleted mesh's geometry stays in memory until the
-/// history forgets the command, which is exactly the trade every undo stack makes.
-/// </para>
-///
-/// <para>
-/// Position in the list matters and is restored. A scene document addresses meshes by index, and so
-/// does <see cref="Diagnostics.SceneObjectIds"/> — so putting a mesh back at the end of the list
-/// instead of where it was would silently renumber everything after it, and the debugger's
-/// <c>obj:7</c> would start meaning something else.
-/// </para>
-/// </summary>
 public sealed class MeshListEdit : IEditCommand
 {
     private readonly IWorld _world;
@@ -39,20 +22,12 @@ public sealed class MeshListEdit : IEditCommand
 
     public string Description { get; }
 
-    /// <summary>The mesh this edit adds or removes, so a caller can select or deselect it.</summary>
     public IMesh Mesh => _mesh;
 
-    /// <summary>Where in the world's list it sits.</summary>
     public int Index => _index;
 
-    /// <summary>Whether this command's <see cref="Apply"/> puts the mesh in rather than taking it out.</summary>
     public bool IsAdding => _adding;
 
-    /// <summary>
-    /// Inserts <paramref name="mesh"/> at <paramref name="index"/>, or appends it when the index is
-    /// past the end. Applied immediately, so the caller has the mesh in the world by the time this
-    /// returns.
-    /// </summary>
     public static MeshListEdit Add(IWorld world, IMesh mesh, int index, string description = "Add")
     {
         ArgumentNullException.ThrowIfNull(world, nameof(world));
@@ -66,11 +41,6 @@ public sealed class MeshListEdit : IEditCommand
         return edit;
     }
 
-    /// <summary>
-    /// Removes a mesh, or returns null when it is not in the world — which is not an error worth
-    /// throwing over: a delete of something already deleted is a no-op, and the history is better off
-    /// with nothing on it than with a command that removes nothing.
-    /// </summary>
     public static MeshListEdit? Remove(IWorld world, IMesh mesh, string description = "Delete")
     {
         ArgumentNullException.ThrowIfNull(world, nameof(world));

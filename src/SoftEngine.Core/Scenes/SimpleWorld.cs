@@ -12,11 +12,6 @@ public sealed class SimpleWorld : IWorld
 
     public List<ILight> Lights { get; set; } = [];
 
-    /// <summary>
-    /// The root of this world's transform hierarchy. Setting it is what makes
-    /// <see cref="Update"/> refresh the whole tree in one pass; a world can still parent
-    /// individual meshes to nodes without one, and each skeleton then updates its own root.
-    /// </summary>
     public SceneNode? Root { get; set; }
 
     public List<AnimationPlayer> Players { get; } = [];
@@ -39,9 +34,6 @@ public sealed class SimpleWorld : IWorld
                 continue;
             }
 
-            // A skeleton rooted somewhere the world's own root pass did not reach still needs
-            // its world matrices; re-walking a subtree that pass already covered is cheap
-            // enough that checking properly is not worth the complexity.
             if (!ReferenceEquals(skinned.Skeleton.Root, Root))
             {
                 skinned.Skeleton.Root.UpdateWorldMatrices();

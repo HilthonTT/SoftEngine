@@ -9,47 +9,12 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Baking;
 
-/// <summary>
-/// Measures the scene's indirect light once, into an <see cref="IrradianceVolume"/> the rasterizer
-/// can then read a million times a frame.
-///
-/// <para>
-/// The rasterizer and the path tracer are usually presented as alternatives: one is fast and
-/// approximate, the other is slow and correct. A bake is the third thing — the slow renderer run
-/// ahead of time over the part of the image that does not change quickly, and the fast one reading
-/// the answer. Bounce light is exactly that part. It takes a hundred rays a point to compute and it
-/// varies over metres, where a specular highlight varies over a pixel and has to be recomputed for
-/// every frame from every angle.
-/// </para>
-///
-/// <para>
-/// So this fires rays out of a grid of points and asks <see cref="PathIntegrator"/> — the path
-/// tracer's own walk — what comes back along each one. What it stores is the light arriving at a
-/// probe from the surfaces around it: their direct lighting, bounced. The lights themselves are
-/// never in it, because a delta light has no size for a ray to land on, which is what keeps the
-/// rasterizer from counting the sun twice when it adds its own direct term to the ambient one.
-/// </para>
-///
-/// <para>
-/// <b>A bake is of one arrangement of a world.</b> Move a wall or a light and the volume describes a
-/// room that no longer exists; nothing here notices, because noticing would mean rebaking, and the
-/// whole point is that this ran ahead of time. That is the trade every baked-lighting system makes.
-/// </para>
-/// </summary>
 public static class IrradianceBaker
 {
-    /// <summary>Directions used to decide whether a probe is buried, independent of the ray budget.</summary>
     private const int ValidityRays = 32;
 
-    /// <summary>The golden angle, which is what makes the Fibonacci sphere spread rather than spiral.</summary>
     private static readonly float GoldenAngle = MathF.PI * (3f - MathF.Sqrt(5f));
 
-    /// <summary>
-    /// Bakes the scene's world, lit by its lights and its environment.
-    ///
-    /// <see cref="Scenes.Scene.AmbientIntensity"/> and <see cref="Scenes.Scene.AmbientFromEnvironment"/>
-    /// are ignored on purpose: they configure the guess this replaces.
-    /// </summary>
     public static IrradianceVolume Bake(Scene scene, BakeSettings? settings = null)
     {
         ArgumentNullException.ThrowIfNull(scene, nameof(scene));
@@ -57,7 +22,6 @@ public static class IrradianceBaker
         return Bake(scene.World, scene.Environment, scene.SkyIntensity, settings);
     }
 
-    /// <summary>Bakes a world directly, for callers that have no <see cref="Scene"/> to hand.</summary>
     public static IrradianceVolume Bake(
         IWorld world,
         CubeMap? environment,
@@ -71,14 +35,6 @@ public static class IrradianceBaker
         return Bake(accelerator, world, environment, skyIntensity, settings);
     }
 
-    /// <summary>
-    /// Bakes against an already-built tree — the expensive half of the job, and one the viewer's path
-    /// tracer may already have paid for.
-    ///
-    /// The tree has to have been built from <paramref name="world"/>. Handing over one built from
-    /// something else bakes the light of a world nobody is looking at, which is not an error anything
-    /// can detect.
-    /// </summary>
     public static IrradianceVolume Bake(
         Bvh accelerator,
         IWorld world,
@@ -104,8 +60,7 @@ public static class IrradianceBaker
             PathIntegrator.Lights(world),
             settings.LightFromEnvironment ? environment : null,
             MathF.Max(0f, skyIntensity),
-            // A probe has no primary ray in the sense the frame does — nothing is looking along it —
-            // so the sky lights it whether or not the camera would have drawn it.
+
             showSky: true,
             trace);
 
@@ -117,19 +72,12 @@ public static class IrradianceBaker
         var probes = new AmbientCube[count];
         var valid = new bool[count];
 
-        // Built now, filled below, and rebuilt at the end only to carry the average: asking the
-        // volume itself where its probes are means a probe is traced from exactly the point the
-        // lookup will later interpolate it from, rather than from a second calculation that agrees
-        // with the first until one of them is changed.
         var volume = new IrradianceVolume(min, max, countX, countY, countZ, probes, valid, default);
 
         Parallel.For(0, count, index =>
         {
             var origin = volume.ProbePosition(index);
 
-            // Two independent streams per probe: one for where its rays point, one for the paths
-            // they turn into. Both are seeded from the probe's own index, so a probe's light does
-            // not depend on how many threads ran or in what order.
             var directions = new Sampler(settings.Seed, index, 0);
 
             var jitter = directions.Next();
@@ -147,15 +95,6 @@ public static class IrradianceBaker
         return new IrradianceVolume(min, max, countX, countY, countZ, probes, valid, Average(probes, valid));
     }
 
-    /// <summary>
-    /// One probe: rays over the whole sphere, each one's returned light weighted onto the three cube
-    /// faces it points toward.
-    ///
-    /// A face is the <em>cosine-weighted mean</em> of the radiance arriving around its axis, not the
-    /// sum — which is the same quantity <see cref="AmbientCube.FromEnvironment"/> produces from a sky,
-    /// so the two sources are interchangeable and a shader multiplying albedo by it is computing the
-    /// reflected light correctly either way.
-    /// </summary>
     private static AmbientCube Probe(
         PathIntegrator integrator,
         int index,
@@ -178,9 +117,6 @@ public static class IrradianceBaker
         {
             var direction = Direction(i, rays, jitter, phase);
 
-            // Seeded from the probe and the ray, never from a shared generator: the same two
-            // identifiers the frame renderer uses for a pixel and a sample, for the same reason.
-            // Sample 0 belongs to the direction stream above, so paths start at 1.
             var sampler = new Sampler(settings.Seed, index, i + 1);
 
             var light = integrator.Radiance(new Ray(origin, direction), ref sampler, out _);
@@ -189,9 +125,6 @@ public static class IrradianceBaker
             var g = MathF.Min(light.G, ceiling);
             var b = MathF.Min(light.B, ceiling);
 
-            // Each direction lands on exactly three of the six faces — the ones whose axes it has a
-            // positive component along — and contributes to each in proportion to that component,
-            // which is the cosine the irradiance integral asks for.
             Accumulate(sum, weights, 0, MathF.Max(direction.X, 0f), r, g, b);
             Accumulate(sum, weights, 1, MathF.Max(-direction.X, 0f), r, g, b);
             Accumulate(sum, weights, 2, MathF.Max(direction.Y, 0f), r, g, b);
@@ -240,13 +173,6 @@ public static class IrradianceBaker
         return new LinearColor(sum[slot] * scale, sum[slot + 1] * scale, sum[slot + 2] * scale);
     }
 
-    /// <summary>
-    /// Whether the probe is inside geometry, decided by how many directions run into the back of a
-    /// surface before they run into anything else.
-    ///
-    /// This is one intersection per direction with no shading and no bounces, so it costs a fraction
-    /// of the probe it can save entirely.
-    /// </summary>
     private static bool IsBuried(PathIntegrator integrator, Vector3 origin, float jitter, float phase, float threshold)
     {
         var backfaces = 0;
@@ -263,15 +189,6 @@ public static class IrradianceBaker
         return backfaces > ValidityRays * threshold;
     }
 
-    /// <summary>
-    /// Direction <paramref name="i"/> of <paramref name="count"/> over the sphere: a Fibonacci
-    /// spiral, jittered as a whole.
-    ///
-    /// Stratifying beats sampling the sphere at random — a few hundred random directions leave gaps
-    /// wide enough to miss a window — and jittering the whole set per probe keeps every probe in the
-    /// grid from sampling the *same* few hundred directions, which would turn the estimator's error
-    /// into a pattern that repeats across the volume instead of averaging out between neighbours.
-    /// </summary>
     private static Vector3 Direction(int i, int count, float jitter, float phase)
     {
         var z = 1f - 2f * (i + jitter) / count;
@@ -282,26 +199,18 @@ public static class IrradianceBaker
         return new Vector3(radius * MathF.Cos(angle), radius * MathF.Sin(angle), z);
     }
 
-    /// <summary>
-    /// The box the probes are laid out over: the world's own bounds with a margin, and a unit box
-    /// around the origin when there is no world to measure.
-    /// </summary>
     private static (Vector3 Min, Vector3 Max) Extent(Bvh accelerator, float padding)
     {
         var (min, max) = accelerator.Bounds;
 
         if (!(min.X <= max.X && min.Y <= max.Y && min.Z <= max.Z))
         {
-            // An empty tree reports an inverted box. A volume over nothing is still worth baking —
-            // its probes see the sky and nothing else, which is exactly what an empty world's
-            // ambient light is.
             return (new Vector3(-0.5f), new Vector3(0.5f));
         }
 
         var size = max - min;
         var longest = MathF.Max(size.X, MathF.Max(size.Y, size.Z));
 
-        // A world that is one point, or one flat plane, still needs a box with an inside.
         var margin = MathF.Max(longest, 1e-3f) * MathF.Max(padding, 0f);
 
         if (margin <= 0f)
@@ -312,10 +221,6 @@ public static class IrradianceBaker
         return (min - new Vector3(margin), max + new Vector3(margin));
     }
 
-    /// <summary>
-    /// Probes per axis: <paramref name="resolution"/> along the longest, and proportionally fewer
-    /// along the others, so a corridor does not get as many probes across as it does along.
-    /// </summary>
     private static (int X, int Y, int Z) Counts(Vector3 size, int resolution)
     {
         var longest = MathF.Max(size.X, MathF.Max(size.Y, size.Z));
@@ -331,7 +236,6 @@ public static class IrradianceBaker
             System.Math.Clamp((int)MathF.Round(resolution * extent / longest), 2, resolution);
     }
 
-    /// <summary>The mean of the probes worth averaging, which a lookup with no usable neighbour falls back to.</summary>
     private static AmbientCube Average(AmbientCube[] probes, bool[] valid)
     {
         Span<float> sum = stackalloc float[18];

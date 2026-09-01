@@ -29,7 +29,6 @@ public class ShadowMappingTests
         SoftFilter = false,
     };
 
-    /// <summary>A single unit cube at the origin, lit straight down.</summary>
     private static SimpleWorld CubeWorld() => new()
     {
         Meshes = [new Cube()],
@@ -64,7 +63,6 @@ public class ShadowMappingTests
 
         var map = new ShadowMapRenderer().Render(world, world.Lights[0], Settings());
 
-        // The map only spans a sphere around the world — a unit cube reaches nowhere near here.
         Assert.Equal(1f, map!.Visibility(new Vector3(50f, -1.2f, 0), 1f));
     }
 
@@ -126,7 +124,6 @@ public class ShadowMappingTests
         Assert.Equal(firstDepth, second!.Depth);
     }
 
-    /// <summary>A lit floor with a block hanging over it, seen from in front and above.</summary>
     private static (Renderer Renderer, Scene Scene) ShadowScene()
     {
         var renderer = new Renderer();
@@ -239,10 +236,6 @@ public class ShadowMappingTests
     [Fact]
     public void Render_WorldWithoutLights_ShadowsFromThePaintersOwnLightNotTheSharedDefault()
     {
-        // A painter built around one light, pointed at a world that declares none. The shadow
-        // pass runs before the painter prepares, so it has to be told which light that is —
-        // otherwise the scene is lit from the painter's light and shadowed from the shared
-        // default, which sits somewhere else entirely.
         var renderer = new Renderer();
 
         var scene = new Scene
@@ -254,8 +247,6 @@ public class ShadowMappingTests
             Shadows = Settings(),
         };
 
-        // Lighting the cube from +X puts its shadow at negative X. The shared default light
-        // sits above and behind at (0, 10, 10) and would leave that point lit.
         renderer.Render(scene, new PhongPainter(new DirectionalLight { Direction = -Vector3.UnitX }));
 
         Assert.NotNull(scene.ShadowMap);
@@ -267,9 +258,6 @@ public class ShadowMappingTests
     [Fact]
     public void Render_CasterScaledByItsParentNode_IsCoveredByTheMap()
     {
-        // The caster's extent has to follow the whole scene-graph chain: sized off the mesh's
-        // own Scale alone, the light's projection is fitted to a cube eight times smaller than
-        // the one actually standing there, and everything outside it stops casting.
         var node = new SceneNode("rig") { Scale = new Vector3(8f, 8f, 8f) };
         node.UpdateWorldMatrices();
 
@@ -283,8 +271,6 @@ public class ShadowMappingTests
 
         Assert.NotNull(map);
 
-        // The cube now spans ±4, so a point under its far corner is in shadow. Under a map
-        // fitted to the unscaled cube it falls outside the mapped area and reads as lit.
         Assert.True(map.Visibility(new Vector3(3f, -5f, 3f), 1f) < 1f);
     }
 }

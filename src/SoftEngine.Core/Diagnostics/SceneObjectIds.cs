@@ -1,11 +1,5 @@
 namespace SoftEngine.Core.Diagnostics;
 
-/// <summary>
-/// The identifier scheme shared by the graphics event list and the graphics object table:
-/// every object a frame touches gets a stable <c>obj:N</c> slot. Fixed slots come first,
-/// then the world's lights, then its meshes; anything a front-end wants to list beyond
-/// that (textures, for instance) starts at <see cref="AfterMeshes"/>.
-/// </summary>
 public static class SceneObjectIds
 {
     public const int RenderTarget = 0;
@@ -16,7 +10,6 @@ public static class SceneObjectIds
     public const int ShadowMap = 5;
     public const int PostProcess = 6;
 
-    /// <summary>First identifier handed out to world contents.</summary>
     public const int First = 7;
 
     public static int Light(int lightIndex) => First + lightIndex;

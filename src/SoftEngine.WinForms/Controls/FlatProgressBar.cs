@@ -3,11 +3,6 @@ using System.Drawing.Drawing2D;
 
 namespace SoftEngine.WinForms.Controls;
 
-/// <summary>
-/// A slim, flat, rounded progress bar. The system <see cref="ProgressBar"/> ignores custom
-/// colors when visual styles are active and animates value changes, so it can't match the
-/// dark theme nor keep up with fast progress reports.
-/// </summary>
 public sealed class FlatProgressBar : Control
 {
     private int _maximum = 100;

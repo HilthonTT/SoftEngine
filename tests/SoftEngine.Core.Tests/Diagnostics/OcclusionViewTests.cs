@@ -13,11 +13,6 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Tests.Diagnostics;
 
-/// <summary>
-/// The occlusion pass is the one part of the pipeline whose working the finished frame cannot
-/// show: it only ever decides what <em>not</em> to draw, so when it under-performs the picture is
-/// exactly right and merely slower. These cover the view that makes it visible.
-/// </summary>
 public class OcclusionViewTests
 {
     private const int Width = 200;
@@ -69,7 +64,6 @@ public class OcclusionViewTests
         renderer.Settings.BackFaceCulling = true;
         renderer.Diagnostics.Events.IsEnabled = false;
 
-        // The pass declines a world too small to repay it, which every scene here is.
         renderer.Occlusion.MinimumTestableMeshes = 1;
 
         var scene = new Scene
@@ -87,7 +81,6 @@ public class OcclusionViewTests
         return (renderer, scene);
     }
 
-    /// <summary>How many of the frame's pixels are not the "nothing covered this" surround.</summary>
     private static int CoveredPixels(FrameBuffer surface)
     {
         var empty = unchecked((int)0xFF1C222E);
@@ -116,17 +109,10 @@ public class OcclusionViewTests
 
         var covered = CoveredPixels(scene.Surface);
 
-        // The wall covers most of the frame, and its coverage is what the view is drawing. The
-        // bound is loose on purpose: the exact texel count is a property of the pyramid's
-        // resolution, and pinning it here would make this a test of the divisor.
         Assert.True(covered > Width * Height / 4,
             $"expected the wall's coverage to fill much of the view, got {covered} of {Width * Height} pixels");
     }
 
-    /// <summary>
-    /// A view the frame carries nothing for leaves the image alone rather than presenting a
-    /// blank one — the same contract the normals view keeps under a parallel projection.
-    /// </summary>
     [Fact]
     public void OcclusionView_WithThePassSwitchedOff_LeavesTheShadedImageAlone()
     {
@@ -144,10 +130,6 @@ public class OcclusionViewTests
         Assert.Equal(shaded, scene.Surface.Screen);
     }
 
-    /// <summary>
-    /// A probed frame turns the pass off, so there is no pyramid to present. Showing the
-    /// previous frame's would be worse than showing nothing: it would look current.
-    /// </summary>
     [Fact]
     public void OcclusionView_OfAProbedFrame_HasNothingToShow()
     {
@@ -155,8 +137,6 @@ public class OcclusionViewTests
 
         renderer.Settings.DebugView = DebugView.OcclusionBuffer;
 
-        // An unprobed frame first, which fills the pyramid — so a stale buffer being presented
-        // is a thing this test could actually catch.
         renderer.Render(scene, new GouraudPainter());
 
         renderer.Diagnostics.SetProbe(Width / 2, Height / 2);
@@ -166,19 +146,12 @@ public class OcclusionViewTests
 
         var presented = (int[])scene.Surface.Screen.Clone();
 
-        // The same probed frame with no view selected. Probing changes what is rendered — it
-        // turns the pass off, and the coarse depth bound with it — so the comparison has to be
-        // probed too, or it would be measuring that rather than the view.
         renderer.Settings.DebugView = DebugView.Off;
         renderer.Render(scene, new GouraudPainter());
 
         Assert.Equal(scene.Surface.Screen, presented);
     }
 
-    /// <summary>
-    /// Presenting a buffer must not change what was rendered into it. The view runs last, over
-    /// the finished frame, so the pass's own decisions have to come out identical either way.
-    /// </summary>
     [Fact]
     public void OcclusionView_DoesNotChangeWhatThePassRejects()
     {

@@ -10,16 +10,6 @@ namespace SoftEngine.Core.Tests.Geometry;
 
 public class ColladaSceneTests
 {
-    /// <summary>
-    /// A whole Collada document small enough to reason about: one quad, two joints, a skin
-    /// binding the quad to them, and a two-key animation on the second joint.
-    ///
-    /// Written out longhand rather than loaded from a file because the interesting part is the
-    /// <em>convention</em> — Collada's matrices are column-vector, so the translation of
-    /// <c>JointA</c> sits in the fourth column, and everything about the import is wrong in a
-    /// hard-to-see way if that is not transposed. A hand-written matrix makes the expected
-    /// answer unambiguous.
-    /// </summary>
     private const string Document = """
         <?xml version="1.0" encoding="utf-8"?>
         <COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
@@ -143,8 +133,6 @@ public class ColladaSceneTests
         var jointA = scene.Root.Find("JointA");
         Assert.NotNull(jointA);
 
-        // Collada put the translation in the fourth column; read without transposing it would
-        // land in the matrix's projective row and the joint would sit at the origin.
         Approx.Equal(new Vector3(5, 0, 0), jointA!.Position);
     }
 
@@ -187,9 +175,6 @@ public class ColladaSceneTests
         var scene = Import();
         var mesh = scene.SkinnedMeshes[0];
 
-        // The inverse bind matrices are the true inverses of the joints' bind world matrices,
-        // so every skinning matrix is the identity and the mesh must be untouched. Any error
-        // in the transpose, the joint order or the multiplication order shows up here.
         Approx.Equal(new Vector3(-1, 0, 0), mesh.Vertices[0]);
         Approx.Equal(new Vector3(1, 0, 0), mesh.Vertices[1]);
         Approx.Equal(new Vector3(1, 1, 0), mesh.Vertices[2]);
@@ -202,12 +187,10 @@ public class ColladaSceneTests
         var scene = Import();
         var weights = scene.SkinnedMeshes[0].Weights;
 
-        // Vertices 0 and 1: one influence, joint 0, full weight.
         Assert.Equal(0, weights.JointIndices[0]);
         Assert.Equal(1f, weights.Weights[0], 4);
         Assert.Equal(-1, weights.JointIndices[1]);
 
-        // Vertices 2 and 3: half of joint 0 and half of joint 1.
         Assert.Equal(0, weights.JointIndices[2 * SkinWeights.InfluencesPerVertex]);
         Assert.Equal(1, weights.JointIndices[2 * SkinWeights.InfluencesPerVertex + 1]);
         Assert.Equal(0.5f, weights.Weights[2 * SkinWeights.InfluencesPerVertex], 4);
@@ -255,11 +238,8 @@ public class ColladaSceneTests
         player.Apply();
         mesh.UpdatePose();
 
-        // The lower vertices belong entirely to JointA, which the clip does not touch.
         Approx.Equal(new Vector3(-1, 0, 0), mesh.Vertices[0]);
 
-        // The upper ones are half JointA (still) and half JointB (up one unit), so they
-        // travel half of that unit.
         Approx.Equal(new Vector3(1, 1.5f, 0), mesh.Vertices[2]);
     }
 
@@ -277,9 +257,6 @@ public class ColladaSceneTests
     [Fact]
     public void HackyImportCollada_StillReturnsPlainUnskinnedMeshes()
     {
-        // The older entry point is what the static-model demos use. Adding the scene import
-        // must not have changed what it hands back — in particular it must not start
-        // returning skinned meshes for a file that has a controller.
         var path = Path.Combine(Path.GetTempPath(), $"softengine-{Guid.NewGuid():N}.dae");
         File.WriteAllText(path, Document);
 
@@ -317,8 +294,6 @@ public class ColladaSceneTests
     [Fact]
     public void Import_EmptyAnimationArrays_ProduceNoClip()
     {
-        // Exporters routinely emit channels with count="0" for lights and cameras; a clip
-        // made of those would have a zero duration and nothing to play.
         var empty = XDocument.Parse("""
             <COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
               <library_visual_scenes>
@@ -349,7 +324,6 @@ public class ColladaSceneTests
     [Fact]
     public void Import_TranslateAndRotateNodes_ComposeInDocumentOrder()
     {
-        // The component form of a node transform, which Blender writes and Maya does not.
         var document = XDocument.Parse("""
             <COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
               <library_visual_scenes>
@@ -370,8 +344,6 @@ public class ColladaSceneTests
         Approx.Equal(new Vector3(0, 10, 0), node.Position);
         Approx.Equal(new Vector3(2, 2, 2), node.Scale);
 
-        // Scale, then a quarter turn about Z, then the translation: a local +X unit ends up
-        // two units along +Y from the node's own position.
         Approx.Equal(new Vector3(0, 12, 0), Vector3.Transform(Vector3.UnitX, node.LocalMatrix));
     }
 

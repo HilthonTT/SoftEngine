@@ -6,16 +6,6 @@ namespace SoftEngine.Benchmarks;
 
 internal static class BenchmarkRunner
 {
-    /// <summary>
-    /// Renders a scene <paramref name="frames"/> times and reports the median.
-    ///
-    /// The median rather than the mean, because a frame time distribution on a desktop OS has
-    /// a long right tail that belongs to the scheduler rather than to the renderer — one
-    /// preempted frame moves a mean and cannot move a median. Warm-up frames are discarded for
-    /// the same reason in the other direction: the first frame through a scene pays for JIT,
-    /// for the vertex buffers, the tile bins and the mip chains being allocated, and for the
-    /// prefiltered environment when there is one.
-    /// </summary>
     public static BenchmarkResult Run(
         BenchmarkScene scene,
         int width,
@@ -33,8 +23,6 @@ internal static class BenchmarkRunner
         renderer.Settings.OcclusionCulling = occlusionCulling;
         renderer.Settings.NearestMeshesFirst = nearestMeshesFirst;
 
-        // A static rather than a renderer setting, so it is set around the run and put back
-        // afterwards. Nothing else is rendering — the harness measures one scene at a time.
         var restoreSpans = ScanlineRasterizer.VectorizedSpans;
         ScanlineRasterizer.VectorizedSpans = vectorizedSpans;
 

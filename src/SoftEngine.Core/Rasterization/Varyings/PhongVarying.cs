@@ -3,10 +3,6 @@ using System.Runtime.CompilerServices;
 
 namespace SoftEngine.Core.Rasterization.Varyings;
 
-/// <summary>
-/// World-space position and normal, interpolated per pixel so lighting can be
-/// evaluated at every fragment (Phong shading).
-/// </summary>
 public readonly struct PhongVarying(Vector3 world, Vector3 normal) : IVarying<PhongVarying>
 {
     public readonly Vector3 World = world;

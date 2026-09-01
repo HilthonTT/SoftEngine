@@ -2,16 +2,6 @@ using SoftEngine.Benchmarks;
 using System.Diagnostics;
 using System.Globalization;
 
-// A headless frame-time harness for SoftEngine.Core. The engine renders into a plain int[],
-// so measuring it needs no window, no GPU and no platform beyond the runtime — which is what
-// makes a benchmark of it reproducible on any machine that can build the solution.
-//
-//   dotnet run -c Release --project bench/SoftEngine.Benchmarks
-//   dotnet run -c Release --project bench/SoftEngine.Benchmarks -- --scene overdraw --compare
-//   dotnet run -c Release --project bench/SoftEngine.Benchmarks -- --csv results.csv
-
-// Results get pasted into issues and READMEs, so the table reads the same on every machine
-// rather than picking up whichever thousands separator the operating system was installed with.
 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 
 var options = Options.Parse(args);
@@ -46,9 +36,6 @@ if (!IsOptimized())
 
 Console.WriteLine();
 
-// "occluders" and "hidden" report what the occlusion pass did, in both tables. A pass that
-// rejects nothing and a pass that rejects everything both show up as a speedup of about one,
-// and they call for opposite responses.
 Console.WriteLine(options.Compare != ComparedFeature.None
     ? $"{"scene",-16}{"median",10}{"min",10}{"p95",10}{options.ComparisonLabel,10}{"speedup",9}{"occluders",11}{"hidden",9}"
     : $"{"scene",-16}{"median",10}{"min",10}{"p95",10}{"triangles",12}{"drawn",12}{"occluders",11}{"hidden",9}");
@@ -111,9 +98,6 @@ return 0;
 
 static string Ms(double value) => value.ToString("0.00", CultureInfo.InvariantCulture) + "ms";
 
-// Whether the engine assembly was built with optimizations. A Debug build measures
-// unoptimized IL and reports numbers several times worse than the engine's — worth saying out
-// loud, rather than letting someone quote them.
 static bool IsOptimized() =>
     typeof(SoftEngine.Core.Pipeline.Renderer).Assembly
         .GetCustomAttributes(typeof(DebuggableAttribute), false)

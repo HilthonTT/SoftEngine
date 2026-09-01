@@ -6,40 +6,12 @@ using System.Numerics;
 
 namespace SoftEngine.WinForms;
 
-/// <summary>
-/// The graphics debugger: the three panels that show what the renderer did to the last frame,
-/// the frame history that lets one be held still while the viewport carries on, and the status
-/// bar that names whichever frame is actually on screen.
-///
-/// <para>
-/// Kept apart from <c>MainScreen.cs</c> because it reads the pipeline rather than driving it.
-/// Everything here is downstream of a frame that has already been rendered — which is also why
-/// it all runs on a timer rather than per frame: a drag repaints far faster than a list view can
-/// usefully be rebuilt.
-/// </para>
-///
-/// <para>
-/// Named <c>MainScreenDebugger.cs</c> rather than <c>MainScreen.Debugger.cs</c> for the reason
-/// spelled out in <c>MainScreenWorkspace.cs</c>: a dotted partial of a <see cref="Form"/> invites
-/// Visual Studio to generate a <c>.resx</c> whose resource name collides with the form's own.
-/// </para>
-/// </summary>
 public sealed partial class MainScreen
 {
-    /// <summary>Set by every rendered frame, cleared when the debugger panels have caught up.</summary>
     private bool _frameDirty;
 
-    /// <summary>
-    /// What the object table is naming, rebuilt only when the scene's own signature says the
-    /// catalogue would come out different.
-    /// </summary>
     private SceneObjectCatalog _catalog = SceneObjectCatalog.Empty;
 
-    /// <summary>
-    /// Wires the debugger panels to the viewport. The renderer records its event list every
-    /// frame, but the panels only pull from it on a timer: a drag repaints far faster than a
-    /// list view can usefully be rebuilt.
-    /// </summary>
     private void InitializeDebugger()
     {
         panel3D1.Diagnostics.CaptureEvents = mnuRecordEvents.Checked;
@@ -49,9 +21,6 @@ public sealed partial class MainScreen
         panel3D1.ZoomChanged += (s, e) => UpdateStatus();
         panel3D1.SelectedPixelChanged += (s, e) => UpdateStatus();
 
-        // A click asks two questions of the same pixel: the probe records what the renderer
-        // did there, and the ray says which mesh is actually under it. The second is what
-        // selects the row in the object table — the same obj:N the event list would name.
         panel3D1.PickedChanged += (s, e) =>
         {
             if (panel3D1.Picked is { } hit && panel3D1.Scene?.World is { } world)
@@ -67,7 +36,6 @@ public sealed partial class MainScreen
 
         objectTablePanel.ActiveChanged += (s, e) => panel3D1.Invalidate();
 
-        // Clicking a write in the pixel history reveals the event and the object behind it.
         pixelHistoryPanel.WriteSelected += (s, write) =>
         {
             eventListPanel.SelectEvent(write.EventIndex);
@@ -134,12 +102,8 @@ public sealed partial class MainScreen
         UpdateStatus();
     }
 
-    /// <summary>Pulls the last frame's capture into the three panels — at most once per timer tick.</summary>
     private void RefreshDebugPanels()
     {
-        // A pinned frame is not going to change, so there is nothing to pull until the pin moves
-        // — but the panels still have to be filled the first time it is set, which is what the
-        // dirty flag is raised for there too.
         if (!_frameDirty)
         {
             return;
@@ -175,8 +139,6 @@ public sealed partial class MainScreen
             pixelHistoryPanel.SetHistory(pinned?.PixelHistory ?? panel3D1.Diagnostics.PixelHistory, _catalog);
         }
 
-        // The kept-frame count climbs as frames arrive, and the step items become reachable the
-        // moment there is a first one — both belong on the timer rather than on every frame.
         UpdateFrameHistoryMenu();
 
         UpdateStatus();
@@ -184,32 +146,10 @@ public sealed partial class MainScreen
 
     #region Frame history
 
-    /// <summary>How many finished frames are kept when the history is switched on.</summary>
     private const int FrameHistoryDepth = 60;
 
-    /// <summary>
-    /// Which frame the panels are showing, by its own number, or -1 to follow whatever was
-    /// rendered last.
-    ///
-    /// <para>
-    /// The number rather than a position in the kept list, because the list is a window that
-    /// slides: the viewport goes on rendering while a frame is pinned, and every new capture
-    /// drops the oldest. An index would quietly come to mean a different frame each time that
-    /// happened — the panels would creep forward through history while claiming to stand still,
-    /// which is worse than either following or stopping.
-    /// </para>
-    /// </summary>
     private long _pinnedFrameNumber = -1;
 
-    /// <summary>
-    /// Where the pinned frame sits in the kept list, or -1 when the panels are following the
-    /// renderer.
-    /// </summary>
-    /// <remarks>
-    /// A pinned frame can age out of the window while it is being looked at. The oldest frame
-    /// still kept is the closest thing to what was asked for, and the status bar names whichever
-    /// frame is actually on screen — so the slip is visible rather than silent.
-    /// </remarks>
     private int PinnedIndex()
     {
         if (_pinnedFrameNumber < 0)
@@ -264,11 +204,6 @@ public sealed partial class MainScreen
         UpdateFrameHistoryMenu();
     }
 
-    /// <summary>
-    /// Moves the pin one frame. Stepping back from live starts at the newest kept frame, and
-    /// stepping forward past it returns to following the renderer — so the two ends of the
-    /// history behave the way a person expects rather than stopping dead.
-    /// </summary>
     private void StepFrame(int direction)
     {
         var frames = panel3D1.Diagnostics.Frames;
@@ -282,8 +217,6 @@ public sealed partial class MainScreen
 
         if (index < 0)
         {
-            // Following the renderer. Back pins the newest frame captured; forward has nowhere
-            // to go, since the newest frame is the one already on screen.
             if (direction < 0)
             {
                 PinFrame(frames[^1].FrameNumber);
@@ -307,8 +240,6 @@ public sealed partial class MainScreen
     {
         _pinnedFrameNumber = frameNumber;
 
-        // The panels read the pin on their next tick, and there may not be another rendered
-        // frame to raise the flag — a still camera repaints nothing.
         _frameDirty = true;
 
         UpdateFrameHistoryMenu();
@@ -348,23 +279,17 @@ public sealed partial class MainScreen
 
     private void UpdateStatus()
     {
-        // 100% is the framing the world loaded with; the wheel and W/S move away from it.
         var buffer = panel3D1.BufferSize;
         lblZoomStatus.Text = $"Zoom: {panel3D1.Zoom * 100f:0}%  ·  {buffer.Width} × {buffer.Height}";
 
         if (panel3D1.SelectedPixel is { } pixel && panel3D1.SelectedPixelNormalized is { } normalized)
         {
-            // What the ray found under the same pixel, when it found anything — the mesh's
-            // own identifier, so it can be looked up in the object table and the event list.
             var picked = string.Empty;
 
             if (panel3D1.Picked is { } hit && panel3D1.Scene?.World is { } world)
             {
                 var objectId = SceneObjectIds.Mesh(world.Lights.Count, hit.MeshIndex);
 
-                // A selection made without a ray — adding a primitive, or an undo putting one
-                // back — names no triangle, and reporting "tri:-1 at 0" would read as a pick that
-                // went wrong rather than as one that was never cast.
                 var where = hit.TriangleIndex >= 0 ? $" tri:{hit.TriangleIndex} at {hit.Distance:0.##}" : string.Empty;
 
                 picked = $"  ·  picked obj:{objectId} ({hit.Mesh.GetType().Name}){where}";
@@ -378,20 +303,14 @@ public sealed partial class MainScreen
             lblPixelStatus.Text = "Selected pixel: none — click the viewport to probe and pick one";
         }
 
-        // Only ever offered for something that is there to delete.
         mnuDelete.Enabled = panel3D1.Picked is not null;
 
-        // A modal gesture has no handle on screen to show what it is doing, so the status bar is
-        // the whole of its feedback — what it is, which axis it is pressed against, and the two
-        // keys that end it. Ahead of the gizmo's own line because only one of them ever runs.
         if (_transform is { IsActive: true })
         {
             lblPixelStatus.Text =
                 $"{_transform.Describe()}  ·  X / Y / Z to constrain  ·  click or Enter to confirm, Esc to cancel";
         }
 
-        // A drag has to say what it did in numbers as well as in pixels: eyeballing a mesh
-        // into place is exactly the case where you then want to know where "place" was.
         else if (_gizmo is { IsActive: true, Target: { } target })
         {
             var what = _gizmo.Mode switch
@@ -403,8 +322,6 @@ public sealed partial class MainScreen
 
             lblPixelStatus.Text += $"  ·  {what}";
 
-            // The increment has to be visible, or a drag that lands on a round number reads as
-            // the renderer having quietly rounded it.
             if (_gizmo.Snap.Enabled)
             {
                 var step = _gizmo.Mode switch
@@ -422,17 +339,11 @@ public sealed partial class MainScreen
         {
             var position = camera.Position;
 
-            // The named view, when the camera is lined up with one: worth saying, because
-            // that is the difference between a view you can reason about and one that is
-            // merely close to it.
             var view = camera is ArcBallCamera { CurrentAxisView: { } axisView } ? $" · {axisView}" : string.Empty;
 
             lblCameraStatus.Text = $"Camera: ({position.X:0.##}, {position.Y:0.##}, {position.Z:0.##}){view}";
         }
 
-        // A pinned frame reports its own numbers. Showing the live ones beside a pinned event
-        // list would put two different frames on the same status bar, which is the one thing a
-        // history must not do.
         if (PinnedFrame() is { } pinned)
         {
             lblFrameStatus.Text =
@@ -445,6 +356,5 @@ public sealed partial class MainScreen
         }
     }
 
-    /// <summary>A mesh's Euler angles are stored in radians; nobody reads a pose in radians.</summary>
     private static string Degrees(float radians) => $"{radians * 180f / MathF.PI:0.#}°";
 }

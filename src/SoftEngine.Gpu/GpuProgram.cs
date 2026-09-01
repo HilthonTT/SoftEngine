@@ -4,26 +4,12 @@ using System.Reflection;
 
 namespace SoftEngine.Gpu;
 
-/// <summary>
-/// A linked shader program, its uniform locations, and the setters that write to them.
-///
-/// <para>
-/// Locations are looked up by name once and cached, because <c>glGetUniformLocation</c> is a
-/// string comparison against the linked program's symbol table and this renderer sets on the
-/// order of forty uniforms per mesh. Names the program does not have resolve to -1, which
-/// OpenGL defines as a silent no-op — so a uniform the optimizer removed because the current
-/// shading mode never reads it costs a dictionary lookup and nothing else, and the renderer
-/// does not have to know which those are.
-/// </para>
-/// </summary>
 public sealed class GpuProgram : IDisposable
 {
     private const string VersionHeader = "#version 330 core\n";
 
     private readonly GL _gl;
 
-    // Name to location and declared GL type, read out of the linked program once. The type
-    // is what makes Set safe; see SetScalar.
     private readonly Dictionary<string, (int Location, GLEnum Type)> _uniforms = [];
 
     private uint _handle;
@@ -36,22 +22,6 @@ public sealed class GpuProgram : IDisposable
         Introspect();
     }
 
-    /// <summary>
-    /// Reads every active uniform's name, location and declared type out of the linked
-    /// program.
-    ///
-    /// <para>
-    /// The types are the point. OpenGL's uniform setters are not interchangeable —
-    /// <c>glUniform1i</c> against a <c>float</c> uniform is not a conversion but an error,
-    /// and one that reports itself only through <c>glGetError</c>, which nothing here reads
-    /// on the hot path. The uniform simply keeps whatever it had, which is zero, and the
-    /// shader goes on running with it. That is exactly the shape of bug this cost: a
-    /// resolution passed as the <c>int</c> it is, into the <c>float</c> the shader declares,
-    /// leaving a divisor of zero in the shadow filter and shadows at a ninth of their
-    /// strength. Knowing the declared type lets <see cref="Set(string, int)"/> promote
-    /// rather than fail.
-    /// </para>
-    /// </summary>
     private unsafe void Introspect()
     {
         _gl.GetProgram(_handle, ProgramPropertyARB.ActiveUniforms, out var count);
@@ -76,7 +46,6 @@ public sealed class GpuProgram : IDisposable
                 continue;
             }
 
-            // An array uniform is reported as "uLightVector[0]"; callers name the array.
             var bracket = name.IndexOf('[', StringComparison.Ordinal);
             if (bracket >= 0)
             {
@@ -94,11 +63,6 @@ public sealed class GpuProgram : IDisposable
 
     public uint Handle => _handle;
 
-    /// <summary>
-    /// Compiles and links a program from embedded shader sources.
-    /// <paramref name="includeCommon"/> prepends <c>common.glsl</c> — the shading maths
-    /// shared with the CPU pipeline — to both stages.
-    /// </summary>
     public static GpuProgram Create(GL gl, string vertexResource, string fragmentResource, bool includeCommon)
     {
         ArgumentNullException.ThrowIfNull(gl, nameof(gl));
@@ -116,9 +80,6 @@ public sealed class GpuProgram : IDisposable
 
         gl.GetProgram(handle, ProgramPropertyARB.LinkStatus, out var linked);
 
-        // Detached and deleted either way: they are compiled objects the program has already
-        // copied what it needs from, and leaking them on the failure path would be a leak in
-        // exactly the situation someone is iterating on the shader.
         gl.DetachShader(handle, vertex);
         gl.DetachShader(handle, fragment);
         gl.DeleteShader(vertex);
@@ -170,18 +131,9 @@ public sealed class GpuProgram : IDisposable
 
     public void Use() => _gl.UseProgram(_handle);
 
-    /// <summary>
-    /// Where a uniform lives, or -1 when the program has none by that name — which OpenGL
-    /// defines as a silent no-op, so a uniform the optimizer removed because the current
-    /// shading mode never reads it costs a dictionary lookup and nothing else.
-    /// </summary>
     private int Location(string name) =>
         _uniforms.TryGetValue(name, out var uniform) ? uniform.Location : -1;
 
-    /// <summary>
-    /// Writes a scalar as whatever the shader declared it to be. An <c>int</c> handed to a
-    /// <c>float</c> uniform is widened rather than rejected; see <see cref="Introspect"/>.
-    /// </summary>
     private void SetScalar(string name, int asInt, float asFloat)
     {
         if (!_uniforms.TryGetValue(name, out var uniform))
@@ -195,7 +147,6 @@ public sealed class GpuProgram : IDisposable
         }
         else
         {
-            // int, bool and every sampler, all of which glUniform1i is the setter for.
             _gl.Uniform1(uniform.Location, asInt);
         }
     }
@@ -212,18 +163,6 @@ public sealed class GpuProgram : IDisposable
 
     public void Set(string name, Vector4 value) => _gl.Uniform4(Location(name), value.X, value.Y, value.Z, value.W);
 
-    /// <summary>
-    /// Writes a matrix without transposing it.
-    ///
-    /// <para>
-    /// That is not an oversight. <see cref="Matrix4x4"/> is laid out row by row and is used
-    /// throughout this engine with the row-vector convention — <c>v * M</c>. GLSL reads a
-    /// matrix column by column and multiplies with the column-vector convention —
-    /// <c>M * v</c>. Handing over the same sixteen floats therefore gives GLSL the transpose,
-    /// and the transpose under the opposite convention is the same transform. Transposing on
-    /// the way in would undo that and produce a mirrored, wrongly-oriented scene.
-    /// </para>
-    /// </summary>
     public unsafe void Set(string name, in Matrix4x4 value)
     {
         var location = Location(name);
@@ -239,7 +178,6 @@ public sealed class GpuProgram : IDisposable
         }
     }
 
-    /// <summary>Writes the upper-left 3×3 of a matrix, under the same convention as above.</summary>
     public unsafe void SetMatrix3(string name, in Matrix4x4 value)
     {
         var location = Location(name);

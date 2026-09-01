@@ -5,14 +5,6 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Rasterization.Shaders;
 
-/// <summary>
-/// Per-pixel Blinn-Phong: ambient plus, for every light in the scene, a Lambert diffuse
-/// term and a specular highlight from the half-vector. The lights arrive pre-flattened as
-/// a <see cref="LightSet"/>, so nothing here dispatches through an interface per pixel.
-/// A shadow map, when the scene has one, is sampled at every fragment for the one light it
-/// was rendered from — the world position needed for the lookup is already interpolated
-/// for the lighting.
-/// </summary>
 public readonly struct BlinnPhongShader : IPixelShader<PhongVarying>
 {
     private readonly AmbientField _ambient;
@@ -24,15 +16,10 @@ public readonly struct BlinnPhongShader : IPixelShader<PhongVarying>
 
     private readonly bool _gammaCorrect;
 
-    // The base colour in whichever space the output is accumulated in: decoded to linear
-    // when shading gamma-correctly, and the raw bytes otherwise, where the light scales
-    // the encoded value directly.
     private readonly float _baseR;
     private readonly float _baseG;
     private readonly float _baseB;
 
-    // Shininess is almost always a small whole number (32 by default); exponentiation
-    // by squaring is then a handful of multiplies instead of a MathF.Pow per lit pixel.
     private readonly int _shininessInt;
 
     public BlinnPhongShader(
@@ -90,8 +77,6 @@ public readonly struct BlinnPhongShader : IPixelShader<PhongVarying>
                 continue;
             }
 
-            // Shadowing scales the light's own contribution; ambient stands in for
-            // everything that reaches the surface by other paths, so it survives.
             if (light.CastsShadow && _shadows is { } shadows)
             {
                 attenuation *= shadows.Visibility(v.World, nDotL);
@@ -110,8 +95,6 @@ public readonly struct BlinnPhongShader : IPixelShader<PhongVarying>
 
                 var power = _shininessInt > 0 ? PowInt(nDotH, _shininessInt) : MathF.Pow(nDotH, _shininess);
 
-                // The highlight takes the light's colour, not the surface's: it is the
-                // light reflecting off the surface rather than being absorbed by it.
                 specular += power * _specularStrength * attenuation * light.Color;
             }
         }
@@ -119,11 +102,6 @@ public readonly struct BlinnPhongShader : IPixelShader<PhongVarying>
         return Combine(diffuse, specular);
     }
 
-    /// <summary>
-    /// Folds the accumulated diffuse and specular light onto the base colour. Nothing is
-    /// clamped on the linear path — a highlight above white is a real measurement, and on
-    /// an HDR target it survives to the tone-map instead of being flattened here.
-    /// </summary>
     private LinearColor Combine(LinearColor diffuse, LinearColor specular)
     {
         if (_gammaCorrect)
@@ -134,8 +112,6 @@ public readonly struct BlinnPhongShader : IPixelShader<PhongVarying>
                 _baseB * diffuse.B + specular.B);
         }
 
-        // The naive path accumulates in sRGB bytes: the light scales the encoded base
-        // colour, and one unit of specular light is a full 255 rather than a full 1.
         return new ColorRGB(
             Saturate(_baseR * diffuse.R + specular.R * 255f),
             Saturate(_baseG * diffuse.G + specular.G * 255f),

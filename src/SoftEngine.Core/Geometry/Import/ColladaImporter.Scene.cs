@@ -7,28 +7,11 @@ using System.Xml.Linq;
 
 namespace SoftEngine.Core.Geometry.Import;
 
-/// <summary>
-/// The parts of a Collada file that describe movement rather than shape: the visual scene's
-/// node hierarchy, the skin controllers that bind geometry to it, and the animation channels
-/// that pose it over time.
-///
-/// <para>
-/// Collada writes matrices for the column-vector convention — a point is transformed as
-/// <c>M·v</c>, and a node's translation sits in the fourth column. This engine composes
-/// row-vector matrices, <c>v·M</c>, with translation in the fourth row. The two forms are
-/// transposes of each other, so every matrix read here is transposed on the way in and
-/// nothing downstream has to know the file's convention.
-/// </para>
-/// </summary>
 public static partial class ColladaImporter
 {
-    /// <summary>
-    /// Reads a Collada file as a scene: meshes, the node tree they hang off, skins and clips.
-    /// </summary>
     public static ImportedScene ImportScene(string fileName, IProgress<float>? progress = null) =>
         ImportScene(XDocument.Load(fileName), progress);
 
-    /// <summary>Reads an already-parsed Collada document. Exists so tests can supply one inline.</summary>
     public static ImportedScene ImportScene(XDocument document, IProgress<float>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(document, nameof(document));
@@ -47,9 +30,6 @@ public static partial class ColladaImporter
 
         var clips = ReadAnimations(document, nodes);
 
-        // Everything downstream — the skinning matrices, the bounding spheres, the gizmo —
-        // reads world matrices, so the scene arrives already posed rather than at whatever
-        // the node components happen to compose to before the first update.
         nodes.Root.UpdateWorldMatrices();
         foreach (var mesh in skinned)
         {
@@ -61,7 +41,6 @@ public static partial class ColladaImporter
         return new ImportedScene(nodes.Root, meshes, clips, skinned);
     }
 
-    /// <summary>The node tree, plus the three name spaces Collada references nodes through.</summary>
     private sealed class NodeIndex
     {
         public SceneNode Root { get; } = new("<scene>");
@@ -72,18 +51,8 @@ public static partial class ColladaImporter
 
         public Dictionary<string, SceneNode> ByName { get; } = new(StringComparer.Ordinal);
 
-        /// <summary>
-        /// Which node each geometry is instanced under. Geometry instanced more than once
-        /// keeps the first node: one imported mesh cannot be in two places, and importing a
-        /// second copy would silently double a scene's triangle count.
-        /// </summary>
         public Dictionary<string, SceneNode> GeometryInstances { get; } = new(StringComparer.Ordinal);
 
-        /// <summary>
-        /// Skins name their joints by <c>sid</c> and animations target them by <c>id</c>, but
-        /// exporters are inconsistent enough that trying all three and preferring the one the
-        /// caller expects is the only thing that reads real files.
-        /// </summary>
         public SceneNode? Resolve(string? reference, bool preferId)
         {
             if (string.IsNullOrEmpty(reference))
@@ -124,8 +93,6 @@ public static partial class ColladaImporter
         var node = new SceneNode(name ?? id ?? sid ?? string.Empty);
         parent.Add(node);
 
-        // First registration wins: duplicate ids are malformed but do occur, and a stable
-        // choice at least binds the same node on every load.
         if (id is not null)
         {
             index.ById.TryAdd(id, node);
@@ -157,11 +124,6 @@ public static partial class ColladaImporter
         }
     }
 
-    /// <summary>
-    /// What a node is for. Collada labels bones with <c>type="JOINT"</c>, but only some
-    /// exporters bother — so what a node <em>instances</em> is the more reliable signal, and
-    /// an unlabelled node is taken as a plain transform rather than assumed to be scenery.
-    /// </summary>
     private static SceneNodeKind ClassifyNode(XElement element)
     {
         if (element.Element(_collada + "instance_light") is not null)
@@ -179,11 +141,6 @@ public static partial class ColladaImporter
             : SceneNodeKind.Transform;
     }
 
-    /// <summary>
-    /// Composes a node's transform elements. Collada applies them in document order under the
-    /// column-vector convention, so transposing each one reverses the order they multiply in —
-    /// which is why the accumulator is pre-multiplied rather than appended to.
-    /// </summary>
     private static Matrix4x4 ReadNodeTransform(XElement element)
     {
         var result = Matrix4x4.Identity;
@@ -227,10 +184,6 @@ public static partial class ColladaImporter
         return result;
     }
 
-    /// <summary>
-    /// Reads 16 floats laid out as Collada writes them — row by row of a column-vector
-    /// matrix — into this engine's transposed, row-vector equivalent.
-    /// </summary>
     private static Matrix4x4 ToEngineMatrix(ReadOnlySpan<float> values, int offset)
     {
         if (offset + 16 > values.Length)
@@ -296,10 +249,6 @@ public static partial class ColladaImporter
         return meshes;
     }
 
-    /// <summary>
-    /// Turns each skin controller's geometry into a <see cref="SkinnedMesh"/>, replacing the
-    /// plain mesh already imported for it.
-    /// </summary>
     private static List<SkinnedMesh> ReadSkins(
         XDocument document,
         NodeIndex nodes,
@@ -361,10 +310,6 @@ public static partial class ColladaImporter
         return skinned;
     }
 
-    /// <summary>
-    /// Hangs each mesh off the node that instances it, so a hierarchy of rigid parts moves as
-    /// one when an animation poses its parents.
-    /// </summary>
     private static void AttachToNodes(NodeIndex nodes, List<IMesh> meshes, Dictionary<string, int> meshByGeometryId)
     {
         foreach (var (geometryId, node) in nodes.GeometryInstances)
@@ -374,8 +319,6 @@ public static partial class ColladaImporter
                 continue;
             }
 
-            // A skinned mesh comes out of the deformer already in the skeleton's space —
-            // parenting it as well would apply the instancing node's transform a second time.
             if (meshes[index] is Mesh mesh and not SkinnedMesh)
             {
                 mesh.Parent = node;
@@ -407,8 +350,6 @@ public static partial class ColladaImporter
 
         for (var i = 0; i < jointNames.Count; i++)
         {
-            // A joint the visual scene never declared still needs a slot, or every weight
-            // after it would index the wrong joint. An empty node poses as the identity.
             jointNodes[i] = nodes.Resolve(jointNames[i], preferId: false) ?? new SceneNode(jointNames[i]);
 
             inverseBinds[i] = ToEngineMatrix(bindFloats, i * 16);
@@ -460,8 +401,6 @@ public static partial class ColladaImporter
                     continue;
                 }
 
-                // A joint index of -1 means the bind shape itself rather than a joint;
-                // the builder drops it, which leaves that share of the vertex unmoved.
                 builder.Add(vertex, pairs[jointSlot], weightValues[weightIndex]);
             }
         }
@@ -469,11 +408,6 @@ public static partial class ColladaImporter
         return builder.Build();
     }
 
-    /// <summary>
-    /// Reads every animation channel in the document into a single clip. Collada can group
-    /// channels into named clips, but the exporters these files came from do not, and one
-    /// clip covering the file is what a viewer needs either way.
-    /// </summary>
     private static List<AnimationClip> ReadAnimations(XDocument document, NodeIndex nodes)
     {
         var clips = new List<AnimationClip>();
@@ -487,7 +421,6 @@ public static partial class ColladaImporter
         var sources = ElementsById(document, "source");
         var samplers = ElementsById(document, "sampler");
 
-        // One channel per node, however many curves the file splits it across.
         var byNode = new Dictionary<string, NodeChannel>(StringComparer.Ordinal);
         var order = new List<NodeChannel>();
 
@@ -501,7 +434,6 @@ public static partial class ColladaImporter
                 continue;
             }
 
-            // "Bone007/matrix" — the node, then the member of it being animated.
             var slash = target.IndexOf('/');
             var nodeReference = slash < 0 ? target : target[..slash];
             var member = slash < 0 ? string.Empty : target[(slash + 1)..];
@@ -551,13 +483,6 @@ public static partial class ColladaImporter
         return clips;
     }
 
-    /// <summary>
-    /// Files bake a joint's whole transform into one <c>float4x4</c> curve far more often than
-    /// they key translation and scale separately, so the matrix form is the one that has to
-    /// work; the component forms are read when present because they cost three lines.
-    /// Interpolation is taken as linear — a Bézier curve's control tangents are declared in
-    /// the file but sampling them would need the tangent sources too.
-    /// </summary>
     private static void ApplyCurve(NodeChannel channel, string member, int stride, float[] times, float[] values)
     {
         if (stride >= 16 || member.Contains("matrix", StringComparison.OrdinalIgnoreCase) || member.Contains("transform", StringComparison.OrdinalIgnoreCase))
@@ -648,12 +573,6 @@ public static partial class ColladaImporter
             : [.. text.Split([' ', '\n', '\t', '\r'], StringSplitOptions.RemoveEmptyEntries)];
     }
 
-    /// <summary>
-    /// Whitespace-separated floats. The generic <c>ParseArray</c> the geometry path uses goes
-    /// through <see cref="Convert.ChangeType(object, Type, IFormatProvider)"/>, which boxes
-    /// every token — tolerable for a vertex array, not for an animation library with hundreds
-    /// of thousands of them.
-    /// </summary>
     private static float[] ParseFloats(string? value)
     {
         if (string.IsNullOrEmpty(value))

@@ -9,8 +9,6 @@ public sealed class WireFramePainter : IPainter
 {
     private static readonly LiangBarskyClippingHomogeneous _liangBarskyClipping = new();
 
-    // Lines cross arbitrary pixels, so the tile is ignored and the renderer must not
-    // call this painter from its parallel fill phase.
     public bool SupportsTiles => false;
 
     public void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in ScreenTile tile)

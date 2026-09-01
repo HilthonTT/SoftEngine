@@ -26,11 +26,6 @@ public class PbrShadingTests
         public Matrix4x4 ViewMatrix => Matrix4x4.CreateLookAt(Position, Vector3.Zero, Vector3.UnitY);
     }
 
-    /// <summary>
-    /// A surface at the origin facing +Z, with the eye and one white light straight in front
-    /// of it, so every term of the model is evaluated head-on and the answer can be reasoned
-    /// about by hand.
-    /// </summary>
     private static PbrShader HeadOn(
         ColorRGB baseColor,
         float metallic,
@@ -63,8 +58,6 @@ public class PbrShadingTests
     [Fact]
     public void BrdfLut_NeverReflectsMoreLightThanArrives()
     {
-        // scale + bias is what a surface with F0 = 1 — a perfect reflector — returns for a
-        // white environment. Above 1 would be a surface emitting light it never received.
         for (var x = 0; x < BrdfLut.Resolution; x++)
         {
             for (var y = 0; y < BrdfLut.Resolution; y++)
@@ -84,8 +77,6 @@ public class PbrShadingTests
     [Fact]
     public void BrdfLut_AMirrorReflectsEverythingItReceives()
     {
-        // At roughness 0 the lobe is a single direction and the geometry term stops taking
-        // anything away, so all of the light comes back.
         var response = BrdfLut.Integrate(1f, 0f);
 
         Assert.Equal(1f, response.X + response.Y, 2);
@@ -94,9 +85,6 @@ public class PbrShadingTests
     [Fact]
     public void BrdfLut_LosesMoreLightAsTheSurfaceRoughens()
     {
-        // Multiple scattering between microfacets is not modelled, so a rough surface loses
-        // the light that would have bounced a second time. That the loss is monotonic is the
-        // property worth pinning: it is what makes roughness read as a single dial.
         var smooth = BrdfLut.Integrate(0.8f, 0.1f);
         var rough = BrdfLut.Integrate(0.8f, 0.9f);
 
@@ -126,8 +114,6 @@ public class PbrShadingTests
     [Fact]
     public void PrefilteredEnvironment_OfAUniformSky_IsThatSkyAtEveryRoughness()
     {
-        // The white furnace test: convolving a constant with any normalized kernel has to
-        // give the constant back. Anything else is energy the filter invented or dropped.
         var grey = new ColorRGB(180, 180, 180);
         var environment = CubeMap.Generate(8, _ => grey);
 
@@ -151,13 +137,8 @@ public class PbrShadingTests
     [Fact]
     public void PrefilteredEnvironment_SpreadsABrightSpotAsRoughnessClimbs()
     {
-        // A single bright direction in an otherwise black sky. A mirror still sees it; a
-        // rough surface has smeared it over the hemisphere, so the peak drops and the
-        // surroundings lift.
         var sun = Vector3.Normalize(new Vector3(0.2f, 1f, 0.1f));
 
-        // Half a right angle off the sun: outside the disc, so a mirror sees nothing there,
-        // but well inside the lobe a fully rough surface gathers over.
         var perpendicular = Vector3.Normalize(Vector3.Cross(sun, Vector3.UnitX));
         var beside = Vector3.Normalize(sun * MathF.Cos(MathF.PI / 4f) + perpendicular * MathF.Sin(MathF.PI / 4f));
 
@@ -171,8 +152,6 @@ public class PbrShadingTests
 
         Assert.True(mirrorPeak > roughPeak, $"mirror {mirrorPeak} should out-peak rough {roughPeak}");
 
-        // Beside the sun a mirror sees nothing at all, while a fully rough surface has
-        // gathered some of it.
         Assert.Equal(0f, prefiltered.Sample(beside, 0f).Luminance, 3);
         Assert.True(prefiltered.Sample(beside, 1f).Luminance > 0f,
             "a fully rough surface should gather light from well off its reflection direction");
@@ -201,9 +180,6 @@ public class PbrShadingTests
     [Fact]
     public void Metal_ScattersNoDiffuse()
     {
-        // A metal's electrons absorb what is not reflected, so there is no subsurface
-        // scattering to come back out. Lit from a direction the specular lobe does not point
-        // in, it is nearly black — where the same albedo as a dielectric is plainly lit.
         var offAxis = new MaterialVarying(Vector3.Zero, Vector3.Normalize(new Vector3(0.8f, 0f, 0.6f)), Vector4.Zero, Vector2.Zero);
 
         var metal = HeadOn(ColorRGB.White, metallic: 1f, roughness: 0.35f).Shade(offAxis);
@@ -216,8 +192,6 @@ public class PbrShadingTests
     [Fact]
     public void Metal_TintsItsReflectionWithItsAlbedo()
     {
-        // Gold reflects yellow; a dielectric's highlight is the colour of the light whatever
-        // the surface underneath it is.
         var gold = new ColorRGB(255, 180, 60);
 
         var metal = HeadOn(gold, metallic: 1f, roughness: 0.2f).Shade(Surface());
@@ -225,17 +199,12 @@ public class PbrShadingTests
 
         Assert.True(metal.R > metal.B * 3f, "a gold metal's reflection should be strongly red-shifted");
 
-        // The dielectric's diffuse carries the tint too, but its highlight does not — so the
-        // ratio between channels is closer to the light's own.
         Assert.True(metal.R / MathF.Max(metal.B, 1e-4f) > plastic.R / MathF.Max(plastic.B, 1e-4f));
     }
 
     [Fact]
     public void Roughness_TradesPeakBrightnessForSpread()
     {
-        // Same light, same albedo: the smooth surface concentrates the reflection into a
-        // small bright lobe, the rough one spreads it. Measured at the mirror direction,
-        // where the smooth one's lobe is pointing.
         var smooth = HeadOn(ColorRGB.Gray, metallic: 1f, roughness: 0.05f).Shade(Surface());
         var rough = HeadOn(ColorRGB.Gray, metallic: 1f, roughness: 0.9f).Shade(Surface());
 
@@ -246,9 +215,6 @@ public class PbrShadingTests
     [Fact]
     public void ADiffuseSurface_IsExposedLikeTheRestOfTheEngine()
     {
-        // The BRDF is scaled by π so a scene does not change brightness when the viewer
-        // switches to this painter. A white matte surface lit head-on by a unit light should
-        // land near white, as it does under Lambert — not at 1/π of it.
         var white = HeadOn(ColorRGB.White, metallic: 0f, roughness: 1f).Shade(Surface());
 
         Assert.InRange(white.Luminance, 0.75f, 1.3f);
@@ -298,8 +264,6 @@ public class PbrShadingTests
             prefiltered,
             shadows: null);
 
-        // A near-mirror metal under a white sky reflects nearly all of it, from the image
-        // rather than from any light source.
         Assert.True(shader.Shade(Surface()).Luminance > 0.7f);
     }
 
@@ -330,8 +294,6 @@ public class PbrShadingTests
 
         Assert.NotNull(painter.Environment);
 
-        // The sphere is at the centre of the frame and lit, so the middle pixel is neither
-        // the cleared background nor black.
         var centre = scene.Surface.GetColor(32, 32);
 
         Assert.NotEqual(0, centre & 0x00FFFFFF);
@@ -360,10 +322,8 @@ public class PbrShadingTests
 
         renderer.Render(scene, painter);
 
-        // Convolving five cube maps per frame would cost more than the frame does.
         Assert.Same(first, painter.Environment);
 
-        // …but a change of intensity is a different answer, and has to be rebuilt.
         scene.AmbientIntensity = 0.8f;
         renderer.Render(scene, painter);
 

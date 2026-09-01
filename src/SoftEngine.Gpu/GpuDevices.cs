@@ -2,9 +2,6 @@ using Microsoft.Win32;
 
 namespace SoftEngine.Gpu;
 
-/// <summary>One graphics adapter this machine has a driver for, as the driver names itself.</summary>
-/// <param name="Name">The driver's description of the device — "NVIDIA GeForce RTX 5060 Laptop GPU".</param>
-/// <param name="Kind">Discrete, integrated, or unknown when the name settles nothing.</param>
 public readonly record struct GpuDevice(string Name, GpuAdapterKind Kind)
 {
     public override string ToString() => Kind switch
@@ -15,29 +12,8 @@ public readonly record struct GpuDevice(string Name, GpuAdapterKind Kind)
     };
 }
 
-/// <summary>
-/// The adapters installed on this machine, so a preference can be offered by name rather than
-/// as a word about power.
-///
-/// <para>
-/// Nothing here creates a context or touches a driver: <see cref="GpuAdapter"/> is the device a
-/// render is actually running on and costs an OpenGL context to find out, which is precisely
-/// what a menu cannot do for every adapter it wants to list. This is the cheap half — what
-/// Windows has drivers for — and the two are deliberately separate types, because a list of
-/// installed devices is a guess about what a preference will select and the adapter behind a
-/// live context is a fact.
-/// </para>
-///
-/// <para>
-/// Read from the display-adapter class key, which is where the driver's own
-/// <c>DriverDesc</c> lives. WMI would answer the same question and takes hundreds of
-/// milliseconds to start its infrastructure the first time; this is a registry enumeration of
-/// a handful of subkeys, which is the difference between a menu that opens and one that hangs.
-/// </para>
-/// </summary>
 public static class GpuDevices
 {
-    /// <summary>The device class Windows files display adapters under.</summary>
     private const string DisplayClassKeyPath =
         @"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}";
 
@@ -45,11 +21,6 @@ public static class GpuDevices
 
     private static IReadOnlyList<GpuDevice>? _installed;
 
-    /// <summary>
-    /// Every adapter with a driver on this machine, in the order Windows lists them. Empty on
-    /// any platform where the question cannot be asked — a caller should read that as "unknown",
-    /// not as "none", and go on offering the preference.
-    /// </summary>
     public static IReadOnlyList<GpuDevice> Installed
     {
         get
@@ -61,16 +32,6 @@ public static class GpuDevices
         }
     }
 
-    /// <summary>
-    /// The adapter a preference will most likely select, or null when that cannot be told:
-    /// <see cref="GpuPreference.Automatic"/>, which is the driver's business, and any machine
-    /// whose adapters do not sort into exactly one obvious candidate.
-    ///
-    /// <para>
-    /// Deliberately null rather than a guess when there are two discrete cards or none. A menu
-    /// naming the wrong device is worse than one naming no device: the first is believed.
-    /// </para>
-    /// </summary>
     public static GpuDevice? For(GpuPreference preference)
     {
         var wanted = preference switch
@@ -105,10 +66,6 @@ public static class GpuDevices
         return only;
     }
 
-    /// <summary>
-    /// Whether this machine has both a discrete and an integrated adapter — the only case where
-    /// the preference is a choice rather than a word with one possible outcome.
-    /// </summary>
     public static bool HasChoice
     {
         get
@@ -147,9 +104,6 @@ public static class GpuDevices
 
             foreach (var name in displayClass.GetSubKeyNames())
             {
-                // The class key holds the numbered driver instances alongside bookkeeping
-                // subkeys such as "Properties" and "Configuration". Only the four-digit ones
-                // are devices.
                 if (name.Length != 4 || !name.All(char.IsAsciiDigit))
                 {
                     continue;
@@ -162,8 +116,6 @@ public static class GpuDevices
                     continue;
                 }
 
-                // A machine that has had a card replaced keeps the old instance's key, and a
-                // driver update can leave two instances describing the same part.
                 if (!seen.Add(description))
                 {
                     continue;
@@ -178,7 +130,6 @@ public static class GpuDevices
         }
         catch (Exception exception) when (exception is System.Security.SecurityException or UnauthorizedAccessException or IOException)
         {
-            // An unreadable hive means the list is unknown, which is what an empty one says.
             return [];
         }
     }

@@ -42,8 +42,6 @@ public class ColorSpaceTests
     [Fact]
     public void ScaleLinear_HalfIntensity_IsBrighterThanNaiveScaling()
     {
-        // Halving in linear light must land far above the naive byte halving (127):
-        // sRGB packs more steps into the darks, so 50% light is ~188 encoded.
         var scaled = ColorSpace.ScaleLinear(ColorRGB.White, 0.5f);
 
         Assert.InRange(scaled.R, 186, 190);

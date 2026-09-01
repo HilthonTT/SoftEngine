@@ -8,20 +8,6 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Pipeline.Shadows;
 
-/// <summary>
-/// The depth-only pass that fills a <see cref="ShadowMap"/>. It is the main pipeline in
-/// miniature — transform, project, rasterize — with everything that doesn't affect occlusion
-/// removed: no colour, no lighting, no clipping, and no varyings.
-///
-/// <para>
-/// Where the cascades go and which meshes reach them is
-/// <see cref="ShadowCascadePlanner"/>'s answer, shared with the GPU backend so the two
-/// cannot drift. What is left here is the rasterizing.
-/// </para>
-///
-/// Reused across frames: the map, the projected-vertex scratch and the per-mesh offsets are
-/// all resized only when the world outgrows them.
-/// </summary>
 public sealed class ShadowMapRenderer
 {
     private readonly ShadowCascadePlanner _planner = new();
@@ -30,20 +16,10 @@ public sealed class ShadowMapRenderer
     private Vector3[] _projected = [];
     private int[] _vertexOffset = [];
 
-    /// <summary>Triangles rasterized into the map by the last <see cref="Render"/> call, over every cascade.</summary>
     public int TriangleCount { get; private set; }
 
-    /// <summary>Cascades the last <see cref="Render"/> call actually filled.</summary>
     public int CascadeCount { get; private set; }
 
-    /// <summary>
-    /// Renders every opaque, visible mesh of <paramref name="world"/> into a shadow map for
-    /// <paramref name="light"/>. Returns null when the world casts nothing — an empty world, or
-    /// one whose meshes are all transparent or hidden.
-    /// </summary>
-    /// <param name="view">
-    /// The camera the cascades are fitted to; see <see cref="ShadowCascadePlanner.Plan"/>.
-    /// </param>
     public ShadowMap? Render(IWorld world, ILight light, ShadowSettings settings, ShadowView? view = null)
     {
         ArgumentNullException.ThrowIfNull(world, nameof(world));
@@ -95,10 +71,6 @@ public sealed class ShadowMapRenderer
         return _map;
     }
 
-    /// <summary>
-    /// Transforms every selected caster's vertices straight into shadow-map texel space: X and
-    /// Y in texels from the top-left, Z the normalized depth the comparison later reads.
-    /// </summary>
     private void ProjectVertices(IWorld world, IReadOnlyList<int> casters, in Matrix4x4 lightViewProjection, int resolution)
     {
         var meshes = world.Meshes;
@@ -144,11 +116,6 @@ public sealed class ShadowMapRenderer
         });
     }
 
-    /// <summary>
-    /// Fills one cascade, keeping the nearest depth per texel. Work is split into contiguous
-    /// bands of rows: every worker walks every triangle but writes only its own rows, so the
-    /// depth writes never overlap and no band needs a lock.
-    /// </summary>
     private int Rasterize(IWorld world, IReadOnlyList<int> casters, ShadowMap map, int cascade)
     {
         var meshes = world.Meshes;
@@ -166,7 +133,6 @@ public sealed class ShadowMapRenderer
             return 0;
         }
 
-        // One band is cheaper than the scheduling for a handful of triangles.
         if (bands == 1 || triangles < 64)
         {
             RasterizeBand(world, casters, map, cascade, 0, resolution);
@@ -200,8 +166,6 @@ public sealed class ShadowMapRenderer
             var offset = _vertexOffset[index];
             var faces = mesh.Triangles;
 
-            // A cutout mesh blocks the light only where its mask says it is there. Resolved
-            // once per mesh rather than per triangle: it is a question about the material.
             var cutout = mesh.Material is { IsCutout: true } material && mesh.TexCoords is { } texCoords
                 ? new Cutout(new TextureSampler(material.DiffuseMap, 0, TextureFiltering.Nearest), material.AlphaCutoff, texCoords)
                 : default;
@@ -238,17 +202,6 @@ public sealed class ShadowMapRenderer
         }
     }
 
-    /// <summary>
-    /// A caster's alpha mask, resolved once per mesh: the map to read, the threshold, and the
-    /// mesh's own UVs to read it at.
-    ///
-    /// Level 0 and nearest filtering, where the shaded frame samples a mip level chosen from
-    /// the triangle's screen footprint. The two are not the same question. A shadow map's
-    /// texel density has nothing to do with the camera's, so there is no footprint here to
-    /// choose a level from — and the mask is the geometry: blurring it would make a leaf's
-    /// hole a different size in the shadow than in the leaf, which reads as the bias being
-    /// wrong rather than as the mask being filtered.
-    /// </summary>
     private readonly struct Cutout(in TextureSampler mask, float cutoff, Vector2[] texCoords)
     {
         public readonly TextureSampler Mask = mask;
@@ -258,12 +211,6 @@ public sealed class ShadowMapRenderer
         public bool IsActive => TexCoords is not null && Mask.HasTexture;
     }
 
-    /// <summary>
-    /// <see cref="FillTriangle"/> with the mask consulted per texel. The UV is interpolated
-    /// with the same barycentrics the depth is, and no perspective correction: the light's
-    /// projection is orthographic, so a linear interpolation across the triangle is the exact
-    /// answer rather than an approximation of one.
-    /// </summary>
     private static void FillTriangleMasked(
         Span<float> depth, int resolution,
         Vector3 p0, Vector3 p1, Vector3 p2,
@@ -331,8 +278,6 @@ public sealed class ShadowMapRenderer
 
                 var texel = row + x;
 
-                // Tested after the depth comparison it would feed, so a texel already
-                // occupied by something nearer costs no texture read at all.
                 if (z >= depth[texel])
                 {
                     continue;
@@ -351,11 +296,6 @@ public sealed class ShadowMapRenderer
         }
     }
 
-    /// <summary>
-    /// Depth-only triangle fill by edge functions over the bounding box. The main rasterizer's
-    /// scanline walk carries varyings and a shader it doesn't need here, and edge functions
-    /// clip to a band of rows by simply narrowing the box.
-    /// </summary>
     private static void FillTriangle(Span<float> depth, int resolution, Vector3 p0, Vector3 p1, Vector3 p2, int rowFrom, int rowTo)
     {
         var minX = System.Math.Max((int)MathF.Ceiling(MathF.Min(p0.X, MathF.Min(p1.X, p2.X)) - 0.5f), 0);
@@ -380,12 +320,8 @@ public sealed class ShadowMapRenderer
             return;
         }
 
-        // Normalize the winding away so one inside-test covers both orientations: shadow
-        // casting has no front and back.
         var invArea = 1f / area;
 
-        // Edge functions are affine in x and y, so each row starts from one evaluation and
-        // steps by a constant.
         var dw0 = (p1.Y - p2.Y) * invArea;
         var dw1 = (p2.Y - p0.Y) * invArea;
 
@@ -424,7 +360,6 @@ public sealed class ShadowMapRenderer
         }
     }
 
-    /// <summary>Twice the signed area of (a, b, point); its sign says which side the point is on.</summary>
     private static float Edge(in Vector3 a, in Vector3 b, float x, float y) =>
         (b.X - a.X) * (y - a.Y) - (b.Y - a.Y) * (x - a.X);
 }

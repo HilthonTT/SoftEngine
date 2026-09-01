@@ -105,15 +105,6 @@ public class FrameBufferTests
         Assert.True(near.Z < far.Z);
     }
 
-    /// <summary>
-    /// Switching to HDR has to be what sizes the float buffer, not the clear that follows it.
-    ///
-    /// The pixel probe records what a pixel held <em>before</em> the clear, which on an HDR
-    /// target means reading the float buffer while the clear that used to allocate it has not
-    /// run. Every frame after the first found the buffer already grown; the first one read
-    /// off the end of an empty array — and a render target is new once per window resize and
-    /// once per change of supersampling.
-    /// </summary>
     [Fact]
     public void SwitchingToHighDynamicRange_SizesTheFloatBufferImmediately()
     {
@@ -131,8 +122,6 @@ public class FrameBufferTests
     [Fact]
     public void ProbingTheFirstHdrFrameOfANewRenderTarget_DoesNotThrow()
     {
-        // End to end, in the order the front-end produces: a fresh render target (a resize, or
-        // a change of supersampling), HDR on, and a pixel still selected from before.
         foreach (var superSampling in new[] { 1, 2, 4 })
         {
             var world = new SimpleWorld();
@@ -150,7 +139,6 @@ public class FrameBufferTests
 
             var renderer = new Renderer();
 
-            // Panel3D aims the probe at the sample nearest the centre of the clicked pixel.
             renderer.Diagnostics.SetProbe(
                 36 * superSampling + superSampling / 2,
                 22 * superSampling + superSampling / 2);

@@ -12,11 +12,6 @@ public class GltfImporterTests
     private static ImportedScene Import(byte[] bytes, GltfImporter.TextureLoader? loader = null) =>
         GltfImporter.Import(bytes, AppContext.BaseDirectory, null, loader);
 
-    /// <summary>
-    /// A triangle and its indices, under the names <c>@pos@</c> / <c>@posLength@</c> and
-    /// <c>@idx@</c> / <c>@idxLength@</c>. The starting point for most of the tests below,
-    /// which then add whatever they are about.
-    /// </summary>
     private static GltfBuilder Triangle() =>
         new GltfBuilder()
             .Floats("pos",
@@ -56,15 +51,6 @@ public class GltfImporterTests
         Assert.Equal((0, 1, 2), (triangle.I0, triangle.I1, triangle.I2));
     }
 
-    /// <summary>
-    /// The convention test, and the one everything else depends on being right.
-    ///
-    /// glTF stores a node's matrix column-major for the column-vector convention; the engine
-    /// composes row-vector matrices, which are the transpose — and transposing a column-major
-    /// array is reading it row-major, so the sixteen floats go in untouched. The matrix here
-    /// is a 90° turn about Z <em>and</em> a translation, because a pure translation reads the
-    /// same either way round and would pass whether or not the convention was handled.
-    /// </summary>
     [Fact]
     public void Import_NodeMatrix_IsReadAsColumnMajor()
     {
@@ -87,8 +73,6 @@ public class GltfImporterTests
             }
             """));
 
-        // The model's +X corner, turned onto +Y and then moved by the translation. Reading
-        // the matrix the other way round would land it at (1, 1, 3).
         var corner = Vector3.Transform(new Vector3(1f, 0f, 0f), Assert.Single(scene.Meshes).WorldMatrix);
 
         Assert.Equal(1f, corner.X, 4);
@@ -123,8 +107,6 @@ public class GltfImporterTests
             }
             """));
 
-        // Scale, then the quarter turn about Z, then the translation:
-        // (1,0,0) → (2,0,0) → (0,2,0) → (5,2,0).
         var corner = Vector3.Transform(new Vector3(1f, 0f, 0f), Assert.Single(scene.Meshes).WorldMatrix);
 
         Assert.Equal(5f, corner.X, 4);
@@ -132,18 +114,6 @@ public class GltfImporterTests
         Assert.Equal(0f, corner.Z, 4);
     }
 
-    /// <summary>
-    /// A node list whose children close a loop — 0 owns 1, 1 owns 2, and 2 claims 0 back.
-    ///
-    /// Nothing in the format forbids writing it. Building the loop used to leave the whole
-    /// chain hanging off nothing — every node in a cycle has a parent inside it, so none of
-    /// them is ever adopted by the scene root — and the model simply disappeared, with its
-    /// world matrices frozen at the identity. Dropping the edge that would close the loop
-    /// leaves the chain the file otherwise describes, and keeps the hierarchy a tree, which is
-    /// what <see cref="Core.Scenes.Graph.SceneNode.UpdateWorldMatrices()"/> and
-    /// <see cref="Core.Scenes.Graph.SceneNode.SelfAndDescendants"/> both recurse on the
-    /// assumption of.
-    /// </summary>
     [Fact]
     public void Import_CyclicNodeChildren_BreaksTheLoopAndKeepsTheChain()
     {
@@ -170,26 +140,19 @@ public class GltfImporterTests
             }
             """));
 
-        // Three nodes of one unit each, composed: the deepest one sits three up.
         Approx.Equal(new Vector3(0, 3, 0), Assert.Single(scene.Meshes).WorldMatrix.Translation);
 
-        // And the tree really is a tree — walking it terminates, and visits each node once.
         Assert.Equal(4, scene.Root.SelfAndDescendants().Count());
     }
 
-    /// <summary>
-    /// An interleaved buffer view: position and normal alternating in one array, with the
-    /// stride naming the gap. Reading the stride as a gap between <em>components</em> rather
-    /// than between elements produces geometry that is wrong but not obviously so.
-    /// </summary>
     [Fact]
     public void Import_InterleavedAttributes_HonorTheByteStride()
     {
         var builder = new GltfBuilder()
             .Floats("data",
-                0f, 0f, 0f, /* normal */ 0f, 0f, 1f,
-                1f, 0f, 0f, /* normal */ 0f, 0f, 1f,
-                0f, 1f, 0f, /* normal */ 0f, 0f, 1f)
+                0f, 0f, 0f, 0f, 0f, 1f,
+                1f, 0f, 0f, 0f, 0f, 1f,
+                0f, 1f, 0f, 0f, 0f, 1f)
             .UShorts("idx", 0, 1, 2);
 
         var scene = Import(builder.Gltf("""
@@ -219,11 +182,6 @@ public class GltfImporterTests
         Assert.All(mesh.NormVertices, normal => Assert.Equal(new Vector3(0f, 0f, 1f), normal));
     }
 
-    /// <summary>
-    /// A sparse accessor stores only the elements that differ from its base. Ignoring the
-    /// sparse block renders the base — which for positions is the wrong shape rather than a
-    /// missing detail, so it fails silently.
-    /// </summary>
     [Fact]
     public void Import_SparseAccessor_OverwritesTheBaseElements()
     {
@@ -268,11 +226,6 @@ public class GltfImporterTests
         Assert.Equal(new Vector3(0f, 1f, 0f), mesh.Vertices[2]);
     }
 
-    /// <summary>
-    /// Normalized integer attributes encode a fraction of their own range, not a count. A UV
-    /// stored as an unsigned short runs 0..65535 to mean 0..1, and reading it as a count puts
-    /// every texture coordinate tens of thousands of tiles away.
-    /// </summary>
     [Fact]
     public void Import_NormalizedTexCoords_AreScaledToTheUnitRange()
     {
@@ -311,8 +264,8 @@ public class GltfImporterTests
     }
 
     [Theory]
-    [InlineData(5)] // TRIANGLE_STRIP over four vertices
-    [InlineData(6)] // TRIANGLE_FAN over four vertices
+    [InlineData(5)]
+    [InlineData(6)]
     public void Import_StripsAndFans_AreExpandedToTriangles(int mode)
     {
         var builder = new GltfBuilder()
@@ -346,12 +299,6 @@ public class GltfImporterTests
         Assert.Equal(2, Assert.Single(scene.Meshes).Triangles.Length);
     }
 
-    /// <summary>
-    /// The reason for the importer. glTF's metallic-roughness material is what the engine's
-    /// physically-based path was built to shade, and its packed texture puts roughness in
-    /// green and metalness in blue — the channels <see cref="Material"/> already reads, so one
-    /// map is assigned to both properties rather than decoded twice.
-    /// </summary>
     [Fact]
     public void Import_MetallicRoughnessMaterial_ReachesTheEngineMaterial()
     {
@@ -405,8 +352,6 @@ public class GltfImporterTests
         Assert.Equal(0.25f, material.Roughness, 3);
         Assert.Equal(0.5f, material.NormalStrength, 3);
 
-        // The base colour is linear light in the file and sRGB on the material, so pure red
-        // stays pure red and the other channels stay empty.
         Assert.Equal(255, material.Diffuse.R);
         Assert.Equal(0, material.Diffuse.G);
 
@@ -414,7 +359,6 @@ public class GltfImporterTests
         Assert.Same(material.MetallicMap, material.RoughnessMap);
         Assert.Same(material.MetallicMap, material.NormalMap);
 
-        // Two images, decoded once each however many material slots sample them.
         Assert.Equal(2, loaded);
     }
 
@@ -450,11 +394,6 @@ public class GltfImporterTests
         Assert.Equal(expected, Assert.Single(scene.Meshes).Opacity, 3);
     }
 
-    /// <summary>
-    /// MASK is a cutout, not an opacity, and the two must not be confused: a masked material
-    /// is fully opaque wherever it is drawn at all, and its base colour's alpha says nothing
-    /// about the mesh. What it does carry is the threshold, which glTF defaults to 0.5.
-    /// </summary>
     [Theory]
     [InlineData("MASK", null, 0.5f)]
     [InlineData("MASK", "0.25", 0.25f)]
@@ -499,11 +438,6 @@ public class GltfImporterTests
         Assert.Equal(expected > 0f, material.IsCutout);
     }
 
-    /// <summary>
-    /// Zero is how the engine spells "no cutout", so a file asking for MASK with a cutoff of
-    /// zero — which means "keep every texel with any alpha at all" — must not land on the
-    /// value that means the opposite.
-    /// </summary>
     [Fact]
     public void Import_AlphaModeMask_WithZeroCutoff_StaysACutout()
     {
@@ -541,18 +475,11 @@ public class GltfImporterTests
         Assert.True(material.AlphaCutoff > 0f);
     }
 
-    /// <summary>
-    /// The skinning invariant, and the same one the Collada importer is held to: with the
-    /// joints in the pose the mesh was bound in, every skinning matrix is the identity and the
-    /// deformed mesh reproduces its own bind geometry exactly. Any error in reading the
-    /// inverse bind matrices shows up here as drift.
-    /// </summary>
     [Fact]
     public void Import_SkinAtRestPose_ReproducesTheBindGeometry()
     {
         var scene = Import(SkinnedTriangle(
-            // The inverse of each joint's world matrix — joint 0 sits at (1,0,0) and joint 1
-            // at (0,5,0), so their inverse binds translate back by the same amount.
+
             [
                 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 1,
                 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -5, 0, 1,
@@ -569,7 +496,6 @@ public class GltfImporterTests
         Assert.Equal(new Vector3(0f, 1f, 0f), skinned.Vertices[2]);
     }
 
-    /// <summary>Moving a joint has to move the vertices weighted to it, and only those.</summary>
     [Fact]
     public void Import_SkinnedMesh_FollowsItsJoints()
     {
@@ -586,8 +512,6 @@ public class GltfImporterTests
         skinned.Skeleton.Joints[1].Position += new Vector3(0f, 10f, 0f);
         skinned.UpdatePose();
 
-        // Vertex 1 is weighted entirely to the joint that moved; vertex 2 entirely to the one
-        // that did not.
         Assert.Equal(10f, skinned.Vertices[1].Y, 4);
         Assert.Equal(new Vector3(0f, 1f, 0f), skinned.Vertices[2]);
     }
@@ -598,7 +522,6 @@ public class GltfImporterTests
             .Floats("pos", 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f, 0f)
             .UShorts("idx", 0, 1, 2)
 
-            // Vertex 0 rides joint 0, vertex 1 rides joint 1, vertex 2 rides joint 0.
             .UShorts("joints", 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0)
             .Floats("weights", 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
             .Floats("binds", inverseBinds)
@@ -650,15 +573,9 @@ public class GltfImporterTests
 
         Assert.NotNull(channel.Translation);
 
-        // Halfway between a key at 0 holding (0,0,0) and a key at 1 holding (0,10,0).
         Assert.Equal(expected, channel.Translation.Sample(0.5f).Y, 4);
     }
 
-    /// <summary>
-    /// A cubic-spline sampler stores three values per key — the tangent in, the value, the
-    /// tangent out — so reading it as a plain value array both misreads the values and
-    /// triples the apparent key count.
-    /// </summary>
     [Fact]
     public void Import_CubicSplineSampler_ReadsTangentsAndValuesApart()
     {
@@ -669,14 +586,11 @@ public class GltfImporterTests
         Assert.NotNull(channel.Translation);
         Assert.Equal(2, channel.Translation.Count);
 
-        // Zero tangents at both ends make the Hermite the smoothstep between the two values,
-        // whose midpoint is their average — and the endpoints still land exactly on the keys.
         Assert.Equal(0f, channel.Translation.Sample(0f).Y, 4);
         Assert.Equal(5f, channel.Translation.Sample(0.5f).Y, 4);
         Assert.Equal(10f, channel.Translation.Sample(1f).Y, 4);
     }
 
-    /// <summary>A file's animations stay separate clips, since glTF names each of them.</summary>
     [Fact]
     public void Import_NamedAnimation_BecomesItsOwnClip()
     {
@@ -695,8 +609,8 @@ public class GltfImporterTests
 
         builder = cubic
             ? builder.Floats("values",
-                /* in */ 0, 0, 0, /* value */ 0, 0, 0, /* out */ 0, 0, 0,
-                /* in */ 0, 0, 0, /* value */ 0, 10, 0, /* out */ 0, 0, 0)
+                0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 10, 0, 0, 0, 0)
             : builder.Floats("values", 0, 0, 0, 0, 10, 0);
 
         return builder.Gltf("""
@@ -728,11 +642,6 @@ public class GltfImporterTests
             """);
     }
 
-    /// <summary>
-    /// The same document in the binary container. A GLB's buffer carries no URI at all — its
-    /// bytes are the container's second chunk — so this exercises a resolution path the JSON
-    /// form never touches.
-    /// </summary>
     [Fact]
     public void Import_GlbContainer_ReadsTheBinaryChunk()
     {
@@ -761,11 +670,6 @@ public class GltfImporterTests
         Assert.Equal(new Vector3(0f, 1f, 0f), mesh.Vertices[2]);
     }
 
-    /// <summary>
-    /// One mesh instanced by two nodes becomes two meshes — sharing their vertex array,
-    /// because the renderer never writes to one and a second copy of a dense model is the
-    /// whole model again.
-    /// </summary>
     [Fact]
     public void Import_MeshInstancedTwice_SharesGeometryButNotTransforms()
     {
@@ -797,16 +701,9 @@ public class GltfImporterTests
         Assert.Equal(-2f, scene.Meshes[0].WorldMatrix.Translation.X, 4);
         Assert.Equal(2f, scene.Meshes[1].WorldMatrix.Translation.X, 4);
 
-        // Sharing geometry must not extend to the colours, or recolouring one instance would
-        // recolour the other.
         Assert.NotSame(scene.Meshes[0].TriangleColors, scene.Meshes[1].TriangleColors);
     }
 
-    /// <summary>
-    /// A file that requires an extension this reader cannot honour is refused by name. Draco's
-    /// accessors describe a compressed stream, and reading them as vertices produces a mesh
-    /// made of noise — which looks like a bug in the renderer rather than an unread file.
-    /// </summary>
     [Fact]
     public void Import_RequiredCompressionExtension_IsRefusedByName()
     {

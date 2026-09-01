@@ -1,6 +1,5 @@
 namespace SoftEngine.WinForms.Debugging;
 
-/// <summary>The title bar every docked debugger panel wears.</summary>
 internal sealed class DockPanelHeader : Control
 {
     public DockPanelHeader(string title)

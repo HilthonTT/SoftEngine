@@ -10,16 +10,6 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Rasterization.Painters;
 
-/// <summary>
-/// Shades every pixel from the mesh's <see cref="Material"/>: albedo, normal and specular
-/// maps over per-pixel Blinn-Phong, with shadows when the scene casts them.
-///
-/// It is the most complete painter, and degrades one map at a time rather than all at once
-/// — a mesh with no normal map still gets its albedo, and a mesh with no material at all
-/// still gets lit from its triangle colour. Mip chains and tangent frames are built in
-/// <see cref="PrepareCore"/>, before the parallel paint phase, because both mutate the
-/// mesh the first time they are needed.
-/// </summary>
 public sealed class MaterialPainter(ILight? light = null, float ambient = 0.12f) : LitPainter(light, ambient)
 {
     private Vector3 _eye;
@@ -28,15 +18,12 @@ public sealed class MaterialPainter(ILight? light = null, float ambient = 0.12f)
 
     public bool UseMipMaps { get; set; } = true;
 
-    /// <summary>Applied to meshes whose material sets none of its own — the same defaults Phong uses.</summary>
     public float DefaultSpecularStrength { get; set; } = 0.35f;
 
     public float DefaultShininess { get; set; } = 32f;
 
     protected override void PrepareCore(Scene scene)
     {
-        // Camera.Position is the translation fed into the view matrix, not the eye's
-        // world position — invert the view matrix to get the true eye point.
         _eye = Matrix4x4.Invert(scene.Camera.ViewMatrix, out var inverseView)
             ? inverseView.Translation
             : scene.Camera.Position;
@@ -77,8 +64,6 @@ public sealed class MaterialPainter(ILight? light = null, float ambient = 0.12f)
         var p1 = surface.ToScreen3(b.Proj);
         var p2 = surface.ToScreen3(c.Proj);
 
-        // Meshes without UVs shade from the flat material colour; sampling a map without
-        // them would read texel (0, 0) across the whole surface.
         var textured = mesh.TexCoords is not null;
 
         var uv0 = textured ? vertexBuffer.GetTexCoord(t.I0) : Vector2.Zero;
@@ -91,7 +76,6 @@ public sealed class MaterialPainter(ILight? light = null, float ambient = 0.12f)
         var normalMap = Bind(textured ? material?.NormalMap : null, p0, p1, p2, uv0, uv1, uv2);
         var specularMap = Bind(textured ? material?.SpecularMap : null, p0, p1, p2, uv0, uv1, uv2);
 
-        // Tangents only matter where a normal map will read them.
         var hasTangents = normalMap.HasTexture && mesh.Tangents is not null;
 
         var tangent0 = hasTangents ? vertexBuffer.GetTangent(t.I0) : Vector4.Zero;
@@ -122,8 +106,6 @@ public sealed class MaterialPainter(ILight? light = null, float ambient = 0.12f)
 
         var state = StateFor(mesh).WithMipLevel(albedoMip);
 
-        // A cutout needs the mask bound, which needs UVs — a mesh without them has no cutout
-        // to apply, whatever its material says.
         if (textured && material is { IsCutout: true })
         {
             ScanlineRasterizer.Fill(
@@ -141,15 +123,12 @@ public sealed class MaterialPainter(ILight? light = null, float ambient = 0.12f)
             tile);
     }
 
-    /// <summary>Binds one map at the mip level this triangle's screen footprint calls for.</summary>
     private TextureSampler Bind(
         Texture? texture,
         in Vector3 p0, in Vector3 p1, in Vector3 p2,
         in Vector2 uv0, in Vector2 uv1, in Vector2 uv2) =>
         Bind(texture, p0, p1, p2, uv0, uv1, uv2, out _);
 
-    /// <inheritdoc cref="Bind(Texture?, in Vector3, in Vector3, in Vector3, in Vector2, in Vector2, in Vector2)"/>
-    /// <param name="mipLevel">The level chosen, or -1 when there was no texture to choose one for.</param>
     private TextureSampler Bind(
         Texture? texture,
         in Vector3 p0, in Vector3 p1, in Vector3 p2,

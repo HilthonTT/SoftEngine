@@ -11,20 +11,8 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Rasterization.Painters;
 
-/// <summary>
-/// The physically-based path: metallic-roughness materials lit by the scene's lights and by
-/// its environment, through <see cref="PbrShader"/>.
-///
-/// It degrades one map at a time exactly as <see cref="MaterialPainter"/> does — a mesh with
-/// no metallic or roughness map takes the material's scalars, and a mesh with no material at
-/// all is a mid-grey dielectric lit from its triangle colour — so it can be switched on over
-/// any scene in the viewer, not only ones authored for it.
-/// </summary>
 public sealed class PbrPainter(ILight? light = null, float ambient = 0.12f) : LitPainter(light, ambient)
 {
-    // The environment convolved per roughness, and what it was built from. Building walks
-    // every texel of five cube maps, so it is kept until the environment or its intensity
-    // changes — which, for a scene with a fixed sky, is never.
     private PrefilteredEnvironment? _prefiltered;
     private CubeMap? _prefilteredSource;
     private float _prefilteredIntensity = float.NaN;
@@ -35,25 +23,16 @@ public sealed class PbrPainter(ILight? light = null, float ambient = 0.12f) : Li
 
     public bool UseMipMaps { get; set; } = true;
 
-    /// <summary>Roughness for meshes whose material has never been given one — a satin dielectric.</summary>
     public float DefaultRoughness { get; set; } = 0.5f;
 
     public float DefaultMetallic { get; set; }
 
-    /// <summary>
-    /// Edge length of the first prefiltered environment level. Higher is a sharper
-    /// reflection on a near-mirror surface and a longer wait the first time a scene with a
-    /// sky is drawn.
-    /// </summary>
     public int EnvironmentResolution { get; set; } = 64;
 
-    /// <summary>The environment this frame reflects, or null when the scene has none.</summary>
     public PrefilteredEnvironment? Environment => _prefiltered;
 
     protected override void PrepareCore(Scene scene)
     {
-        // Camera.Position is the translation fed into the view matrix, not the eye's world
-        // position — invert the view matrix to get the true eye point.
         _eye = Matrix4x4.Invert(scene.Camera.ViewMatrix, out var inverseView)
             ? inverseView.Translation
             : scene.Camera.Position;
@@ -85,12 +64,6 @@ public sealed class PbrPainter(ILight? light = null, float ambient = 0.12f) : Li
         }
     }
 
-    /// <summary>
-    /// Builds — or reuses — the prefiltered environment for this frame. It is scaled by the
-    /// same <see cref="Scene.AmbientIntensity"/> the diffuse ambient uses, because the two
-    /// are halves of one answer: how much light the surroundings actually deliver, as
-    /// opposed to how bright the sky looks.
-    /// </summary>
     private void ResolveEnvironment(Scene scene)
     {
         if (scene.Environment is not { } environment || !scene.AmbientFromEnvironment)
@@ -127,8 +100,6 @@ public sealed class PbrPainter(ILight? light = null, float ambient = 0.12f) : Li
         var p1 = surface.ToScreen3(b.Proj);
         var p2 = surface.ToScreen3(c.Proj);
 
-        // Meshes without UVs shade from the flat material colour; sampling a map without
-        // them would read texel (0, 0) across the whole surface.
         var textured = mesh.TexCoords is not null;
 
         var uv0 = textured ? vertexBuffer.GetTexCoord(t.I0) : Vector2.Zero;
@@ -143,7 +114,6 @@ public sealed class PbrPainter(ILight? light = null, float ambient = 0.12f) : Li
         var roughnessMap = Bind(textured ? material?.RoughnessMap : null, p0, p1, p2, uv0, uv1, uv2);
         var emissiveMap = Bind(textured ? material?.EmissiveMap : null, p0, p1, p2, uv0, uv1, uv2);
 
-        // Tangents only matter where a normal map will read them.
         var hasTangents = normalMap.HasTexture && mesh.Tangents is not null;
 
         var tangent0 = hasTangents ? vertexBuffer.GetTangent(t.I0) : Vector4.Zero;
@@ -179,8 +149,6 @@ public sealed class PbrPainter(ILight? light = null, float ambient = 0.12f) : Li
 
         var state = StateFor(mesh).WithMipLevel(albedoMip);
 
-        // A cutout needs the mask bound, which needs UVs — a mesh without them has no cutout
-        // to apply, whatever its material says.
         if (textured && material is { IsCutout: true })
         {
             ScanlineRasterizer.Fill(
@@ -198,18 +166,6 @@ public sealed class PbrPainter(ILight? light = null, float ambient = 0.12f) : Li
             tile);
     }
 
-    /// <summary>
-    /// The metallic-roughness reading of what a surface reflects, matching what
-    /// <see cref="PbrShader"/> computes per pixel: a dielectric's flat 4%, or a metal's albedo.
-    ///
-    /// <para>
-    /// A mesh with no material takes the painter's defaults, which make it a dielectric — so
-    /// the albedo the base colour would have contributed is multiplied by a zero metalness and
-    /// never read. That is why this can use the material's own <c>Diffuse</c> rather than the
-    /// per-triangle colour <see cref="DrawTriangle"/> falls back to: the two only differ where
-    /// there is no material, and where there is no material the albedo does not matter.
-    /// </para>
-    /// </summary>
     protected override SurfaceReflectance ReflectanceFor(IMesh mesh)
     {
         var material = mesh.Material;
@@ -220,15 +176,12 @@ public sealed class PbrPainter(ILight? light = null, float ambient = 0.12f) : Li
             material?.Roughness ?? DefaultRoughness);
     }
 
-    /// <summary>Binds one map at the mip level this triangle's screen footprint calls for.</summary>
     private TextureSampler Bind(
         Texture? texture,
         in Vector3 p0, in Vector3 p1, in Vector3 p2,
         in Vector2 uv0, in Vector2 uv1, in Vector2 uv2) =>
         Bind(texture, p0, p1, p2, uv0, uv1, uv2, out _);
 
-    /// <inheritdoc cref="Bind(Texture?, in Vector3, in Vector3, in Vector3, in Vector2, in Vector2, in Vector2)"/>
-    /// <param name="mipLevel">The level chosen, or -1 when there was no texture to choose one for.</param>
     private TextureSampler Bind(
         Texture? texture,
         in Vector3 p0, in Vector3 p1, in Vector3 p2,

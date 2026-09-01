@@ -9,12 +9,6 @@ using SoftEngine.Core.Textures;
 
 namespace SoftEngine.Core.Rasterization.Painters;
 
-/// <summary>
-/// Perspective-correct textured fill with Gouraud lighting. Meshes without a texture
-/// or UVs fall back to plain Gouraud shading, so mixed scenes still render sensibly.
-/// Samples bilinearly from a mip level chosen per triangle by default; both can be
-/// turned off to get the raw nearest-neighbour look back.
-/// </summary>
 public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f) : LitPainter(light, ambient)
 {
     public TextureFiltering Filtering { get; set; } = TextureFiltering.Bilinear;
@@ -28,8 +22,6 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
             return;
         }
 
-        // Mip chains are built here, before the parallel paint phase, so DrawTriangle
-        // never mutates a texture from multiple threads.
         foreach (var mesh in scene.World.Meshes)
         {
             mesh.Texture?.EnsureMipMaps();
@@ -90,8 +82,6 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
         var invW1 = 1f / b.Proj.W;
         var invW2 = 1f / c.Proj.W;
 
-        // Two calls rather than one with a wrapped shader, because the wrapping is what
-        // decides whether the fill is compiled with an alpha test in it at all.
         if (mesh.Material is { IsCutout: true } cutout)
         {
             ScanlineRasterizer.Fill(

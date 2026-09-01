@@ -1,14 +1,5 @@
 namespace SoftEngine.Core.Geometry.Skinning;
 
-/// <summary>
-/// Which joints move each vertex, and by how much: a fixed four influences per vertex, stored
-/// flat rather than as an array of small arrays.
-///
-/// Four is the standard budget, and it is a budget rather than a limit of the format —
-/// riggers routinely paint six or eight influences onto a vertex, and the fifth is almost
-/// always worth a fraction of a percent. <see cref="Builder"/> keeps the four heaviest and
-/// renormalizes, so the vertex still receives exactly one unit of influence.
-/// </summary>
 public sealed class SkinWeights
 {
     public const int InfluencesPerVertex = 4;
@@ -34,16 +25,10 @@ public sealed class SkinWeights
 
     public int VertexCount { get; }
 
-    /// <summary>Four joint indices per vertex; an unused slot is -1.</summary>
     public int[] JointIndices { get; }
 
-    /// <summary>Four weights per vertex, summing to 1 for any vertex with an influence.</summary>
     public float[] Weights { get; }
 
-    /// <summary>
-    /// Accumulates any number of influences per vertex and reduces them to the fixed four.
-    /// Importers hand over what the file says and let this decide what fits.
-    /// </summary>
     public sealed class Builder(int vertexCount)
     {
         private readonly List<(int Joint, float Weight)>[] _influences =
@@ -72,7 +57,6 @@ public sealed class SkinWeights
             {
                 var influences = _influences[vertex];
 
-                // Descending, so truncating to four drops the least important ones.
                 influences.Sort(static (a, b) => b.Weight.CompareTo(a.Weight));
 
                 var kept = System.Math.Min(influences.Count, InfluencesPerVertex);
@@ -85,8 +69,6 @@ public sealed class SkinWeights
 
                 var slot = vertex * InfluencesPerVertex;
 
-                // A vertex nothing painted keeps its -1 slots and zero weights, which the
-                // deformer reads as "leave this one where the modeller put it".
                 if (total <= 0f)
                 {
                     continue;

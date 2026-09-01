@@ -10,13 +10,6 @@ namespace SoftEngine.Core.Tests.Textures;
 
 public class HdrEnvironmentTests
 {
-    /// <summary>
-    /// Encodes an image the way Radiance does, so the decoder is tested against bytes it did not
-    /// produce. Values are chosen in the tests to be exactly representable — RGBE's mantissa is
-    /// eight bits against a shared power of two, so anything of the form <c>k · 2ⁿ</c> with k a
-    /// byte survives the round trip untouched, and a test that asserts equality can then do so
-    /// without a tolerance hiding a scale error.
-    /// </summary>
     private static byte[] Encode(
         int width,
         int height,
@@ -42,8 +35,6 @@ public class HdrEnvironmentTests
 
         for (var y = 0; y < height; y++)
         {
-            // A +Y file counts its rows up from the bottom, so row 0 on disk is the last row of
-            // the image the caller handed over.
             var sourceRow = bottomUp ? height - 1 - y : y;
 
             var scanline = new byte[width * 4];
@@ -86,7 +77,6 @@ public class HdrEnvironmentTests
         return [.. bytes];
     }
 
-    /// <summary>Both branches of the adaptive encoding: runs for four or more equal bytes, literals otherwise.</summary>
     private static List<byte> RunLengthEncode(byte[] row)
     {
         var output = new List<byte>();
@@ -111,7 +101,6 @@ public class HdrEnvironmentTests
             var literal = 0;
             while (x + literal < row.Length && literal < 128)
             {
-                // Stop before a run long enough to be worth encoding as one.
                 var ahead = 1;
                 while (x + literal + ahead < row.Length && ahead < 5 && row[x + literal + ahead] == row[x + literal])
                 {
@@ -138,13 +127,8 @@ public class HdrEnvironmentTests
         return output;
     }
 
-    /// <summary>
-    /// The float-to-RGBE conversion, with the exponent taken the way <c>frexp</c> would — the
-    /// mantissa lands in [128, 255] rather than overflowing to 256 on an exact power of two.
-    /// </summary>
     private static (byte R, byte G, byte B, byte E) ToRgbe(LinearColor color, float exposure)
     {
-        // A file records what was applied to it; the decoder divides it back out.
         var r = color.R * exposure;
         var g = color.G * exposure;
         var b = color.B * exposure;
@@ -174,7 +158,6 @@ public class HdrEnvironmentTests
 
         for (var i = 0; i < pixels.Length; i++)
         {
-            // 1, 2, 4, 8 … all exactly representable, and spanning more range than a byte has.
             var value = MathF.ScaleB(1f, i % 12);
             pixels[i] = new LinearColor(value, value * 0.5f, value * 0.25f);
         }
@@ -208,7 +191,6 @@ public class HdrEnvironmentTests
     [Fact]
     public void Codec_ReadsRunsOfOneColour()
     {
-        // A flat scanline is all run, no literals — the branch a sky spends most of its bytes in.
         var pixels = Enumerable.Repeat(new LinearColor(4f, 2f, 1f), 16 * 2).ToArray();
         var image = Decode(Encode(16, 2, pixels));
 
@@ -237,8 +219,6 @@ public class HdrEnvironmentTests
     [Fact]
     public void Codec_ReadsScanlinesTooShortForRunLength()
     {
-        // Below eight pixels the adaptive encoding is not allowed, so there is no marker to
-        // recognise and the decoder has to read the row as pixels without looking for one.
         var pixels = Ramp(4, 2);
         var image = Decode(Encode(4, 2, pixels));
 
@@ -249,8 +229,6 @@ public class HdrEnvironmentTests
     [Fact]
     public void Codec_DividesOutTheRecordedExposure()
     {
-        // The header says the samples were scaled by 4 on the way out, so the decoder has to
-        // scale them back to land on the values the caller started from.
         var pixels = Enumerable.Repeat(new LinearColor(1f, 1f, 1f), 8).ToArray();
         var image = Decode(Encode(8, 1, pixels, exposure: 4f));
 
@@ -267,7 +245,6 @@ public class HdrEnvironmentTests
         var topDown = Decode(Encode(8, 2, pixels));
         var bottomUp = Decode(Encode(8, 2, pixels, bottomUp: true));
 
-        // Both files describe the same image, so both decode with the bright row on top.
         Assert.Equal(8f, topDown[0, 0].R, 4);
         Assert.Equal(8f, bottomUp[0, 0].R, 4);
         Assert.Equal(1f, bottomUp[0, 1].R, 4);
@@ -294,7 +271,6 @@ public class HdrEnvironmentTests
         Assert.Equal(64f, image[0, 0].R, 3);
         Assert.Equal(64f, image.MaxLuminance, 2);
 
-        // The same image as bytes is just white, which is the whole reason for the float path.
         var clipped = ColorRGB.FromPacked(image.ToTexture().Pixels[0]);
         Assert.Equal(255, clipped.R);
     }
@@ -316,12 +292,9 @@ public class HdrEnvironmentTests
 
         var image = new HdrImage(4, 2, ToFloats(pixels));
 
-        // Column 0 and column 3 are both red, so the blend across the seam between them stays
-        // red rather than picking up the black column at the far edge.
         Assert.Equal(1f, image.Sample(0f, 0.25f).R, 3);
         Assert.Equal(0f, image.Sample(0f, 0.25f).G, 3);
 
-        // Above the top row and below the bottom one there is nothing to blend toward.
         Assert.Equal(image[0, 0].R, image.Sample(0.125f, -0.5f).R, 3);
         Assert.Equal(image[0, 1].G, image.Sample(0.125f, 1.5f).G, 3);
     }
@@ -358,7 +331,6 @@ public class HdrEnvironmentTests
     [Fact]
     public void Equirectangular_PutsTheMiddleOfThePanoramaAhead()
     {
-        // U = 0.5 is −Z, which is where an unrotated camera looks; V = 0 is straight up.
         Assert.Equal(-Vector3.UnitZ, Equirectangular.Direction(0.5f, 0.5f), Approximately);
         Assert.Equal(Vector3.UnitY, Equirectangular.Direction(0.5f, 0f), Approximately);
         Assert.Equal(-Vector3.UnitY, Equirectangular.Direction(0.5f, 1f), Approximately);
@@ -375,7 +347,6 @@ public class HdrEnvironmentTests
         public int GetHashCode(Vector3 v) => 0;
     }
 
-    /// <summary>A panorama whose rows are one colour each, so a sample reports its latitude.</summary>
     private static HdrImage LatitudeBands(int width, int height, Func<float, LinearColor> byV)
     {
         var pixels = new float[width * height * 3];
@@ -407,7 +378,6 @@ public class HdrEnvironmentTests
 
         Assert.True(cube.IsHighDynamicRange);
 
-        // Green above the equator, red below, and both above what a byte could hold.
         Assert.Equal(4f, cube.SampleRadiance(Vector3.UnitY).G, 2);
         Assert.Equal(0f, cube.SampleRadiance(Vector3.UnitY).R, 2);
         Assert.Equal(2f, cube.SampleRadiance(-Vector3.UnitY).R, 2);
@@ -416,7 +386,6 @@ public class HdrEnvironmentTests
     [Fact]
     public void ToCubeMap_LandsLongitudesOnTheRightFaces()
     {
-        // A bright column at U = 0.5 — dead ahead — and nothing anywhere else.
         var width = 64;
         var pixels = new float[width * 32 * 3];
 
@@ -450,8 +419,6 @@ public class HdrEnvironmentTests
     [Fact]
     public void SampleRadiance_WithoutFloats_MatchesTheDecodedByteSample()
     {
-        // The guard on every frame that already exists: an environment with no radiance has to
-        // answer exactly what it used to, filtered as bytes and decoded afterwards.
         var faces = new Texture[6];
         for (var f = 0; f < 6; f++)
         {
@@ -491,8 +458,6 @@ public class HdrEnvironmentTests
 
         Assert.True(sky.SampleRadiance(-sunward).R < 1f);
 
-        // The byte faces are the clipped encoding of the same thing: the sun is white there, and
-        // white is as far as it goes.
         var brightest = sky[CubeFace.PositiveY].Pixels.Max(p => ColorRGB.FromPacked(p).R);
         Assert.Equal(255, brightest);
     }
@@ -500,9 +465,6 @@ public class HdrEnvironmentTests
     [Fact]
     public void AmbientCube_TakesTheSunFromTheFloatFaces()
     {
-        // A sky that is dim everywhere except a small, very bright disc. Reduced from bytes the
-        // disc is worth 255 like any other white texel; reduced from floats it is worth what it
-        // actually is, and it dominates the ambient term — which is the physical answer.
         var sunward = Vector3.UnitY;
 
         LinearColor Shade(Vector3 direction) =>
@@ -532,10 +494,8 @@ public class HdrEnvironmentTests
 
         var prefiltered = PrefilteredEnvironment.Build(sky, baseResolution: 16, levelCount: 3);
 
-        // A mirror reflects the source, so the sun survives at full strength.
         Assert.True(prefiltered.Sample(sunward, 0f).Luminance > 100f);
 
-        // Blurred over the hemisphere it spreads out, but it does not vanish into white.
         Assert.True(prefiltered.Sample(sunward, 1f).Luminance > 1f);
     }
 }

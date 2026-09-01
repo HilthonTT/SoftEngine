@@ -22,63 +22,26 @@ public interface IMesh
 
     Vector3[] NormVertices { get; }
 
-    /// <summary>
-    /// When false the renderer skips this mesh entirely — the "active" flag of the
-    /// graphics object table. Meshes that don't model visibility are always drawn.
-    /// </summary>
     bool Visible => true;
 
-    /// <summary>
-    /// 1 is fully opaque; anything below routes the mesh through the renderer's
-    /// sorted back-to-front transparent pass, alpha-blended over what's behind it.
-    /// 0 skips the mesh entirely.
-    /// </summary>
     float Opacity => 1f;
 
-    /// <summary>Per-vertex texture coordinates, aligned with <see cref="Vertices"/>; null when the mesh is untextured.</summary>
     Vector2[]? TexCoords => null;
 
-    /// <summary>The texture sampled by <see cref="TexCoords"/>; null when the mesh is untextured.</summary>
     Texture? Texture => null;
 
-    /// <summary>
-    /// How this mesh's surface responds to light — base colour, maps and highlight shape.
-    /// Null when the mesh predates the material system; painters fall back to the triangle
-    /// colour and their own defaults.
-    /// </summary>
     Material? Material => null;
 
-    /// <summary>
-    /// Per-vertex tangents aligned with <see cref="Vertices"/>: XYZ is the direction U grows
-    /// in, W is ±1 handedness for reconstructing the bitangent. Null until
-    /// <see cref="EnsureTangents"/> has run, or when the mesh has no UVs.
-    /// </summary>
     Vector4[]? Tangents => null;
 
-    /// <summary>
-    /// Builds <see cref="Tangents"/> if the mesh has UVs and doesn't have them yet.
-    /// Normal mapping needs a per-vertex UV frame, and deriving it walks every triangle —
-    /// so painters call this from Prepare, before the parallel paint phase, exactly as
-    /// they do for mip chains.
-    /// </summary>
     void EnsureTangents()
     {
     }
 
-    /// <summary>
-    /// Radius of a model-space sphere (centred on the origin) containing every vertex.
-    /// Used for whole-mesh frustum culling; infinity disables the cull.
-    /// </summary>
     float BoundingRadius => float.PositiveInfinity;
 
-    /// <summary>
-    /// The node this mesh hangs off, or null when it is placed in the world absolutely.
-    /// A parented mesh's <see cref="Position"/>, <see cref="Rotation"/> and
-    /// <see cref="Scale"/> become an offset from the node rather than from the origin.
-    /// </summary>
     SceneNode? Parent => null;
 
-    /// <summary>This mesh's own transform, before any parent is applied.</summary>
     public Matrix4x4 LocalMatrix =>
           Matrix4x4.CreateScale(Scale) *
           Matrix4x4.CreateFromYawPitchRoll(Rotation.YYaw, Rotation.XPitch, Rotation.ZRoll) *

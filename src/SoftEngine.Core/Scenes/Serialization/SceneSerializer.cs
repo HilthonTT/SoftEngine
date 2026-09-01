@@ -12,28 +12,6 @@ using System.Text.Json.Serialization;
 
 namespace SoftEngine.Core.Scenes.Serialization;
 
-/// <summary>
-/// Reads and writes <see cref="SceneDocument"/>s, and moves their contents on and off a live
-/// <see cref="Scene"/>.
-///
-/// <para>
-/// <b>What it does not do is load geometry.</b> Applying a document sets up everything around the
-/// meshes — camera, projection, lights, fog, shadows, the render settings — and then places
-/// whatever meshes the caller has already loaded. Resolving "the file this scene was built on"
-/// into vertices means picking an importer, finding the file on <em>this</em> machine, and
-/// reporting progress to a user, none of which a rendering library should be deciding. So the
-/// application loads the world and then hands it here, which is the same order the viewer already
-/// does things in.
-/// </para>
-///
-/// <para>
-/// Both directions are partial on purpose. <see cref="Capture"/> fills in everything derivable
-/// from the objects it is given and leaves the rest for the caller to fill in — the world's
-/// source, the painter's name and the camera's orientation are all things the front-end knows and
-/// the engine does not. <see cref="Apply"/> is the mirror image: a section the document does not
-/// carry is left exactly as it was, so a two-line file is a valid scene rather than a reset.
-/// </para>
-/// </summary>
 public static class SceneSerializer
 {
     private static readonly JsonSerializerOptions Options = new()
@@ -42,8 +20,6 @@ public static class SceneSerializer
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
 
-        // An omitted section means "leave this alone", so writing nulls would fill the file with
-        // members that say nothing and read as though they had been deliberately cleared.
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 
         ReadCommentHandling = JsonCommentHandling.Skip,
@@ -61,7 +37,6 @@ public static class SceneSerializer
         return JsonSerializer.Serialize(document, Options);
     }
 
-    /// <summary>Parses a document. Throws <see cref="JsonException"/> on malformed input.</summary>
     public static SceneDocument FromJson(string json)
     {
         ArgumentNullException.ThrowIfNull(json, nameof(json));
@@ -80,11 +55,6 @@ public static class SceneSerializer
 
     #region Capture
 
-    /// <summary>
-    /// Reads a document out of a live scene. The caller is expected to fill in
-    /// <see cref="SceneDocument.World"/>, <see cref="RenderState.Painter"/> and the camera's
-    /// orientation afterwards — see the type's own remarks for why those are not derivable here.
-    /// </summary>
     public static SceneDocument Capture(Scene scene, RendererSettings? settings = null, PostProcessStack? post = null)
     {
         ArgumentNullException.ThrowIfNull(scene, nameof(scene));
@@ -127,9 +97,6 @@ public static class SceneSerializer
             Far = o.ZFar,
         },
 
-        // A projection the format has no vocabulary for is left out rather than approximated:
-        // reopening the scene keeps whatever projection the world loads with, which is a scene
-        // that is merely incomplete instead of one that is quietly wrong.
         _ => null,
     };
 
@@ -338,15 +305,6 @@ public static class SceneSerializer
 
     #region Apply
 
-    /// <summary>
-    /// Writes a document onto a live scene whose world has already been loaded.
-    ///
-    /// <para>
-    /// Anything the document omits is left as it is. That rule is what lets a hand-written file
-    /// carrying nothing but a camera position be a legitimate scene, and it is also what makes
-    /// applying a document to the wrong world merely partly wrong rather than destructive.
-    /// </para>
-    /// </summary>
     public static void Apply(
         SceneDocument document,
         Scene scene,
@@ -420,8 +378,6 @@ public static class SceneSerializer
 
         foreach (var state in states)
         {
-            // A document written against a model that has since been re-exported with fewer
-            // meshes is a scene that has partly gone stale, not a file to refuse.
             if ((uint)state.Index >= (uint)meshes.Count)
             {
                 continue;
@@ -433,8 +389,6 @@ public static class SceneSerializer
             mesh.Scale = state.Scale;
             mesh.Rotation = new Rotation3D(state.Rotation.X, state.Rotation.Y, state.Rotation.Z);
 
-            // Visible and Opacity are default interface members with no setter on IMesh — only a
-            // mesh that actually models them can be told about them.
             if (mesh is Mesh concrete)
             {
                 concrete.Visible = state.Visible;
@@ -480,8 +434,6 @@ public static class SceneSerializer
                 Intensity = state.Intensity,
                 Color = color,
 
-                // The two angles are written before the range only because the cone is rebuilt
-                // from both of them; the setters clamp an inner angle past the outer one.
                 OuterAngle = state.OuterAngle,
                 InnerAngle = state.InnerAngle,
                 Range = state.Range ?? float.PositiveInfinity,
@@ -613,17 +565,8 @@ public static class SceneSerializer
 
     private static byte Byte(int value) => (byte)System.Math.Clamp(value, 0, 255);
 
-    /// <summary>
-    /// A range JSON can represent, or null for the infinity that means "no falloff at all".
-    /// Writing infinity as a very large number would turn a light with no falloff into one with
-    /// an enormous falloff, which is a different thing that happens to look the same nearby.
-    /// </summary>
     private static float? Finite(float range) => float.IsFinite(range) ? range : null;
 
-    /// <summary>
-    /// An enum member by name, falling back rather than throwing. A file naming a buffer view
-    /// this build does not have should open with the shaded image, not fail to open.
-    /// </summary>
     private static T ParseEnum<T>(string? name, T fallback) where T : struct, Enum =>
         Enum.TryParse<T>(name, ignoreCase: true, out var value) ? value : fallback;
 

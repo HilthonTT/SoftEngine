@@ -5,29 +5,8 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Geometry.Import;
 
-/// <summary>
-/// A Wavefront OBJ reader (with companion MTL material support). It understands the common
-/// subset used by exported models: <c>v</c>/<c>vt</c>/<c>vn</c> attributes, polygonal
-/// <c>f</c> faces (any of <c>v</c>, <c>v/vt</c>, <c>v//vn</c>, <c>v/vt/vn</c>, including
-/// negative relative indices), n-gon fan triangulation, <c>mtllib</c>/<c>usemtl</c>, and from
-/// the material file the <c>Kd</c> diffuse colour, the <c>Ks</c>/<c>Ns</c> highlight, the
-/// <c>d</c>/<c>Tr</c> opacity, the <c>Pr</c>/<c>Pm</c>/<c>Ke</c> physically-based parameters,
-/// and the <c>map_Kd</c>, <c>map_Ks</c>, <c>map_Pr</c>, <c>map_Pm</c>, <c>map_Ke</c> and
-/// <c>map_Bump</c>/<c>bump</c>/<c>norm</c> textures.
-///
-/// One <see cref="IMesh"/> is emitted per material actually used, so each mesh carries a
-/// single diffuse colour and texture — matching the one-texture-per-mesh model of the engine.
-/// Decoding the texture image is delegated to the caller's <c>textureLoader</c> so this stays
-/// platform-neutral (the Core has no image codec of its own).
-/// </summary>
 public static class ObjImporter
 {
-    /// <param name="fileName">Path of the <c>.obj</c> file to read.</param>
-    /// <param name="progress">Optional overall progress in the range 0..1.</param>
-    /// <param name="textureLoader">
-    /// Resolves an absolute image path to a <see cref="Texture"/> (returns null if it cannot be
-    /// loaded). When omitted, meshes keep their UVs and diffuse colour but get no texture.
-    /// </param>
     public static IMesh[] Import(
         string fileName,
         IProgress<float>? progress = null,
@@ -37,7 +16,6 @@ public static class ObjImporter
 
         string baseDirectory = Path.GetDirectoryName(Path.GetFullPath(fileName)) ?? ".";
 
-        // Shared attribute pools — face indices reference these across the whole file.
         var positions = new List<Vector3>();
         var texCoords = new List<Vector2>();
         var normals = new List<Vector3>();
@@ -45,7 +23,6 @@ public static class ObjImporter
         var materials = new Dictionary<string, ObjMaterial>(StringComparer.Ordinal);
         var textureCache = new Dictionary<string, Texture?>(StringComparer.OrdinalIgnoreCase);
 
-        // Groups keyed by the material name in effect; the empty key is the default material.
         var groups = new Dictionary<string, MeshBuilder>(StringComparer.Ordinal);
         var currentGroup = GetOrAddGroup(groups, string.Empty);
 
@@ -70,7 +47,7 @@ public static class ObjImporter
                     break;
 
                 case "vt":
-                    // Only U and V are used; a third (W) coordinate is ignored.
+
                     texCoords.Add(new Vector2(ParseFloat(tokens, 1), ParseFloat(tokens, 2)));
                     break;
 
@@ -87,8 +64,7 @@ public static class ObjImporter
                     break;
 
                 case "mtllib":
-                    // The library path is the remainder of the line (filenames may contain spaces).
-                    // Slice from the keyword's position so leading whitespace doesn't shift the path.
+
                     var rawLine = lines[lineIndex];
                     var libraryPath = rawLine[(rawLine.IndexOf("mtllib", StringComparison.Ordinal) + "mtllib".Length)..].Trim();
                     LoadMaterialLibrary(Path.Combine(baseDirectory, libraryPath), materials);
@@ -127,7 +103,6 @@ public static class ObjImporter
         return group;
     }
 
-    /// <summary>Fan-triangulates a face and appends its (de-indexed) corners to the group.</summary>
     private static void AddFace(
         string[] tokens,
         List<Vector3> positions,
@@ -135,7 +110,6 @@ public static class ObjImporter
         List<Vector3> normals,
         MeshBuilder group)
     {
-        // tokens[0] is "f"; the corners are tokens[1..]. Fan from the first corner.
         var cornerCount = tokens.Length - 1;
         if (cornerCount < 3)
         {
@@ -188,8 +162,7 @@ public static class ObjImporter
                     break;
 
                 case "Ks" when current is not null:
-                    // Ks is a colour, but the engine's highlight is a single white-scaled
-                    // strength — its luminance is the closest single number to it.
+
                     current.SpecularStrength = System.Math.Clamp(
                         0.2126f * ParseFloat(tokens, 1) + 0.7152f * ParseFloat(tokens, 2) + 0.0722f * ParseFloat(tokens, 3),
                         0f, 1f);
@@ -204,12 +177,12 @@ public static class ObjImporter
                     break;
 
                 case "Tr" when current is not null:
-                    // Tr is the inverse of d — transparency rather than opacity.
+
                     current.Opacity = System.Math.Clamp(1f - ParseFloat(tokens, 1), 0f, 1f);
                     break;
 
                 case "map_Kd" when current is not null:
-                    // Any texture options (-o, -s, …) precede the filename, so it is the last token.
+
                     current.DiffuseMap = tokens[^1];
                     break;
 
@@ -217,9 +190,6 @@ public static class ObjImporter
                     current.SpecularMap = tokens[^1];
                     break;
 
-                // Normal maps have no single spelling: map_Bump and bump are the Wavefront
-                // originals (height maps by intent, tangent-space normals by universal
-                // practice), and norm is the later PBR-era addition.
                 case "map_Bump" when current is not null:
                 case "map_bump" when current is not null:
                 case "bump" when current is not null:
@@ -227,11 +197,6 @@ public static class ObjImporter
                     current.NormalMap = tokens[^1];
                     break;
 
-                // The PBR extension to the format: roughness, metalness and emission, added
-                // long after the original spec and written by every exporter that speaks
-                // metallic-roughness at all. A file without them still loads — the material's
-                // own defaults stand, and the physically-based painter shades a satin
-                // dielectric rather than refusing to draw.
                 case "Pr" when current is not null:
                     current.Roughness = System.Math.Clamp(ParseFloat(tokens, 1), 0f, 1f);
                     break;
@@ -275,7 +240,6 @@ public static class ObjImporter
 
     private static byte ToByte(float unit) => (byte)(System.Math.Clamp(unit, 0f, 1f) * 255f);
 
-    /// <summary>A resolved OBJ material: the values read from the file, before any texture is loaded.</summary>
     private sealed class ObjMaterial
     {
         public ColorRGB Diffuse { get; set; } = ColorRGB.Gray;
@@ -305,11 +269,6 @@ public static class ObjImporter
         public string? EmissiveMap { get; set; }
     }
 
-    /// <summary>
-    /// Accumulates one mesh's worth of de-indexed geometry. OBJ addresses position, UV and
-    /// normal with independent indices, so each unique <c>(v, vt, vn)</c> triple becomes one
-    /// vertex in the unified buffers the engine expects.
-    /// </summary>
     private sealed class MeshBuilder
     {
         private readonly Dictionary<(int Position, int TexCoord, int Normal), int> _lookup = [];
@@ -369,10 +328,6 @@ public static class ObjImporter
             return index;
         }
 
-        /// <summary>
-        /// Parses one slash-separated component of a face corner. OBJ indices are 1-based;
-        /// a negative index counts back from the current end of that attribute list.
-        /// </summary>
         private static int ResolveIndex(string[] parts, int part, int count)
         {
             if (part >= parts.Length || parts[part].Length == 0)
@@ -415,7 +370,6 @@ public static class ObjImporter
                 mesh.Material.Emissive = material.Emissive;
             }
 
-            // Every map is addressed by UV; without them there is nothing to sample with.
             if (_hasTexCoords)
             {
                 mesh.TexCoords = TexCoords.ToArray();
@@ -451,10 +405,6 @@ public static class ObjImporter
             return texture;
         }
 
-        /// <summary>
-        /// Area-weighted per-vertex normals, computed only when the file supplies none. Cheap
-        /// (single pass over the triangles) so loading a normal-less model never stalls.
-        /// </summary>
         private static Vector3[] ComputeNormals(List<Vector3> vertices, List<int> indices)
         {
             var normals = new Vector3[vertices.Count];

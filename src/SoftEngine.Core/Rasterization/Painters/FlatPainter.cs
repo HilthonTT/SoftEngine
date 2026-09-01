@@ -7,7 +7,6 @@ using SoftEngine.Core.Shading;
 
 namespace SoftEngine.Core.Rasterization.Painters;
 
-/// <summary>One Lambert intensity per triangle, from its centroid and averaged normal.</summary>
 public sealed class FlatPainter(ILight? light = null, float ambient = 0.12f) : LitPainter(light, ambient)
 {
     public override void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in ScreenTile tile)

@@ -2,14 +2,6 @@ using SoftEngine.Core.Diagnostics;
 
 namespace SoftEngine.Core.Tests.Diagnostics;
 
-/// <summary>
-/// The pixel counters, which the fill phase adds to from every thread it is running on.
-///
-/// They are striped across cache lines so that the adds stop contending — see
-/// <see cref="RenderStats"/> — and striping a counter is exactly the kind of change that can
-/// leave it fast and wrong. These pin down that it is still a counter: exact under
-/// concurrency, and back to zero when the frame is cleared.
-/// </summary>
 public class RenderStatsTests
 {
     [Fact]
@@ -32,10 +24,6 @@ public class RenderStatsTests
         Assert.Equal(threads * adds * 2, stats.BehindZPixelCount);
     }
 
-    /// <summary>
-    /// A frame's totals have to survive being read from a thread that never added to them —
-    /// which is every read, since the fill phase's workers are gone by the time anybody asks.
-    /// </summary>
     [Fact]
     public void PixelCounts_AddedOnOtherThreads_AreVisibleToTheCaller()
     {

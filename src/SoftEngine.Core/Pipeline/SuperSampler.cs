@@ -3,35 +3,14 @@ using SoftEngine.Core.Shading;
 
 namespace SoftEngine.Core.Pipeline;
 
-/// <summary>
-/// Resolves a render target drawn at an integer multiple of the display resolution back down
-/// to it, averaging each block of <c>factor × factor</c> samples into one pixel.
-///
-/// It is the one kind of anti-aliasing that needs nothing from the rasterizer: the whole
-/// pipeline — coverage, depth, shading — simply runs at a higher resolution, so edges,
-/// specular glints and texture shimmer all resolve rather than only the silhouettes an
-/// edge-detecting filter like FXAA can find. What it costs is exactly what it sounds like:
-/// a 2× frame fills four times the pixels.
-///
-/// Colour channels are averaged in linear light, which is where averaging light is actually
-/// defined; alpha is averaged as-is, so the edge pixels of a shape over the cleared
-/// background come out premultiplied, matching the 32-bit premultiplied bitmap the frame is
-/// presented through.
-/// </summary>
 public static class SuperSampler
 {
     public const int MinFactor = 1;
 
-    /// <summary>Above 4× the fill cost outgrows any visible gain (16 samples per pixel).</summary>
     public const int MaxFactor = 4;
 
     public static int ClampFactor(int factor) => System.Math.Clamp(factor, MinFactor, MaxFactor);
 
-    /// <summary>
-    /// Averages <paramref name="source"/> into <paramref name="target"/>, which holds
-    /// <paramref name="targetWidth"/> × <paramref name="targetHeight"/> packed ARGB pixels.
-    /// The source must be exactly <paramref name="factor"/> times that in each direction.
-    /// </summary>
     public static void Resolve(FrameBuffer source, int[] target, int targetWidth, int targetHeight, int factor)
     {
         ArgumentNullException.ThrowIfNull(source);

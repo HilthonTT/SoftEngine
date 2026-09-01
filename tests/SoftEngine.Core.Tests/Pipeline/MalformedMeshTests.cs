@@ -13,13 +13,6 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Tests.Pipeline;
 
-/// <summary>
-/// A mesh whose normal array does not line up with its vertices is a thing an importer can hand
-/// the renderer, and the cull phase already decides what to do about it: that mesh gets no
-/// normals rather than an index out of range. This is where that decision is checked to actually
-/// hold all the way to the fill — it did not, while the painters still transformed world data
-/// themselves and read <c>NormVertices</c> by vertex index to do it.
-/// </summary>
 public class MalformedMeshTests
 {
     private sealed class FixedCamera(Vector3 position) : ICamera
@@ -43,7 +36,6 @@ public class MalformedMeshTests
         _ => new GouraudPainter(),
     };
 
-    /// <summary>A cube carrying fewer normals than it has vertices.</summary>
     private static Mesh CubeWithShortNormals(int normalCount)
     {
         var source = new Cube();

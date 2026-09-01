@@ -122,7 +122,6 @@ public class ObjImporterTests : IDisposable
         Assert.All(meshes[0].NormVertices, n => Assert.True(n.Length() > 0.99f));
     }
 
-    /// <summary>Writes a material library next to the model and returns an OBJ that uses it.</summary>
     private string WriteMaterialModel(string materialLibrary)
     {
         File.WriteAllText(Path.Combine(_directory, "model.mtl"), materialLibrary);
@@ -227,7 +226,6 @@ public class ObjImporterTests : IDisposable
         Assert.NotNull(mesh.Material.NormalMap);
         Assert.NotNull(mesh.Material.SpecularMap);
 
-        // Texture and Material.DiffuseMap are the same slot under two names.
         Assert.Same(mesh.Material.DiffuseMap, mesh.Texture);
     }
 

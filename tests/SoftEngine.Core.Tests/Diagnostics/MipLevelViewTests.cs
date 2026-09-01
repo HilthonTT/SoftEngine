@@ -13,14 +13,6 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Tests.Diagnostics;
 
-/// <summary>
-/// The mip-level buffer view: which level of a texture's chain each pixel was sampled from.
-///
-/// It is the one view whose buffer the frame does not otherwise keep — the level is chosen per
-/// triangle inside the painter, used for one fill and discarded — so most of what is asserted
-/// here is that recording it is opt-in, costs nothing when nobody is looking, and reports
-/// "untextured" and "level 0" as different answers.
-/// </summary>
 public class MipLevelViewTests
 {
     private sealed class FixedCamera(Vector3 position) : ICamera
@@ -33,7 +25,6 @@ public class MipLevelViewTests
     private const int Size = 64;
     private const int Centre = Size / 2;
 
-    /// <summary>A camera-facing quad with UVs over the whole texture.</summary>
     private static Mesh Quad(Texture? texture, float scale = 1f)
     {
         Vector3[] vertices = [new(-scale, -scale, 0), new(scale, -scale, 0), new(scale, scale, 0), new(-scale, scale, 0)];
@@ -78,16 +69,9 @@ public class MipLevelViewTests
         Assert.False(surface.IsRecordingMipLevels);
         Assert.True(surface.MipLevels.IsEmpty);
 
-        // And a write while nothing is listening is simply dropped, rather than throwing on a
-        // buffer that was never allocated.
         surface.RecordMipLevel(1, 1, 3);
     }
 
-    /// <summary>
-    /// The cleared value is -1, not 0. "Nothing textured here" and "sampled the full-resolution
-    /// image" are different answers, and a zeroed buffer would give them the same colour —
-    /// painting every background pixel in the frame as level 0.
-    /// </summary>
     [Fact]
     public void MipLevels_Cleared_AreMinusOneRatherThanZero()
     {
@@ -131,10 +115,6 @@ public class MipLevelViewTests
         Assert.Equal(7, default(RasterState).WithMipLevel(7).MipLevel);
     }
 
-    /// <summary>
-    /// The two are set from opposite ends — opacity per mesh, the level per triangle — so
-    /// neither may drop the other.
-    /// </summary>
     [Fact]
     public void RasterState_OpacityAndMipLevel_Compose()
     {
@@ -175,18 +155,12 @@ public class MipLevelViewTests
         var level = scene.Surface.MipLevels[Centre + Centre * Size];
         Assert.True(level >= 0, "a textured pixel should carry the level it sampled");
 
-        // Whatever the level, the pixel is a saturated tint and the background is black.
         var (r, g, b) = Pixel(scene, Centre, Centre);
         Assert.True(r + g + b > 120, $"expected a mip tint at the centre, got {r},{g},{b}");
 
         Assert.Equal((0, 0, 0), Pixel(scene, 1, 1));
     }
 
-    /// <summary>
-    /// Untextured geometry is neither background nor a level: the painter made no mip decision
-    /// there, and colouring it as level 0 would fill most scenes in this engine with a
-    /// confident red.
-    /// </summary>
     [Fact]
     public void MipLevelView_OnUntexturedGeometry_IsGreyRatherThanLevelZero()
     {
@@ -206,14 +180,9 @@ public class MipLevelViewTests
         Assert.Equal(r, g);
         Assert.True(r is > 20 and < 90, $"expected the untextured grey, got {r},{g},{b}");
 
-        // Still distinct from the background, which is what the grey is for.
         Assert.Equal((0, 0, 0), Pixel(scene, 1, 1));
     }
 
-    /// <summary>
-    /// The reading the view exists for: the same texture on the same quad picks a coarser level
-    /// as it shrinks on screen. If it did not, the view would be a picture of a constant.
-    /// </summary>
     [Fact]
     public void MipLevelView_FartherGeometry_SamplesACoarserLevel()
     {

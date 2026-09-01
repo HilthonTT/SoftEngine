@@ -2,7 +2,6 @@
 
 namespace SoftEngine.Core.Rasterization.Varyings;
 
-/// <summary>No interpolants. Erased entirely by the JIT.</summary>
 public readonly struct EmptyVarying : IVarying<EmptyVarying>
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
