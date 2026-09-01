@@ -1,12 +1,10 @@
-using SoftEngine.Core.Geometry;
+﻿using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Import;
-using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Projections;
-using SoftEngine.Core.Textures;
 using SoftEngine.WinForms.Cameras;
 using SoftEngine.WinForms.Demos;
-using SoftEngine.WinForms.Interop;
 using SoftEngine.WinForms.Dialogs;
+using SoftEngine.WinForms.Interop;
 using System.Numerics;
 
 namespace SoftEngine.WinForms;
