@@ -1,7 +1,7 @@
+using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Textures;
 using SoftEngine.Gpu;
 using System.Numerics;
-using SoftEngine.Core.Rasterization;
 
 namespace SoftEngine.Cli.Options;
 

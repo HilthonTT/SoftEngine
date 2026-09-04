@@ -1,7 +1,6 @@
 using SoftEngine.Gpu;
 using System.Globalization;
 using System.Numerics;
-using SoftEngine.Core.Rasterization;
 
 namespace SoftEngine.Cli.Options;
 
