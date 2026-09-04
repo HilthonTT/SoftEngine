@@ -53,8 +53,8 @@ public static class ScanlineRasterizer
             (p0, p1) = (p1, p0); (v0, v1) = (v1, v0); (invW0, invW1) = (invW1, invW0);
         }
 
-        var yStart = System.Math.Max(FirstCenterAtOrAfter(p0.Y), System.Math.Max(tile.YFrom, 0));
-        var yEnd = System.Math.Min(FirstCenterAtOrAfter(p2.Y), System.Math.Min(tile.YTo, surface.Height));
+        var yStart = System.Math.Max(RasterMath.FirstCenterAtOrAfter(p0.Y), System.Math.Max(tile.YFrom, 0));
+        var yEnd = System.Math.Min(RasterMath.FirstCenterAtOrAfter(p2.Y), System.Math.Min(tile.YTo, surface.Height));
 
         if (yStart >= yEnd)
         {
@@ -65,7 +65,7 @@ public static class ScanlineRasterizer
         v1 = TVarying.Scale(v1, invW1);
         v2 = TVarying.Scale(v2, invW2);
 
-        var yMiddle = System.Math.Clamp(FirstCenterAtOrAfter(p1.Y), yStart, yEnd);
+        var yMiddle = System.Math.Clamp(RasterMath.FirstCenterAtOrAfter(p1.Y), yStart, yEnd);
 
         var drawn = 0;
         var behindZ = 0;
@@ -88,38 +88,7 @@ public static class ScanlineRasterizer
         surface.Stats?.AddPixelCounts(drawn, behindZ);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int FirstCenterAtOrAfter(float coordinate) => (int)MathF.Ceiling(coordinate - 0.5f);
-
     public static bool VectorizedSpans { get; set; } = Vector.IsHardwareAccelerated;
-
-    private static readonly Vector<float> _laneOffsets = CreateLaneOffsets();
-
-    private static readonly float _maxDepth = MathF.BitDecrement(FrameBuffer.DepthResolution);
-
-    private static Vector<float> CreateLaneOffsets()
-    {
-        Span<float> lanes = stackalloc float[Vector<float>.Count];
-
-        for (var i = 0; i < lanes.Length; i++)
-        {
-            lanes[i] = i;
-        }
-
-        return new Vector<float>(lanes);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static Vector<int> BlockDepths(float zBase, float dz, int x)
-    {
-        var z = new Vector<float>(zBase) + (new Vector<float>(x) + _laneOffsets) * dz;
-
-        return Vector.ConvertToInt32(
-            Vector.Min(Vector.Max(z, Vector<float>.Zero), new Vector<float>(_maxDepth)));
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int QuantizeDepth(float z) => (int)System.Math.Clamp(z, 0f, _maxDepth);
 
     private static void HalfTriangle<TVarying, TShader>(
         FrameBuffer surface, int yStart, int yEnd,
@@ -178,8 +147,8 @@ public static class ScanlineRasterizer
         where TVarying : struct, IVarying<TVarying>
         where TShader : struct, IPixelShader<TVarying>
     {
-        var xStart = System.Math.Max(FirstCenterAtOrAfter(sx), xFloor);
-        var xEnd = System.Math.Min(FirstCenterAtOrAfter(ex), xLimit);
+        var xStart = System.Math.Max(RasterMath.FirstCenterAtOrAfter(sx), xFloor);
+        var xEnd = System.Math.Min(RasterMath.FirstCenterAtOrAfter(ex), xLimit);
 
         if (xStart >= xEnd)
         {
@@ -194,11 +163,7 @@ public static class ScanlineRasterizer
 
         var probing = surface.IsProbing;
 
-        var recordMips = surface.IsRecordingMipLevels;
-        var mipLevel = state.MipLevel;
-
-        var recordReflectance = surface.IsRecordingReflectance;
-        var reflectance = state.PackedReflectance;
+        var sinks = new PixelSinks(surface, state);
 
         var x = xStart;
 
@@ -207,7 +172,7 @@ public static class ScanlineRasterizer
         {
             x = VectorSpan(
                 surface, y, xStart, xEnd, sx, sw, ew, sv, ev, invSpan, dz, zBase,
-                shader, state, recordMips, mipLevel, recordReflectance, reflectance,
+                shader, state, sinks,
                 ref drawn, ref behindZ);
         }
 
@@ -217,14 +182,14 @@ public static class ScanlineRasterizer
 
         for (; x < xEnd; x++)
         {
-            if (x <= blockEnd && surface.DepthPassMask(x, y, BlockDepths(zBase, dz, x)) == Vector<int>.Zero)
+            if (x <= blockEnd && surface.DepthPassMask(x, y, RasterMath.DepthRun(zBase, dz, x)) == Vector<int>.Zero)
             {
                 behindZ += Vector<int>.Count;
                 x += Vector<int>.Count - 1;
                 continue;
             }
 
-            var depth = QuantizeDepth(zBase + x * dz);
+            var depth = RasterMath.QuantizeDepth(zBase + x * dz);
 
             if (!probing && !surface.DepthTest(x, y, depth))
             {
@@ -237,42 +202,9 @@ public static class ScanlineRasterizer
             var oneOverW = float.Lerp(sw, ew, t);
             var w = 1f / oneOverW;
 
-            var varying = TVarying.Scale(TVarying.Lerp(sv, ev, t), w);
-
-            if (TShader.HasAlphaTest && !shader.IsCovered(varying))
-            {
-                continue;
-            }
-
-            var color = shader.Shade(varying);
-
-            if (state.HasFog)
-            {
-                color = state.ApplyFog(color, w);
-            }
-
-            var written = state.IsOpaque
-                ? surface.PutPixel(x, y, depth, color)
-                : surface.PutPixelBlend(x, y, depth, color, state.Alpha);
-
-            if (written)
-            {
-                drawn++;
-
-                if (recordMips)
-                {
-                    surface.RecordMipLevel(x, y, mipLevel);
-                }
-
-                if (recordReflectance)
-                {
-                    surface.RecordReflectance(x, y, reflectance);
-                }
-            }
-            else
-            {
-                behindZ++;
-            }
+            RasterMath.WritePixel(
+                surface, x, y, depth, w,
+                TVarying.Lerp(sv, ev, t), shader, state, sinks, ref drawn, ref behindZ);
         }
     }
 
@@ -283,10 +215,7 @@ public static class ScanlineRasterizer
         float invSpan, float dz, float zBase,
         in TShader shader,
         in RasterState state,
-        bool recordMips,
-        int mipLevel,
-        bool recordReflectance,
-        uint reflectance,
+        in PixelSinks sinks,
         ref int drawn,
         ref int behindZ)
         where TVarying : struct, IVarying<TVarying>
@@ -302,7 +231,7 @@ public static class ScanlineRasterizer
 
         for (; x <= xEnd - lanes; x += lanes)
         {
-            var depths = BlockDepths(zBase, dz, x);
+            var depths = RasterMath.DepthRun(zBase, dz, x);
             var passes = surface.DepthPassMask(x, y, depths);
 
             if (passes == Vector<int>.Zero)
@@ -335,44 +264,9 @@ public static class ScanlineRasterizer
                     continue;
                 }
 
-                var lanePosition = w[lane];
-
-                var varying = TVarying.Scale(TVarying.Lerp(sv, ev, parameters[lane]), lanePosition);
-
-                if (TShader.HasAlphaTest && !shader.IsCovered(varying))
-                {
-                    continue;
-                }
-
-                var color = shader.Shade(varying);
-
-                if (state.HasFog)
-                {
-                    color = state.ApplyFog(color, lanePosition);
-                }
-
-                var written = state.IsOpaque
-                    ? surface.PutPixel(x + lane, y, depths[lane], color)
-                    : surface.PutPixelBlend(x + lane, y, depths[lane], color, state.Alpha);
-
-                if (written)
-                {
-                    drawn++;
-
-                    if (recordMips)
-                    {
-                        surface.RecordMipLevel(x + lane, y, mipLevel);
-                    }
-
-                    if (recordReflectance)
-                    {
-                        surface.RecordReflectance(x + lane, y, reflectance);
-                    }
-                }
-                else
-                {
-                    behindZ++;
-                }
+                RasterMath.WritePixel(
+                    surface, x + lane, y, depths[lane], w[lane],
+                    TVarying.Lerp(sv, ev, parameters[lane]), shader, state, sinks, ref drawn, ref behindZ);
             }
         }
 

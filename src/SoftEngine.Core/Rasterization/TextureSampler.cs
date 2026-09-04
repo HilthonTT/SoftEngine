@@ -1,7 +1,8 @@
-﻿using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Textures;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace SoftEngine.Core.Rasterization;
 
@@ -16,6 +17,13 @@ public readonly struct TextureSampler
     private readonly int _coarseWidth;
     private readonly int _coarseHeight;
     private readonly float _blend;
+
+    // The anisotropic tap line: taps are spaced _step apart in UV and centred on the sample, so
+    // the first sits _firstTap steps before it. Fixed per triangle, hence precomputed here.
+    private readonly Vector2 _step;
+    private readonly int _taps;
+    private readonly float _firstTap;
+    private readonly float _inverseTaps;
 
     public TextureSampler(Texture? texture, int mipLevel, TextureFiltering filtering)
         : this(texture, new MipSelection(mipLevel, 0f), filtering)
@@ -36,7 +44,17 @@ public readonly struct TextureSampler
         _height = level.Height;
         _bilinear = filtering != TextureFiltering.Nearest;
 
-        if (filtering != TextureFiltering.Trilinear || mip.Blend <= 0f)
+        // The selection already encodes the filtering mode it was made under: only an anisotropic
+        // selection carries more than one tap, and only a level-blending one a non-zero blend.
+        if (mip.Taps > 1)
+        {
+            _step = mip.Step;
+            _taps = mip.Taps;
+            _firstTap = -0.5f * (mip.Taps - 1);
+            _inverseTaps = 1f / mip.Taps;
+        }
+
+        if (mip.Blend <= 0f)
         {
             return;
         }
@@ -67,25 +85,26 @@ public readonly struct TextureSampler
             return 1f;
         }
 
-        u -= MathF.Floor(u);
-        v -= MathF.Floor(v);
-
         if (!_bilinear)
         {
+            u -= MathF.Floor(u);
+            v -= MathF.Floor(v);
+
             var nx = System.Math.Min((int)(u * _width), _width - 1);
             var ny = System.Math.Min((int)((1f - v) * _height), _height - 1);
 
             return ((_pixels[nx + ny * _width] >>> 24) & 0xFF) * (1f / 255f);
         }
 
-        var alpha = AlphaBilinear(_pixels, _width, _height, u, v);
-
-        if (_coarsePixels is not null)
+        if (_taps > 1)
         {
-            alpha = float.Lerp(alpha, AlphaBilinear(_coarsePixels, _coarseWidth, _coarseHeight, u, v), _blend);
+            return SampleAlphaAnisotropic(u, v) * (1f / 255f);
         }
 
-        return alpha * (1f / 255f);
+        u -= MathF.Floor(u);
+        v -= MathF.Floor(v);
+
+        return AlphaAt(u, v) * (1f / 255f);
     }
 
     public ColorRGB Sample(float u, float v)
@@ -100,21 +119,98 @@ public readonly struct TextureSampler
             return SampleNearest(u, v);
         }
 
+        if (_taps > 1)
+        {
+            return SampleAnisotropic(u, v);
+        }
+
         u -= MathF.Floor(u);
         v -= MathF.Floor(v);
 
-        ColorBilinear(_pixels, _width, _height, u, v, out var r, out var g, out var b);
+        ColorAt(u, v, out var r, out var g, out var b);
+
+        return new ColorRGB((byte)(r + 0.5f), (byte)(g + 0.5f), (byte)(b + 0.5f));
+    }
+
+    /// <summary>
+    /// Averages <see cref="_taps"/> bilinear samples spread along the pixel's texture footprint.
+    /// The footprint's long axis is covered by these taps rather than by a coarser mip, which is
+    /// what keeps a surface seen edge-on sharp across its width while still filtering along it.
+    /// </summary>
+    private ColorRGB SampleAnisotropic(float u, float v)
+    {
+        float r = 0f, g = 0f, b = 0f;
+
+        for (var tap = 0; tap < _taps; tap++)
+        {
+            var uv = TapUV(tap, u, v);
+
+            ColorAt(uv.X, uv.Y, out var tr, out var tg, out var tb);
+
+            r += tr;
+            g += tg;
+            b += tb;
+        }
+
+        return new ColorRGB(
+            (byte)(r * _inverseTaps + 0.5f),
+            (byte)(g * _inverseTaps + 0.5f),
+            (byte)(b * _inverseTaps + 0.5f));
+    }
+
+    private float SampleAlphaAnisotropic(float u, float v)
+    {
+        var alpha = 0f;
+
+        for (var tap = 0; tap < _taps; tap++)
+        {
+            var uv = TapUV(tap, u, v);
+
+            alpha += AlphaAt(uv.X, uv.Y);
+        }
+
+        return alpha * _inverseTaps;
+    }
+
+    /// <summary>Where the given tap of the line centred on (u, v) lands, wrapped into the texture.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private Vector2 TapUV(int tap, float u, float v)
+    {
+        var offset = _firstTap + tap;
+
+        var tu = u + _step.X * offset;
+        var tv = v + _step.Y * offset;
+
+        return new Vector2(tu - MathF.Floor(tu), tv - MathF.Floor(tv));
+    }
+
+    /// <summary>One bilinear fetch at already-wrapped coordinates, blended towards the coarser mip.</summary>
+    private void ColorAt(float u, float v, out float r, out float g, out float b)
+    {
+        ColorBilinear(_pixels!, _width, _height, u, v, out r, out g, out b);
+
+        if (_coarsePixels is null)
+        {
+            return;
+        }
+
+        ColorBilinear(_coarsePixels, _coarseWidth, _coarseHeight, u, v, out var cr, out var cg, out var cb);
+
+        r = float.Lerp(r, cr, _blend);
+        g = float.Lerp(g, cg, _blend);
+        b = float.Lerp(b, cb, _blend);
+    }
+
+    private float AlphaAt(float u, float v)
+    {
+        var alpha = AlphaBilinear(_pixels!, _width, _height, u, v);
 
         if (_coarsePixels is not null)
         {
-            ColorBilinear(_coarsePixels, _coarseWidth, _coarseHeight, u, v, out var cr, out var cg, out var cb);
-
-            r = float.Lerp(r, cr, _blend);
-            g = float.Lerp(g, cg, _blend);
-            b = float.Lerp(b, cb, _blend);
+            alpha = float.Lerp(alpha, AlphaBilinear(_coarsePixels, _coarseWidth, _coarseHeight, u, v), _blend);
         }
 
-        return new ColorRGB((byte)(r + 0.5f), (byte)(g + 0.5f), (byte)(b + 0.5f));
+        return alpha;
     }
 
     private ColorRGB SampleNearest(float u, float v)

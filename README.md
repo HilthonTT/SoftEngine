@@ -23,8 +23,11 @@ a reference.
 ## What it does
 
 - Loads `.obj`, `.dae` (Collada) and **glTF 2.0** `.gltf`/`.glb`, plus procedural primitives.
-- Tiled, vectorized scanline fill with a z-buffer, hierarchical-Z and **occlusion culling**.
+- Tiled, vectorized scanline fill with a z-buffer, hierarchical-Z and **occlusion culling**,
+  or a **block-based half-space** fill over the same tiles.
 - Eight shading modes from wireframe to **physically based** (Cook-Torrance metallic-roughness).
+- Texture filtering up to **anisotropic**, which measures the two axes of a pixel's footprint
+  apart so a floor seen edge-on stays sharp instead of blurring.
 - Any number of coloured directional / point / spot lights, in an **HDR linear float target**.
 - **Cascaded shadow maps**, SSAO, and an environment cube map as both skybox and ambient — loadable
   from a Radiance `.hdr` panorama that keeps its range.
@@ -52,7 +55,7 @@ a reference.
 ```bash
 dotnet build SoftEngine.slnx
 dotnet run --project src/SoftEngine.WinForms                  # interactive viewer
-dotnet test tests/SoftEngine.Core.Tests                       # 818 tests
+dotnet test tests/SoftEngine.Core.Tests                       # 924 tests
 dotnet run -c Release --project bench/SoftEngine.Benchmarks   # Release, or you measure the debugger
 ```
 
@@ -115,6 +118,7 @@ dotnet run -c Release --project src/SoftEngine.Cli -- model.gltf -o frame.png -w
 | --- | --- |
 | `-w`, `-h`, `--ss` | resolution and supersampling |
 | `-p`, `--post`, `--view`, `--filter` | painter, post effects, buffer view, texture filtering |
+| `--fill` | `scanline` (default) or `half-space` — how triangles are filled |
 | `--yaw`, `--pitch`, `--zoom`, `--camera`, `-t` | where to stand, and how far into the animation |
 | `--env`, `--environment-size`, `--hdr-sky` | light it with a panorama or the linear-light sky |
 | `--shadows`, `--cascades` | shadow pass |
@@ -157,7 +161,7 @@ src/
 │   ├── Picking/            # ray, intersection, scene picker
 │   ├── Pipeline/           # Renderer, clipping, sky — Culling/ Debugging/ PostProcess/
 │   │                       #   Shadows/ Temporal/
-│   ├── Rasterization/      # scanline filler, tiles, sampling — Painters/ Shaders/ Varyings/
+│   ├── Rasterization/      # scanline and half-space fills, tiles, sampling — Painters/ Shaders/ Varyings/
 │   ├── Scenes/             # world, camera, projections, lights — Graph/ Serialization/
 │   ├── Shading/            # linear colour, light sets, ambient cube, GGX, BRDF LUT
 │   ├── Textures/           # Texture, filtering, cube maps, equirectangular, procedural sky
@@ -176,7 +180,7 @@ tests/SoftEngine.Core.Tests/   # xUnit suite in folders mirroring the engine, an
 
 ## Testing
 
-`dotnet test tests/SoftEngine.Core.Tests` — **818 tests**. Alongside the unit tests, eighteen
+`dotnet test tests/SoftEngine.Core.Tests` — **924 tests**. Alongside the unit tests, eighteen
 generated scenes are rendered headless at 320×180 and compared against committed PNG baselines, so a
 change that alters the picture shows up in the diff as a picture. `SOFTENGINE_UPDATE_GOLDEN=1` is the
 only way to re-record one, and a failing run drops the actual frame and a diff image beside the

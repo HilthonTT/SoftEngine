@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Pipeline.Debugging;
 using SoftEngine.Core.Pipeline.PostProcess;
 using SoftEngine.Core.Rasterization;
@@ -164,7 +164,14 @@ public sealed partial class MainScreen : Form
         chkSky.Checked = true;
         chkTextureFiltering.Checked = true;
 
-        chkTrilinear.Enabled = chkTextureFiltering.Checked;
+        UpdateFilteringControls();
+
+        chkHalfSpaceFill.Checked = Rasterizer.Mode == RasterizerMode.HalfSpace;
+        chkHalfSpaceFill.CheckedChanged += (s, e) =>
+        {
+            Rasterizer.Mode = chkHalfSpaceFill.Checked ? RasterizerMode.HalfSpace : RasterizerMode.Scanline;
+            panel3D1.Invalidate();
+        };
 
         chkFog.CheckedChanged += (s, e) => ApplyFog();
         chkShadows.CheckedChanged += (s, e) => ApplyShadows();
@@ -208,12 +215,18 @@ public sealed partial class MainScreen : Form
         };
         chkTextureFiltering.CheckedChanged += (s, e) =>
         {
-            chkTrilinear.Enabled = chkTextureFiltering.Checked;
+            UpdateFilteringControls();
             ApplyTextureFiltering(panel3D1.Painter);
             panel3D1.Invalidate();
         };
         chkTrilinear.CheckedChanged += (s, e) =>
         {
+            ApplyTextureFiltering(panel3D1.Painter);
+            panel3D1.Invalidate();
+        };
+        chkAnisotropic.CheckedChanged += (s, e) =>
+        {
+            UpdateFilteringControls();
             ApplyTextureFiltering(panel3D1.Painter);
             panel3D1.Invalidate();
         };
@@ -353,12 +366,23 @@ public sealed partial class MainScreen : Form
         return painter;
     }
 
+    /// <summary>
+    /// Anisotropic filtering blends mip levels itself, so it stands in for trilinear rather than
+    /// stacking with it, and neither means anything with filtering off altogether.
+    /// </summary>
+    private void UpdateFilteringControls()
+    {
+        chkAnisotropic.Enabled = chkTextureFiltering.Checked;
+        chkTrilinear.Enabled = chkTextureFiltering.Checked && !chkAnisotropic.Checked;
+    }
+
     private void ApplyTextureFiltering(IPainter? painter)
     {
-        var filtering = (chkTextureFiltering.Checked, chkTrilinear.Checked) switch
+        var filtering = (chkTextureFiltering.Checked, chkAnisotropic.Checked, chkTrilinear.Checked) switch
         {
-            (true, true) => TextureFiltering.Trilinear,
-            (true, false) => TextureFiltering.Bilinear,
+            (true, true, _) => TextureFiltering.Anisotropic,
+            (true, false, true) => TextureFiltering.Trilinear,
+            (true, false, false) => TextureFiltering.Bilinear,
             _ => TextureFiltering.Nearest,
         };
 

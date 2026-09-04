@@ -18,6 +18,7 @@ internal sealed record Options(
         ComparedFeature.VectorizedSpans => "scalar",
         ComparedFeature.NearestMeshesFirst => "world order",
         ComparedFeature.ParallelCullPhase => "1 thread",
+        ComparedFeature.HalfSpaceFill => "half-space",
         _ => "no hi-z",
     };
 
@@ -68,6 +69,7 @@ internal sealed record Options(
                         "spans" or "simd" or "vector" => ComparedFeature.VectorizedSpans,
                         "order" or "nearest" or "front-to-back" => ComparedFeature.NearestMeshesFirst,
                         "phase1" or "cull-phase" or "transform" => ComparedFeature.ParallelCullPhase,
+                        "fill" or "rasterizer" or "half-space" or "halfspace" => ComparedFeature.HalfSpaceFill,
                         _ => ComparedFeature.HierarchicalZ,
                     };
                     break;
@@ -92,8 +94,9 @@ internal sealed record Options(
               --warmup <n>     discarded frames before measuring (default 10)
               --scene  <name>  run only scenes whose name contains this
               --compare [what] also measure with an optimization off, and report the ratio:
-                               "hi-z" (the default), "occlusion", "spans", "order"
-                               or "phase1"
+                               "hi-z" (the default), "occlusion", "spans", "order",
+                               "phase1" or "fill" (the half-space fill against
+                               the scanline one)
               --csv    <path>  write the results as CSV as well
             """);
 

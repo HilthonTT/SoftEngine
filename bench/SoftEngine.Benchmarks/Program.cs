@@ -58,6 +58,8 @@ foreach (var scene in scenes)
             BenchmarkRunner.Run(scene, options.Width, options.Height, options.Frames, options.Warmup, nearestMeshesFirst: false),
         ComparedFeature.ParallelCullPhase =>
             BenchmarkRunner.Run(scene, options.Width, options.Height, options.Frames, options.Warmup, parallelCullPhase: false),
+        ComparedFeature.HalfSpaceFill =>
+            BenchmarkRunner.Run(scene, options.Width, options.Height, options.Frames, options.Warmup, halfSpaceFill: true),
         _ => null,
     };
 

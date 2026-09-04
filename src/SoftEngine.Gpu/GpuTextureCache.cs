@@ -1,5 +1,6 @@
-﻿using Silk.NET.OpenGL;
+using Silk.NET.OpenGL;
 using SoftEngine.Core.Geometry;
+using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Textures;
 using Texture = SoftEngine.Core.Textures.Texture;
 
@@ -7,10 +8,19 @@ namespace SoftEngine.Gpu;
 
 public sealed class GpuTextureCache : IDisposable
 {
+    // Anisotropic filtering is an extension rather than core in the 3.3 context this engine asks
+    // for, so the constants are not in Silk's core enums: these are GL_TEXTURE_MAX_ANISOTROPY and
+    // GL_MAX_TEXTURE_MAX_ANISOTROPY from EXT_texture_filter_anisotropic (same values in GL 4.6).
+    private const int TextureMaxAnisotropy = 0x84FE;
+    private const int MaxTextureMaxAnisotropy = 0x84FF;
+
     private readonly GL _gl;
 
     private readonly Dictionary<Texture, uint> _textures = [];
     private readonly Dictionary<CubeMap, uint> _cubes = [];
+
+    /// <summary>The driver's anisotropy ceiling; 0 once queried on a driver without the extension, -1 until asked.</summary>
+    private float _maxAnisotropy = -1f;
 
     private uint _white;
 
@@ -106,9 +116,9 @@ public sealed class GpuTextureCache : IDisposable
 
         var minify = (filtering, mipMaps) switch
         {
-            (TextureFiltering.Trilinear, true) => TextureMinFilter.LinearMipmapLinear,
-            (TextureFiltering.Bilinear or TextureFiltering.Trilinear, true) => TextureMinFilter.LinearMipmapNearest,
-            (TextureFiltering.Bilinear or TextureFiltering.Trilinear, false) => TextureMinFilter.Linear,
+            (TextureFiltering.Trilinear or TextureFiltering.Anisotropic, true) => TextureMinFilter.LinearMipmapLinear,
+            (TextureFiltering.Bilinear, true) => TextureMinFilter.LinearMipmapNearest,
+            (TextureFiltering.Bilinear or TextureFiltering.Trilinear or TextureFiltering.Anisotropic, false) => TextureMinFilter.Linear,
             (_, true) => TextureMinFilter.NearestMipmapNearest,
             _ => TextureMinFilter.Nearest,
         };
@@ -118,8 +128,39 @@ public sealed class GpuTextureCache : IDisposable
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
 
+        if (filtering == TextureFiltering.Anisotropic && mipMaps)
+        {
+            ApplyAnisotropy();
+        }
+
         _textures[texture] = handle;
         return handle;
+    }
+
+    /// <summary>
+    /// Asks the sampler for the same anisotropy the software path uses, capped at what the driver
+    /// offers. Without the extension the texture is left trilinear, which is what the min filter
+    /// above already selected.
+    /// </summary>
+    private void ApplyAnisotropy()
+    {
+        if (_maxAnisotropy < 0f)
+        {
+            _maxAnisotropy =
+                _gl.IsExtensionPresent("GL_EXT_texture_filter_anisotropic") ||
+                _gl.IsExtensionPresent("GL_ARB_texture_filter_anisotropic")
+                    ? _gl.GetFloat((GetPName)MaxTextureMaxAnisotropy)
+                    : 0f;
+        }
+
+        if (_maxAnisotropy < 1f)
+        {
+            return;
+        }
+
+        var amount = System.Math.Clamp(MipSelector.MaxAnisotropy, 1f, _maxAnisotropy);
+
+        _gl.TexParameter(TextureTarget.Texture2D, (TextureParameterName)TextureMaxAnisotropy, amount);
     }
 
     public unsafe uint GetCube(CubeMap environment)

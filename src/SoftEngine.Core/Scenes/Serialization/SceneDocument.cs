@@ -177,6 +177,8 @@ public sealed class RenderState
 
     public bool TrilinearFiltering { get; set; }
 
+    public bool AnisotropicFiltering { get; set; }
+
     public bool Animate { get; set; } = true;
 }
 

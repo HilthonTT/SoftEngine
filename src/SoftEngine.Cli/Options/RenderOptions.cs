@@ -1,6 +1,7 @@
 using SoftEngine.Core.Textures;
 using SoftEngine.Gpu;
 using System.Numerics;
+using SoftEngine.Core.Rasterization;
 
 namespace SoftEngine.Cli.Options;
 
@@ -19,6 +20,8 @@ internal sealed class RenderOptions
     public string Painter { get; set; } = "gouraud";
 
     public string Filtering { get; set; } = "bilinear";
+
+    public RasterizerMode Fill { get; set; } = RasterizerMode.Scanline;
 
     public int SuperSampling { get; set; } = 1;
 

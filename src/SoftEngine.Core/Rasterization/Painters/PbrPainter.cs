@@ -151,7 +151,7 @@ public sealed class PbrPainter(ILight? light = null, float ambient = 0.12f) : Li
 
         if (textured && material is { IsCutout: true })
         {
-            ScanlineRasterizer.Fill(
+            Rasterizer.Fill(
                 surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2,
                 new CutoutShader<MaterialVarying, PbrShader>(shader, albedo, material.AlphaCutoff),
                 state,
@@ -159,7 +159,7 @@ public sealed class PbrPainter(ILight? light = null, float ambient = 0.12f) : Li
             return;
         }
 
-        ScanlineRasterizer.Fill(
+        Rasterizer.Fill(
             surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2,
             shader,
             state,

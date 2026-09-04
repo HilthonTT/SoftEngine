@@ -1,6 +1,7 @@
 using SoftEngine.Gpu;
 using System.Globalization;
 using System.Numerics;
+using SoftEngine.Core.Rasterization;
 
 namespace SoftEngine.Cli.Options;
 
@@ -36,6 +37,27 @@ internal static class RenderOptionsParser
                     options.Painter = Next(args, ref i, options, arg) ?? options.Painter;
                     break;
 
+                case "--fill" or "--rasterizer":
+                {
+                    var name = Next(args, ref i, options, arg);
+
+                    if (name is null)
+                    {
+                        break;
+                    }
+
+                    if (RasterizerModeNames.TryParse(name, out var fill))
+                    {
+                        options.Fill = fill;
+                    }
+                    else
+                    {
+                        options.Errors.Add($"unknown fill '{name}' — expected scanline or half-space");
+                    }
+                }
+
+                break;
+
                 case "--filter" or "--filtering":
                 {
                     var name = Next(args, ref i, options, arg);
@@ -51,7 +73,7 @@ internal static class RenderOptionsParser
                     }
                     else
                     {
-                        options.Errors.Add($"unknown texture filter '{name}' — expected nearest, bilinear or trilinear");
+                        options.Errors.Add($"unknown texture filter '{name}' — expected nearest, bilinear, trilinear or anisotropic");
                     }
                 }
 

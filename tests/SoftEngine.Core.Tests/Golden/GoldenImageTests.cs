@@ -81,6 +81,37 @@ public class GoldenImageTests
 
     [Theory]
     [MemberData(nameof(SceneNames))]
+    public void Scene_RendersTheSameWithEitherRasterizer(string name)
+    {
+        var scene = GoldenScene.All.Single(s => s.Name == name);
+
+        var restore = Rasterizer.Mode;
+
+        try
+        {
+            Rasterizer.Mode = RasterizerMode.Scanline;
+            var (scanline, width, height) = scene.Render();
+
+            Rasterizer.Mode = RasterizerMode.HalfSpace;
+            var (halfSpace, _, _) = scene.Render();
+
+            // The two fills agree on which pixels a triangle covers, but they reach the varyings
+            // by different arithmetic — barycentric weights against nested lerps — so the last
+            // bit of a channel can land either way. Anything more than that is a real difference.
+            var comparison = ImageDiff.Compare(scanline, halfSpace, width, height, GoldenTolerance.Default);
+
+            Assert.True(
+                comparison.IsWithin(GoldenTolerance.Default),
+                $"{name} differs between rasterizers:{Environment.NewLine}{comparison.Describe(GoldenTolerance.Default)}");
+        }
+        finally
+        {
+            Rasterizer.Mode = restore;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(SceneNames))]
     public void Scene_RendersIdenticallyWithASequentialCullPhase(string name)
     {
         var scene = GoldenScene.All.Single(s => s.Name == name);

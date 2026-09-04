@@ -1,4 +1,4 @@
-﻿namespace SoftEngine.Core.Textures;
+namespace SoftEngine.Core.Textures;
 
 public enum TextureFiltering
 {
@@ -7,4 +7,6 @@ public enum TextureFiltering
     Bilinear,
 
     Trilinear,
+
+    Anisotropic,
 }

@@ -16,7 +16,8 @@ internal static class BenchmarkRunner
         bool occlusionCulling = true,
         bool vectorizedSpans = true,
         bool nearestMeshesFirst = true,
-        bool parallelCullPhase = true)
+        bool parallelCullPhase = true,
+        bool halfSpaceFill = false)
     {
         var (renderer, built, painter) = scene.Build(width, height);
         renderer.Settings.HierarchicalZ = hierarchicalZ;
@@ -28,6 +29,9 @@ internal static class BenchmarkRunner
 
         var restoreCullPhase = Renderer.ParallelCullPhase;
         Renderer.ParallelCullPhase = parallelCullPhase;
+
+        var restoreMode = Rasterizer.Mode;
+        Rasterizer.Mode = halfSpaceFill ? RasterizerMode.HalfSpace : RasterizerMode.Scanline;
 
         double[] samples;
 
@@ -51,6 +55,7 @@ internal static class BenchmarkRunner
         {
             ScanlineRasterizer.VectorizedSpans = restoreSpans;
             Renderer.ParallelCullPhase = restoreCullPhase;
+            Rasterizer.Mode = restoreMode;
         }
 
         Array.Sort(samples);

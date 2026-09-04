@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Shading;
+using SoftEngine.Core.Shading;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -31,4 +31,14 @@ public readonly struct TextureVarying : IVarying<TextureVarying>, ITexturedVaryi
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static TextureVarying Scale(in TextureVarying a, float f) =>
         new(a.UV * f, a.Light * f);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static TextureVarying Add(in TextureVarying a, in TextureVarying b) =>
+        new(a.UV + b.UV, a.Light + b.Light);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static TextureVarying Combine(
+        in TextureVarying a, in TextureVarying b, in TextureVarying c, float w0, float w1, float w2) =>
+        new(a.UV * w0 + b.UV * w1 + c.UV * w2,
+            a.Light * w0 + b.Light * w1 + c.Light * w2);
 }

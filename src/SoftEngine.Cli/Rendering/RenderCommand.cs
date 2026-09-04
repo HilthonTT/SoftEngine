@@ -4,6 +4,7 @@ using SoftEngine.Core.Baking;
 using SoftEngine.Core.Pipeline;
 using SoftEngine.Core.Scenes.Serialization;
 using System.Diagnostics;
+using SoftEngine.Core.Rasterization;
 
 namespace SoftEngine.Cli.Rendering;
 
@@ -45,6 +46,8 @@ internal static class RenderCommand
         var post = PostChain.Build(options, loaded);
 
         renderer.PostProcess = post;
+
+        Rasterizer.Mode = options.Fill;
 
         var painter = PainterCatalog.Create(options.Painter, options.ResolveFiltering());
 

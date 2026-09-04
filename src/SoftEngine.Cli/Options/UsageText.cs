@@ -59,9 +59,17 @@ internal static class UsageText
             Shading
               -p, --painter <name>  none, classic, flat, gouraud, phong, textured, material, pbr
                                     (default gouraud)
-                  --filter <mode>   texture filtering: nearest, bilinear (default), or
+                  --filter <mode>   texture filtering: nearest, bilinear (default),
                                     trilinear, which blends the two mip levels a surface
-                                    falls between instead of stepping between them
+                                    falls between instead of stepping between them, or
+                                    anisotropic, which measures the two axes of a pixel's
+                                    texture footprint apart and spreads several taps
+                                    across the longer one — a floor seen edge-on stays
+                                    sharp into the distance instead of blurring
+                  --fill <mode>     how triangles are filled: scanline (default), which
+                                    walks the two edges of each and fills between them, or
+                                    half-space, which classifies blocks of pixels against
+                                    the three edge functions. Both draw the same pixels
                   --post <list>     comma-separated: ssr, ssao, bloom, tonemap, fxaa,
                                     vignette. ssr reflects the scene in the surfaces that
                                     reflect it, and needs the cpu backend to record what

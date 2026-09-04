@@ -23,7 +23,7 @@ public sealed class FlatPainter(ILight? light = null, float ambient = 0.12f) : L
         var light = LitColor(centroid, normal);
         LinearColor lit = GammaCorrect ? light * (LinearColor)color : light.ScaleBytes(color);
 
-        ScanlineRasterizer.Fill(
+        Rasterizer.Fill(
             surface,
             surface.ToScreen3(a.Proj), surface.ToScreen3(b.Proj), surface.ToScreen3(c.Proj),
             1f / a.Proj.W, 1f / b.Proj.W, 1f / c.Proj.W,

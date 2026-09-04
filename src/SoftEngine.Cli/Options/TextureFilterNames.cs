@@ -20,6 +20,10 @@ internal static class TextureFilterNames
                 filtering = TextureFiltering.Trilinear;
                 return true;
 
+            case "anisotropic" or "aniso" or "af":
+                filtering = TextureFiltering.Anisotropic;
+                return true;
+
             default:
                 filtering = TextureFiltering.Bilinear;
                 return false;

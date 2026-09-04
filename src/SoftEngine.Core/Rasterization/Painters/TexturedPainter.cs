@@ -50,7 +50,7 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
 
         if (uvs is null || texture is null)
         {
-            ScanlineRasterizer.Fill(
+            Rasterizer.Fill(
                 surface,
                 p0, p1, p2,
                 1f / a.Proj.W, 1f / b.Proj.W, 1f / c.Proj.W,
@@ -84,7 +84,7 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
 
         if (mesh.Material is { IsCutout: true } cutout)
         {
-            ScanlineRasterizer.Fill(
+            Rasterizer.Fill(
                 surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2,
                 new CutoutShader<TextureVarying, TexturedShader>(shader, albedo, cutout.AlphaCutoff),
                 state,
@@ -92,7 +92,7 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
             return;
         }
 
-        ScanlineRasterizer.Fill(
+        Rasterizer.Fill(
             surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2,
             shader,
             state,

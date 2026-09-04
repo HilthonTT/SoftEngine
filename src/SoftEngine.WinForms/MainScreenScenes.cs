@@ -76,6 +76,7 @@ public sealed partial class MainScreen
         document.Rendering.SuperSampling = chkSuperSampling.Checked ? 2 : 1;
         document.Rendering.TextureFiltering = chkTextureFiltering.Checked;
         document.Rendering.TrilinearFiltering = chkTrilinear.Checked;
+        document.Rendering.AnisotropicFiltering = chkAnisotropic.Checked;
         document.Rendering.Animate = chkAnimate.Checked;
 
         document.Environment ??= new EnvironmentState();
@@ -217,7 +218,8 @@ public sealed partial class MainScreen
             chkHighDynamicRange.Checked = rendering.HighDynamicRange;
             chkTextureFiltering.Checked = rendering.TextureFiltering;
             chkTrilinear.Checked = rendering.TrilinearFiltering;
-            chkTrilinear.Enabled = rendering.TextureFiltering;
+            chkAnisotropic.Checked = rendering.AnisotropicFiltering;
+            UpdateFilteringControls();
             chkSuperSampling.Checked = rendering.SuperSampling > 1;
             chkAnimate.Checked = rendering.Animate;
             chkTemporalAntiAliasing.Checked = rendering.TemporalAntiAliasing;

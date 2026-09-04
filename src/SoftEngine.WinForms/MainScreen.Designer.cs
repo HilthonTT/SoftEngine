@@ -1,4 +1,4 @@
-﻿using SoftEngine.WinForms.Debugging;
+using SoftEngine.WinForms.Debugging;
 
 namespace SoftEngine.WinForms;
 
@@ -47,6 +47,8 @@ public sealed partial class MainScreen
         chkHighDynamicRange = new CheckBox();
         chkTextureFiltering = new CheckBox();
         chkTrilinear = new CheckBox();
+        chkAnisotropic = new CheckBox();
+        chkHalfSpaceFill = new CheckBox();
         chkSuperSampling = new CheckBox();
         chkTemporalAntiAliasing = new CheckBox();
         chkMotionBlur = new CheckBox();
@@ -299,6 +301,8 @@ public sealed partial class MainScreen
         flpDisplay.Controls.Add(chkHighDynamicRange);
         flpDisplay.Controls.Add(chkTextureFiltering);
         flpDisplay.Controls.Add(chkTrilinear);
+        flpDisplay.Controls.Add(chkAnisotropic);
+        flpDisplay.Controls.Add(chkHalfSpaceFill);
         flpDisplay.Controls.Add(chkSuperSampling);
         flpDisplay.Controls.Add(chkTemporalAntiAliasing);
         flpDisplay.Controls.Add(chkMotionBlur);
@@ -494,6 +498,26 @@ public sealed partial class MainScreen
         chkTrilinear.Text = "Trilinear";
         toolTip1.SetToolTip(chkTrilinear, "Blend the two mip levels a surface falls between, instead of stepping from one to the next");
         chkTrilinear.UseVisualStyleBackColor = true;
+
+        chkAnisotropic.AutoSize = true;
+        chkAnisotropic.Location = new Point(14, 482);
+        chkAnisotropic.Margin = new Padding(14, 2, 0, 2);
+        chkAnisotropic.Name = "chkAnisotropic";
+        chkAnisotropic.Size = new Size(90, 21);
+        chkAnisotropic.TabIndex = 20;
+        chkAnisotropic.Text = "Anisotropic";
+        toolTip1.SetToolTip(chkAnisotropic, "Measure the two axes of a pixel's texture footprint apart and spread several taps along the longer one, so a surface seen edge-on stays sharp instead of blurring");
+        chkAnisotropic.UseVisualStyleBackColor = true;
+
+        chkHalfSpaceFill.AutoSize = true;
+        chkHalfSpaceFill.Location = new Point(2, 507);
+        chkHalfSpaceFill.Margin = new Padding(2, 2, 0, 2);
+        chkHalfSpaceFill.Name = "chkHalfSpaceFill";
+        chkHalfSpaceFill.Size = new Size(117, 21);
+        chkHalfSpaceFill.TabIndex = 21;
+        chkHalfSpaceFill.Text = "Half-space fill";
+        toolTip1.SetToolTip(chkHalfSpaceFill, "Fill triangles by classifying blocks of pixels against their three edge functions, instead of walking two edges and filling the span between them. Draws the same pixels either way");
+        chkHalfSpaceFill.UseVisualStyleBackColor = true;
 
         chkSuperSampling.AutoSize = true;
         chkSuperSampling.Location = new Point(2, 482);
@@ -1316,6 +1340,8 @@ public sealed partial class MainScreen
     private Button btnBake;
     private CheckBox chkTextureFiltering;
     private CheckBox chkTrilinear;
+    private CheckBox chkAnisotropic;
+    private CheckBox chkHalfSpaceFill;
     private CheckBox chkSuperSampling;
     private CheckBox chkTemporalAntiAliasing;
     private CheckBox chkMotionBlur;

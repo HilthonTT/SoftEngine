@@ -34,7 +34,7 @@ public sealed class PhongPainter(
 
         var (a, b, c) = (vertexBuffer.GetVertex(t.I0), vertexBuffer.GetVertex(t.I1), vertexBuffer.GetVertex(t.I2));
 
-        ScanlineRasterizer.Fill(
+        Rasterizer.Fill(
             surface,
             surface.ToScreen3(a.Proj), surface.ToScreen3(b.Proj), surface.ToScreen3(c.Proj),
             1f / a.Proj.W, 1f / b.Proj.W, 1f / c.Proj.W,

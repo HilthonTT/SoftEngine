@@ -1,4 +1,4 @@
-﻿# SoftEngine — design notes
+# SoftEngine — design notes
 
 Why the renderer is built the way it is. [README.md](README.md) is what it does and how to run it;
 this is the reasoning, the trade-offs, and the traps already paid for.
@@ -48,6 +48,76 @@ access. Worth about **1.5–2×** over a row-interleaved fill at 720p on eight t
 What is deliberately *not* vectorized is the interpolation either side of the divide: `float.Lerp`
 contracts into an FMA that no arrangement of vector ops reproduces bit for bit, and every golden
 image would have to be re-recorded to absorb the drift.
+
+### The other fill, and why it is not the default
+
+[`HalfSpaceRasterizer`](src/SoftEngine.Core/Rasterization/HalfSpaceRasterizer.cs) fills the same
+triangles a different way. Instead of walking two edges, it evaluates one signed distance per edge —
+positive inside — and keeps the pixels where all three are. Every quantity it needs is linear in
+screen space, so depth, 1/w and each varying divided by w are evaluated once at a block's first
+pixel and stepped by a gradient from there; only the three edge functions are evaluated outright at
+every pixel, for the reason in the second bullet below. A block of 8×8 pixels
+is classified from its four corners before any pixel is touched, so a block no edge crosses costs
+three comparisons and a block wholly inside skips coverage testing altogether.
+
+Two things had to be right for it to agree with the scanline fill, and both are the kind of thing
+that only shows up in a test:
+
+- **The top-left rule.** A pixel centre landing exactly on an edge is inside *both* triangles that
+  share it. Filling it twice is invisible on an opaque z-buffered quad and unmissable everywhere
+  else: it double-blends a seam along every diagonal, and it counts overdraw the scene never asked
+  for. `OverdrawViewTests` caught it as 12 writes where 8 were due. Each edge is given to exactly
+  one of its two triangles — kept if the triangle lies to its right, or below it when it is
+  horizontal. Excluding an edge means testing "greater than zero" rather than "at least zero", and
+  for IEEE floats those are the same comparison against `float.Epsilon`, so there is no tolerance to
+  pick and nothing that drifts with the size of the triangle.
+- **Agreeing on where the edge is.** The rule above only settles a pixel if both triangles compute
+  the *same* value for their shared edge, and in float arithmetic they do not unless made to. Each
+  measured the edge from its own first vertex and stepped from its own bounding-box corner, so the
+  two values differed in their last bits, and a pixel centre the diagonal passed through could land
+  inside both triangles or inside neither. Integer test vertices never showed it because their edge
+  products are exact; a brute-force search over diagonals aimed through pixel centres mis-tiled
+  about a third of them. Now each edge is measured from its lexicographically lower endpoint, blocks
+  are aligned to the screen rather than to the triangle, and every pixel — scalar path, vector path
+  and the corner classifier alike — evaluates the edge with the same two operations from the block
+  origin. The two triangles' coefficients are then exact negatives of each other and IEEE rounding
+  is symmetric in sign, so their values are exact negatives too, and the top-left rule has
+  something exact to decide. `Fill_TrianglesSharingAnEdgeAtFractionalCoordinates_AreWatertight`
+  keeps the two quads that found it.
+- **Weights that sum to zero.** `IVarying.Combine` is a plain weighted sum, not a pair of nested
+  lerps, because the same routine that evaluates a pixel from barycentric weights also produces the
+  gradient between two pixels — and *those* weights sum to zero. A nested-lerp implementation is
+  correct for the first and silently wrong for the second.
+
+It is switchable rather than default because, measured, it is **slower**: 0.7–0.95× of the scanline
+fill across the benchmark scenes, consistently, after the obvious costs were taken out of it. Three
+rounds of that are worth recording, because two of them were real and the third explains the rest:
+
+- Rebuilding each varying from all three vertices at every pixel is about three times the arithmetic
+  of a lerp along a span. Stepping it by a gradient instead — one add per pixel — removed that, and
+  is why `IVarying` grew an `Add`.
+- Indexing a `Vector<T>` by lane makes the JIT spill the whole register to the stack for *each*
+  access. At five reads a pixel that cost more than the vector work saved; the lanes are written out
+  once per run and read back as plain memory, which is the same trick `ScanlineRasterizer.VectorSpan`
+  already used. This alone took `big-triangles` from 0.66× to 0.94×.
+- Building the block's vector constants is wasted on a triangle covering nine pixels, so the scalar
+  and vector block fills are separate methods and a triangle inside a single block skips the corner
+  classification entirely.
+
+What is left is the actual reason. The half-space fill saves per-span setup, per-pixel coverage
+branching and the per-pixel divide — but it cannot yet *spend* what it saves, because every pixel is
+still shaded on its own by a scalar `IPixelShader.Shade`. Coverage arrives as a vector mask over
+eight pixels and is then immediately unpacked to shade them one at a time. The block traversal is
+the half of the work that has to come first; the win needs the other half, a shader interface that
+takes a vector of pixels and a coverage mask. Until that exists, this is a correct and fully tested
+alternative fill and a foundation, not a speed-up, and `--fill half-space` and the viewer's
+**Half-space fill** checkbox are there to measure it: `--compare fill` in the benchmark harness runs
+both over the same scene.
+
+Both fills draw the same pixels, which is asserted rather than assumed: `HalfSpaceRasterizerTests`
+compares them pixel for pixel at triangle sizes either side of the block edge, and every one of the
+eighteen golden scenes is rendered twice and diffed in
+`Scene_RendersTheSameWithEitherRasterizer`.
 
 Every consumer of a mesh's world-space extent goes through
 [`MeshExtensions.WorldBoundingRadius`](src/SoftEngine.Core/Geometry/MeshExtensions.cs) — the frustum
@@ -162,6 +232,38 @@ It costs a second bilinear tap wherever a surface lies between levels, so it is 
 trilinear`, or the viewer's **Trilinear** checkbox. The GPU backend says the same thing in a sampler
 parameter — `LINEAR_MIPMAP_NEAREST` for bilinear, `LINEAR_MIPMAP_LINEAR` for trilinear — rather than
 blending levels the software path would not.
+
+#### Anisotropic
+
+Both of the above share an assumption that a floor exposes immediately: that a pixel's texture
+footprint is *square*. An area ratio cannot tell a square footprint from a long thin one, so a
+surface seen at a glancing angle has only two outcomes, and both are wrong. Pick the level from the
+short axis and the long one aliases into shimmer; pick it from the long axis and the short one is
+blurred by a factor it never needed.
+
+`TextureFiltering.Anisotropic` measures the two axes separately. Inverting the triangle's
+screen-space edge basis and applying it to its UV edges gives the Jacobian — how far the texture
+moves for a one-pixel step in x and in y — and the lengths of those two vectors, in texels, are the
+footprint's axes. The mip level then comes from the **minor** axis, and the major axis is covered by
+walking several bilinear taps across it rather than by blurring. Three details:
+
+- **The level follows the taps, not the axis.** Each of *n* taps covers `major / n` texels, so that
+  width is what the level has to resolve — not the whole major axis. Raising the tap count and
+  lowering the level are the same decision made once.
+- **A cap has to be paid for.** `MipSelector.MaxAnisotropy` bounds the taps at 8 by default, the way
+  hardware does. When the ratio exceeds the cap, the residue of the long axis has to go back into
+  the level, or what the taps no longer reach aliases. This is asserted directly: a tighter cap must
+  produce a coarser level.
+- **A square footprint costs nothing.** The ratio collapses to one, the tap count with it, and the
+  selection lands exactly where trilinear does — which is a test, not a hope.
+
+It costs one bilinear fetch per tap, so it too is opt-in: `--filter anisotropic`, or the viewer's
+**Anisotropic** checkbox, which supersedes **Trilinear** rather than stacking with it because it
+does its own level blending. The GPU backend hands the same `MaxAnisotropy` to the driver as
+`GL_TEXTURE_MAX_ANISOTROPY` where `EXT_texture_filter_anisotropic` exists, and stays trilinear
+where it does not. Note that this is still chosen per *triangle*, like every other mode
+here — the Jacobian of a triangle, not of a pixel. Per-pixel gradients would want the fill to hand
+them over, which is exactly what the block traversal above computes and does not yet expose.
 
 ## Shadows
 
