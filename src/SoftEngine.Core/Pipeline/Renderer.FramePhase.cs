@@ -23,7 +23,8 @@ public sealed partial class Renderer
         IProjection projection,
         RendererSettings rendererSettings,
         RenderDiagnostics diagnostics,
-        GraphicsEventLog events)
+        GraphicsEventLog events,
+        IPainter? painter)
     {
         Stats.Clear();
         Stats.PaintTime();
@@ -46,6 +47,8 @@ public sealed partial class Renderer
         surface.SetMipLevelRecording(rendererSettings.DebugView == DebugView.MipLevel);
 
         surface.SetReflectanceRecording(PostProcess?.NeedsReflectance ?? false);
+        surface.SetAmbientRecording(
+            (PostProcess?.NeedsAmbient ?? false) && (painter?.WritesAmbient ?? false));
 
         if (projection.IsOrthographic)
         {

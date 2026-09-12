@@ -16,6 +16,8 @@ public sealed class SsaoEffect : IPostEffect
 
     public bool NeedsDepth => true;
 
+    public bool NeedsAmbient => true;
+
     public float Strength { get; set; } = 0.6f;
 
     public float Radius { get; set; } = 0.5f;
@@ -203,6 +205,12 @@ public sealed class SsaoEffect : IPostEffect
 
     private void Composite(PostProcessTarget target)
     {
+        if (target.HasAmbient)
+        {
+            CompositeAmbient(target);
+            return;
+        }
+
         var color = target.Color;
         var occlusion = _occlusion;
         var width = target.Width;
@@ -220,6 +228,30 @@ public sealed class SsaoEffect : IPostEffect
                 color[i] *= factor;
                 color[i + 1] *= factor;
                 color[i + 2] *= factor;
+            }
+        });
+    }
+
+    private void CompositeAmbient(PostProcessTarget target)
+    {
+        var color = target.Color;
+        var ambient = target.Ambient;
+        var occlusion = _occlusion;
+        var width = target.Width;
+        var strength = System.Math.Clamp(Strength, 0f, 1f);
+
+        Parallel.For(0, target.Height, y =>
+        {
+            var pixel = y * width;
+            var i = pixel * 3;
+
+            for (var x = 0; x < width; x++, pixel++, i += 3)
+            {
+                var removed = occlusion[pixel] * strength;
+
+                color[i] = MathF.Max(0f, color[i] - ambient[i] * removed);
+                color[i + 1] = MathF.Max(0f, color[i + 1] - ambient[i + 1] * removed);
+                color[i + 2] = MathF.Max(0f, color[i + 2] - ambient[i + 2] * removed);
             }
         });
     }

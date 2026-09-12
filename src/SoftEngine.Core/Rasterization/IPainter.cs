@@ -22,5 +22,7 @@ public interface IPainter
 
     float AmbientLevel => 0f;
 
+    bool WritesAmbient => false;
+
     void DrawTriangle(FrameBuffer surface, ColorRGB color, VertexBuffer vertexBuffer, int triangleIndice, in ScreenTile tile);
 }

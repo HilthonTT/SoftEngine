@@ -31,6 +31,8 @@ a reference.
 - Any number of coloured directional / point / spot lights, in an **HDR linear float target**.
 - **Cascaded shadow maps**, SSAO, and an environment cube map as both skybox and ambient — loadable
   from a Radiance `.hdr` panorama that keeps its range.
+- SSAO darkens **the ambient term alone**, from a per-pixel record of what ambient light contributed,
+  so a face in full sun is not dimmed for standing near a corner.
 - **Baked indirect light**: the path tracer measured into a grid of probes the rasterizer reads.
 - **Screen-space reflections** of the local scene, over the environment reflection the shader
   already applies — tinted per channel, so a gold surface reflects a white wall as gold.
@@ -55,7 +57,7 @@ a reference.
 ```bash
 dotnet build SoftEngine.slnx
 dotnet run --project src/SoftEngine.WinForms                  # interactive viewer
-dotnet test tests/SoftEngine.Core.Tests                       # 924 tests
+dotnet test tests/SoftEngine.Core.Tests                       # 928 tests
 dotnet run -c Release --project bench/SoftEngine.Benchmarks   # Release, or you measure the debugger
 ```
 
@@ -163,7 +165,8 @@ src/
 │   │                       #   Shadows/ Temporal/
 │   ├── Rasterization/      # scanline and half-space fills, tiles, sampling — Painters/ Shaders/ Varyings/
 │   ├── Scenes/             # world, camera, projections, lights — Graph/ Serialization/
-│   ├── Shading/            # linear colour, light sets, ambient cube, GGX, BRDF LUT
+│   ├── Shading/            # linear colour, light sets, ambient cube, GGX, BRDF LUT,
+│   │                       #   the surface channel a shader reports per pixel
 │   ├── Textures/           # Texture, filtering, cube maps, equirectangular, procedural sky
 │   └── Tracing/            # path tracer, the integrator it shares with the bake, sampler
 ├── SoftEngine.Gpu/         # OpenGL backend via Silk.NET, and Shaders/
@@ -180,7 +183,7 @@ tests/SoftEngine.Core.Tests/   # xUnit suite in folders mirroring the engine, an
 
 ## Testing
 
-`dotnet test tests/SoftEngine.Core.Tests` — **924 tests**. Alongside the unit tests, eighteen
+`dotnet test tests/SoftEngine.Core.Tests` — **928 tests**. Alongside the unit tests, eighteen
 generated scenes are rendered headless at 320×180 and compared against committed PNG baselines, so a
 change that alters the picture shows up in the diff as a picture. `SOFTENGINE_UPDATE_GOLDEN=1` is the
 only way to re-record one, and a failing run drops the actual frame and a diff image beside the

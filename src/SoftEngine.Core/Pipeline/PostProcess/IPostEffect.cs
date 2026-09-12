@@ -10,5 +10,7 @@ public interface IPostEffect
 
     bool NeedsReflectance => false;
 
+    bool NeedsAmbient => false;
+
     void Apply(PostProcessTarget target);
 }

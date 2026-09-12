@@ -31,6 +31,9 @@ public sealed class FrameBuffer(int width, int height)
     private uint[] _reflectance = [];
     private bool _recordReflectance;
 
+    private float[] _ambient = [];
+    private bool _recordAmbient;
+
     public RenderStats? Stats { get; set; }
 
     public int[] Screen { get; set; } = new int[width * height];
@@ -185,6 +188,66 @@ public sealed class FrameBuffer(int width, int height)
         if (_recordReflectance)
         {
             _reflectance.AsSpan(0, count).CopyTo(destination);
+        }
+        else
+        {
+            destination.AsSpan(0, count).Clear();
+        }
+    }
+
+    public void SetAmbientRecording(bool enabled)
+    {
+        _recordAmbient = enabled;
+
+        if (!enabled)
+        {
+            return;
+        }
+
+        var count = Width * Height * 3;
+
+        if (_ambient.Length < count)
+        {
+            _ambient = new float[count];
+        }
+
+        _ambient.AsSpan(0, count).Clear();
+    }
+
+    public bool IsRecordingAmbient => _recordAmbient;
+
+    public ReadOnlySpan<float> Ambient =>
+        _recordAmbient ? _ambient.AsSpan(0, Width * Height * 3) : ReadOnlySpan<float>.Empty;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void RecordAmbient(int x, int y, LinearColor ambient)
+    {
+        if (!_recordAmbient)
+        {
+            return;
+        }
+
+        var slot = (x + y * Width) * 3;
+
+        _ambient[slot] = ambient.R;
+        _ambient[slot + 1] = ambient.G;
+        _ambient[slot + 2] = ambient.B;
+    }
+
+    public void ReadAmbient(float[] destination)
+    {
+        ArgumentNullException.ThrowIfNull(destination, nameof(destination));
+
+        var count = Width * Height * 3;
+
+        if (destination.Length < count)
+        {
+            throw new ArgumentException($"Expected room for {count} channels, got {destination.Length}.", nameof(destination));
+        }
+
+        if (_recordAmbient)
+        {
+            _ambient.AsSpan(0, count).CopyTo(destination);
         }
         else
         {

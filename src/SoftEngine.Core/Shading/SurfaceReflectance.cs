@@ -26,10 +26,12 @@ public readonly struct SurfaceReflectance
 
     public static SurfaceReflectance FromPacked(uint packed) => new(packed);
 
-    public static SurfaceReflectance FromMetallic(ColorRGB albedo, float metallic, float roughness)
+    public static SurfaceReflectance FromMetallic(ColorRGB albedo, float metallic, float roughness) =>
+        FromMetallic((LinearColor)albedo, metallic, roughness);
+
+    public static SurfaceReflectance FromMetallic(LinearColor linear, float metallic, float roughness)
     {
         var m = System.Math.Clamp(metallic, 0f, 1f);
-        LinearColor linear = albedo;
 
         return new SurfaceReflectance(Pack(
             float.Lerp(0.04f, linear.R, m),

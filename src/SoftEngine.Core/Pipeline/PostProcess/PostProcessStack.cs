@@ -85,6 +85,21 @@ public sealed class PostProcessStack
         }
     }
 
+    public bool NeedsAmbient
+    {
+        get
+        {
+            foreach (var effect in Effects)
+            {
+                if (effect is { Enabled: true, NeedsAmbient: true })
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
     public void Apply(FrameBuffer surface) => Apply(surface, null);
 
     public void Apply(FrameBuffer surface, IProjection? projection)
@@ -108,6 +123,11 @@ public sealed class PostProcessStack
         if (NeedsReflectance && surface.IsRecordingReflectance)
         {
             surface.ReadReflectance(_target.PrepareReflectance());
+        }
+
+        if (NeedsAmbient && surface.IsRecordingAmbient)
+        {
+            surface.ReadAmbient(_target.PrepareAmbient());
         }
 
         if (surface.IsHighDynamicRange)

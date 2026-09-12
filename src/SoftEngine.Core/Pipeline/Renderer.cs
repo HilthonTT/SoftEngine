@@ -93,7 +93,7 @@ public sealed partial class Renderer : IRenderer
         GraphicsEventLog events = diagnostics.Events;
         int meshIdBase = SceneObjectIds.Mesh(world.Lights.Count, 0);
 
-        var history = BeginFrame(scene, surface, projection, rendererSettings, diagnostics, events);
+        var history = BeginFrame(scene, surface, projection, rendererSettings, diagnostics, events, painter);
 
         scene.ShadowMap = RenderShadowMap(scene, events, painter);
 

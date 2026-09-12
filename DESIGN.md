@@ -9,6 +9,7 @@ this is the reasoning, the trade-offs, and the traps already paid for.
 - [Shadows](#shadows)
 - [Environment and ambient](#environment-and-ambient)
 - [Post-processing](#post-processing)
+- [The surface channel](#the-surface-channel)
 - [Transparency](#transparency)
 - [Occlusion culling](#occlusion-culling)
 - [Motion, TAA and motion blur](#motion-taa-and-motion-blur)
@@ -406,6 +407,37 @@ The GPU backend records nothing here — its fragment shaders write one target �
 `SetReflectanceRecording(false)` and the pass finds no reflectance and leaves the frame alone,
 exactly as it does for the mip-level channel. A GPU frame keeps its environment reflections and
 gains no screen-space ones. The path tracer needs none of this: it reflects the scene by tracing it.
+
+## The surface channel
+
+[Reflections](#reflections) needed one thing the image does not contain, and solved it by writing a
+second small buffer as each pixel was shaded. That buffer was written per *triangle*: the painter
+packed the mesh's material once into `RasterState` and every pixel the triangle covered recorded the
+same two numbers. That is right for a gloss which is uniform across a surface, and quietly wrong for
+one that is painted on.
+
+`IPixelShader.Shade` now has a second form that also hands back a
+[`SurfaceSample`](src/SoftEngine.Core/Shading/SurfaceSample.cs) — what the ambient term contributed
+at that pixel, and the reflectance of the surface as the maps were actually sampled. A shader opts in
+with `static WritesSurface => true`. The flag is a static abstract on the interface, so a fill
+instantiated over a shader that does not write one folds the whole branch away and the pixel loop is
+the one that was there before. [`PbrShader`](src/SoftEngine.Core/Rasterization/Shaders/PbrShader.cs)
+writes it, which is what puts a metallic-roughness map into the reflection instead of beside it.
+
+**SSAO can now darken the ambient term alone.** It used to scale the finished pixel, which is the
+approximation everyone starts with and the reason screen-space occlusion tends to look like dirt: a
+face in full sun is not less lit for standing near a corner. With the channel in hand the effect
+subtracts `ambient x occlusion` and leaves the direct term where it was. There is a test that says
+exactly this — with the ambient level at zero, SSAO changes no pixel at all.
+
+**What it is not.** This is not deferred shading. There is no G-buffer of material parameters and no
+second pass that lights it; shading still happens at the moment of the fill, and the channel records
+what it decided rather than what it would need to decide later. What that buys is the two things a
+deferred path was wanted for here, for one float3 per pixel and no change to the fill's structure.
+The painter declares whether its shaders can separate an ambient term at all
+(`IPainter.WritesAmbient`), and where none can — the older painters fold ambient into a diffuse
+accumulator and, off the linear path, into a byte — recording is never switched on and SSAO falls
+back to scaling the pixel. Which is why the golden images for those painters did not move.
 
 ## Transparency
 
@@ -1154,9 +1186,10 @@ it flat again.
   traversal loop.
 - More than one shadow-casting light, which needs a depth buffer and a pass per light.
 - Morph targets, the one part of glTF's animation the importer reads past.
-- A deferred or visibility-buffer path, so SSAO could darken the ambient term alone — and so
-  [reflectance](#reflections) could be recorded per texel instead of per triangle, which is the one
-  thing standing between a painted-on gloss map and a reflection that follows it.
+- A real deferred or visibility-buffer path. [The surface channel](#the-surface-channel) took the two
+  things this was wanted for here — SSAO on the ambient term, reflectance per texel — without
+  decoupling shading from the fill, which is still what would let a pixel be shaded once rather than
+  once per surface that covered it.
 - Reflections on transparent surfaces, which resolve after the opaque pass the reflection channel is
   written by, and so currently reflect nothing.
 - Testing occluders against each other, by building the pyramid front to back.

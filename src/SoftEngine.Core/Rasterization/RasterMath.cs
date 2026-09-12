@@ -1,6 +1,7 @@
 using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Rasterization.Shaders;
 using SoftEngine.Core.Rasterization.Varyings;
+using SoftEngine.Core.Shading;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -36,7 +37,18 @@ internal static class RasterMath
             return;
         }
 
-        var color = shader.Shade(varying);
+        SurfaceSample sample;
+        LinearColor color;
+
+        if (TShader.WritesSurface && sinks.RecordSurface)
+        {
+            color = shader.Shade(varying, out sample);
+        }
+        else
+        {
+            color = shader.Shade(varying);
+            sample = SurfaceSample.None;
+        }
 
         if (state.HasFog)
         {
@@ -62,7 +74,14 @@ internal static class RasterMath
 
         if (sinks.RecordReflectance)
         {
-            surface.RecordReflectance(x, y, sinks.Reflectance);
+            surface.RecordReflectance(
+                x, y,
+                TShader.WritesSurface ? sample.Reflectance.Packed : sinks.Reflectance);
+        }
+
+        if (sinks.RecordAmbient && TShader.WritesSurface)
+        {
+            surface.RecordAmbient(x, y, sample.Ambient);
         }
     }
 
@@ -108,6 +127,10 @@ internal readonly struct PixelSinks
     public readonly bool RecordReflectance;
     public readonly uint Reflectance;
 
+    public readonly bool RecordAmbient;
+
+    public readonly bool RecordSurface;
+
     public PixelSinks(FrameBuffer surface, in RasterState state)
     {
         RecordMips = surface.IsRecordingMipLevels;
@@ -115,5 +138,9 @@ internal readonly struct PixelSinks
 
         RecordReflectance = surface.IsRecordingReflectance;
         Reflectance = state.PackedReflectance;
+
+        RecordAmbient = surface.IsRecordingAmbient;
+
+        RecordSurface = RecordReflectance || RecordAmbient;
     }
 }

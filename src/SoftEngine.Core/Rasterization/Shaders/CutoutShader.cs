@@ -20,7 +20,11 @@ public readonly struct CutoutShader<TVarying, TInner> : IPixelShader<TVarying>
 
     public static bool HasAlphaTest => true;
 
+    public static bool WritesSurface => TInner.WritesSurface;
+
     public bool IsCovered(in TVarying varying) => _mask.SampleAlpha(varying.TexCoord) >= _cutoff;
 
     public LinearColor Shade(in TVarying varying) => _inner.Shade(varying);
+
+    public LinearColor Shade(in TVarying varying, out SurfaceSample surface) => _inner.Shade(varying, out surface);
 }

@@ -60,7 +60,11 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
         _shadows = shadows;
     }
 
-    public LinearColor Shade(in MaterialVarying v)
+    public static bool WritesSurface => true;
+
+    public LinearColor Shade(in MaterialVarying v) => Shade(v, out _);
+
+    public LinearColor Shade(in MaterialVarying v, out SurfaceSample surface)
     {
         LinearColor albedo = _albedo.HasTexture ? _albedo.Sample(v.UV) : _baseColor;
 
@@ -89,9 +93,11 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
         var f0 = LinearColor.Lerp(new LinearColor(Ggx.DielectricF0, Ggx.DielectricF0, Ggx.DielectricF0), albedo, metallic);
         var diffuseColor = albedo * (1f - metallic);
 
-        var result = Direct(v.World, n, view, nDotV, alpha, f0, diffuseColor);
+        var ambient = Ambient(v.World, n, view, nDotV, roughness, f0, diffuseColor);
 
-        result += Ambient(v.World, n, view, nDotV, roughness, f0, diffuseColor);
+        surface = new SurfaceSample(ambient, SurfaceReflectance.FromMetallic(albedo, metallic, roughness));
+
+        var result = Direct(v.World, n, view, nDotV, alpha, f0, diffuseColor) + ambient;
 
         if (_emissiveMap.HasTexture)
         {

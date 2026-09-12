@@ -23,6 +23,8 @@ public sealed class PbrPainter(ILight? light = null, float ambient = 0.12f) : Li
 
     public bool UseMipMaps { get; set; } = true;
 
+    public override bool WritesAmbient => true;
+
     public float DefaultRoughness { get; set; } = 0.5f;
 
     public float DefaultMetallic { get; set; }

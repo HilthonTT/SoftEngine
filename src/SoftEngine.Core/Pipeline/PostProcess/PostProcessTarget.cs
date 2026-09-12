@@ -10,6 +10,7 @@ public sealed class PostProcessTarget
     private float[] _scratch = [];
     private float[] _viewDepth = [];
     private uint[] _reflectance = [];
+    private float[] _ambient = [];
 
     public int Width { get; private set; }
 
@@ -28,6 +29,10 @@ public sealed class PostProcessTarget
     public uint[] Reflectance => _reflectance;
 
     public bool HasReflectance { get; private set; }
+
+    public float[] Ambient => _ambient;
+
+    public bool HasAmbient { get; private set; }
 
     public SurfaceReflectance ReflectanceAt(int x, int y) =>
         HasReflectance && (uint)x < (uint)Width && (uint)y < (uint)Height
@@ -51,6 +56,7 @@ public sealed class PostProcessTarget
         Height = height;
         HasDepth = false;
         HasReflectance = false;
+        HasAmbient = false;
 
         var length = width * height * 3;
         if (_color.Length >= length)
@@ -75,6 +81,19 @@ public sealed class PostProcessTarget
         HasDepth = true;
 
         return _viewDepth;
+    }
+
+    internal float[] PrepareAmbient()
+    {
+        var count = Width * Height * 3;
+        if (_ambient.Length < count)
+        {
+            _ambient = new float[count];
+        }
+
+        HasAmbient = true;
+
+        return _ambient;
     }
 
     internal uint[] PrepareReflectance()

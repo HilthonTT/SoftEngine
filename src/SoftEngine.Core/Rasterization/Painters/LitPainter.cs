@@ -31,6 +31,8 @@ public abstract class LitPainter(ILight? light, float ambient) : IPainter
 
     public float AmbientLevel => Ambient;
 
+    public virtual bool WritesAmbient => false;
+
     protected AmbientField AmbientLight { get; private set; }
 
     protected bool GammaCorrect { get; private set; }
