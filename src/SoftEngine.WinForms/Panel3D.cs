@@ -113,6 +113,9 @@ public partial class Panel3D : UserControl
     [DefaultValue(512)]
     public int TraceSampleTarget { get; set; } = 512;
 
+    [DefaultValue(64)]
+    public int TraceDenoiseUntil { get; set; } = 64;
+
     public event EventHandler? BackendChanged;
 
     private void SetBackend(RenderBackend requested)
@@ -129,6 +132,7 @@ public partial class Panel3D : UserControl
             tracer.Trace.SamplesPerPixel = 2;
             tracer.Trace.MaxBounces = 2;
             tracer.Trace.Accumulate = true;
+            tracer.Trace.Denoise = true;
         }
 
         var previous = Renderer;
@@ -1068,6 +1072,11 @@ public partial class Panel3D : UserControl
         }
 
         var g = e.Graphics;
+
+        if (Renderer is PathTracer refining)
+        {
+            refining.Trace.Denoise = refining.AccumulatedSamples < TraceDenoiseUntil;
+        }
 
         Renderer.Render(Scene, Painter);
         BitmapBlitter.FillBitmap(bmp, PresentablePixels());

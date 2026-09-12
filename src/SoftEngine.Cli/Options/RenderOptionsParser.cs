@@ -251,6 +251,11 @@ internal static class RenderOptionsParser
                     options.PhysicalExposure = true;
                     break;
 
+                case "--denoise":
+                    options.Denoise = true;
+                    options.Backend = RenderBackend.Trace;
+                    break;
+
                 case "--bake":
                     options.Bake = true;
                     break;

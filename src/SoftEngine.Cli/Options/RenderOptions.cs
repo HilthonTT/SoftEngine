@@ -81,6 +81,8 @@ internal sealed class RenderOptions
 
     public bool PhysicalExposure { get; set; }
 
+    public bool Denoise { get; set; }
+
     public bool Bake { get; set; }
 
     public int BakeResolution { get; set; } = 12;

@@ -45,6 +45,9 @@ internal static class UsageText
                                     lighting only); implies --trace
                   --physical        put direct and bounced light on the same scale, instead
                                     of matching the rasterizer's exposure for direct light
+                  --denoise         filter the traced frame against its own normals, depth
+                                    and albedo, so a low --samples count is usable;
+                                    implies --trace
 
             Baked indirect light
                   --bake            measure the scene's bounce light into a grid of probes

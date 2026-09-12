@@ -43,6 +43,8 @@ a reference.
 - Post-process stack: bloom, tone mapping, FXAA, vignette. Supersampling, **TAA** and **motion blur**.
 - Transparency sorted per triangle, or **order-independent** and resolved per pixel.
 - **Scene editing**: ray-cast picking, drag gizmos and Blender-style keyboard transforms, undoable.
+- A **path-traced reference** with an a-trous **denoiser** guided by its own albedo, normals and
+  depth, so a handful of paths per pixel is already an image you can read.
 - **JSON scene files**, a **headless CLI** (stills and sequences), and a **graphics debugger** with
   buffer views and frame history.
 
@@ -59,7 +61,7 @@ a reference.
 ```bash
 dotnet build SoftEngine.slnx
 dotnet run --project src/SoftEngine.WinForms                  # interactive viewer
-dotnet test tests/SoftEngine.Core.Tests                       # 933 tests
+dotnet test tests/SoftEngine.Core.Tests                       # 939 tests
 dotnet run -c Release --project bench/SoftEngine.Benchmarks   # Release, or you measure the debugger
 ```
 
@@ -128,7 +130,7 @@ dotnet run -c Release --project src/SoftEngine.Cli -- model.gltf -o frame.png -w
 | `--shadows`, `--cascades` | shadow pass |
 | `--oit` | resolve transparency per pixel instead of by sorting the triangles |
 | `--bake`, `--bake-resolution`, `--bake-rays`, `--bake-bounces` | measure indirect light into probes first |
-| `--trace`, `--samples`, `--bounces`, `--physical` | path-trace instead of rasterizing |
+| `--trace`, `--samples`, `--bounces`, `--physical`, `--denoise` | path-trace instead of rasterizing |
 | `--frames`, `--fps`, `--turntable`, `--shutter` | render a numbered sequence |
 | `--backend`, `--gpu`, `--cpu`, `--adapter`, `--gpu-info` | where the frame is filled, and on which adapter |
 | `--scene`, `--stats` | apply a saved scene; print counts and timings |
@@ -171,7 +173,8 @@ src/
 │   ├── Shading/            # linear colour, light sets, ambient cube, GGX, BRDF LUT,
 │   │                       #   the surface channel a shader reports per pixel
 │   ├── Textures/           # Texture, filtering, cube maps, equirectangular, procedural sky
-│   └── Tracing/            # path tracer, the integrator it shares with the bake, sampler
+│   └── Tracing/            # path tracer, the integrator it shares with the bake, sampler,
+│                           #   denoiser
 ├── SoftEngine.Gpu/         # OpenGL backend via Silk.NET, and Shaders/
 ├── SoftEngine.Cli/         # headless renderer (net10.0 console)
 │   ├── Options/            # the flags, their parser, their bounds, the usage text
@@ -186,7 +189,7 @@ tests/SoftEngine.Core.Tests/   # xUnit suite in folders mirroring the engine, an
 
 ## Testing
 
-`dotnet test tests/SoftEngine.Core.Tests` — **933 tests**. Alongside the unit tests, eighteen
+`dotnet test tests/SoftEngine.Core.Tests` — **939 tests**. Alongside the unit tests, eighteen
 generated scenes are rendered headless at 320×180 and compared against committed PNG baselines, so a
 change that alters the picture shows up in the diff as a picture. `SOFTENGINE_UPDATE_GOLDEN=1` is the
 only way to re-record one, and a failing run drops the actual frame and a diff image beside the

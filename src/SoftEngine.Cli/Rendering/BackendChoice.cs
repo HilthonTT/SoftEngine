@@ -56,6 +56,7 @@ internal static class BackendChoice
             tracer.Trace.SamplesPerPixel = options.Samples;
             tracer.Trace.MaxBounces = options.Bounces;
             tracer.Trace.DirectLightScale = options.PhysicalExposure ? 1f : MathF.PI;
+            tracer.Trace.Denoise = options.Denoise;
         }
 
         renderer.Settings.BackFaceCulling = options.BackFaceCulling;

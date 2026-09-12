@@ -915,6 +915,28 @@ wherever a light is doing the work. The environment lights the trace at `SkyInte
 into what is there, up to 512 samples or until something moves. Seeded per pixel rather than from a
 shared generator, so two runs produce the same image down to the last bit.
 
+### Denoising
+
+Two paths per pixel is a noisy image and 512 is a slow one, and the gap between them is where a
+reference renderer is least useful. The [`Denoiser`](src/SoftEngine.Core/Tracing/Denoiser.cs) is an
+a-trous wavelet filter over the traced frame: a five-tap B3 spline kernel, four passes, the tap
+spacing doubling each pass, so it reaches 32 pixels away for about the cost of a 5x5.
+
+Blurring a rendered image destroys texture, so the filter is not run on one. The tracer keeps the
+albedo, the normal and the distance of each pixel's first hit; the frame is divided by the albedo
+before filtering and multiplied by it after, so what gets smoothed is the light, and everything the
+surface already knew about itself survives untouched. A checkerboard stays a checkerboard.
+
+Each tap is then weighted by how far the neighbour agrees with the centre — normals raised to a high
+power, distance relative to the centre's own, luminance against a fixed sigma — so the filter stops
+at a fold instead of rounding it off. Pixels where nothing was hit are left exactly alone: the sky is
+sampled once per ray and was never noisy.
+
+It is a filter and not an estimator. It trades bias for variance and it cannot invent detail no path
+found. In the viewport it runs only while the accumulation is under 64 samples and switches itself
+off above that, so what you watch converges and what you are left looking at is the image the tracer
+actually computed. `--denoise` turns it on for a headless render, where the trade is yours to make.
+
 ## Baked indirect light
 
 The rasterizer and the path tracer are usually presented as alternatives: one fast and approximate,
@@ -1231,6 +1253,9 @@ it flat again.
   once per surface that covered it.
 - Transmission through more than one surface, which needs the backdrop recaptured between sorted
   transparent draws, and a rule for how often that is worth doing.
+- A denoiser guided by a variance estimate rather than a fixed luminance sigma, which needs the
+  tracer to carry a second moment per pixel — and a temporal one, which needs it to carry the
+  previous frame.
 - Reflections on transparent surfaces, which resolve after the opaque pass the reflection channel is
   written by, and so currently reflect nothing.
 - Testing occluders against each other, by building the pyramid front to back.

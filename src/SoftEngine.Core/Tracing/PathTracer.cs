@@ -19,6 +19,11 @@ public sealed class PathTracer : IRenderer
     private float[] _accumulator = [];
     private float[] _depth = [];
 
+    private float[] _resolved = [];
+    private float[] _albedo = [];
+    private float[] _normal = [];
+    private float[] _distance = [];
+
     private int _width;
     private int _height;
 
@@ -31,6 +36,8 @@ public sealed class PathTracer : IRenderer
     public RenderDiagnostics Diagnostics { get; } = new();
 
     public TraceSettings Trace { get; } = new();
+
+    public Denoiser Denoiser { get; } = new();
 
     public Bvh? Accelerator => _accelerator;
 
@@ -105,6 +112,8 @@ public sealed class PathTracer : IRenderer
                 var sum = LinearColor.Black;
                 var depth = 1f;
 
+                var slot = pixel * 3;
+
                 for (var s = 0; s < samples; s++)
                 {
                     var sampler = new Sampler(Trace.Seed, pixel, previous + s);
@@ -113,15 +122,28 @@ public sealed class PathTracer : IRenderer
                         x + sampler.Next(),
                         y + sampler.Next());
 
-                    sum += integrator.Radiance(ray, ref sampler, out var distance);
+                    sum += integrator.Radiance(ray, ref sampler, out var distance, out var primary);
 
-                    if (s == 0 && previous == 0 && !float.IsPositiveInfinity(distance))
+                    if (s != 0 || previous != 0)
+                    {
+                        continue;
+                    }
+
+                    _distance[pixel] = distance;
+
+                    if (!float.IsPositiveInfinity(distance))
                     {
                         depth = NormalizedDepth(ray.At(distance), viewProjection);
                     }
-                }
 
-                var slot = pixel * 3;
+                    _albedo[slot] = primary.Albedo.R;
+                    _albedo[slot + 1] = primary.Albedo.G;
+                    _albedo[slot + 2] = primary.Albedo.B;
+
+                    _normal[slot] = primary.Normal.X;
+                    _normal[slot + 1] = primary.Normal.Y;
+                    _normal[slot + 2] = primary.Normal.Z;
+                }
 
                 _accumulator[slot] += sum.R;
                 _accumulator[slot + 1] += sum.G;
@@ -129,10 +151,9 @@ public sealed class PathTracer : IRenderer
 
                 var scale = 1f / total;
 
-                surface.PutBackground(x, y, new LinearColor(
-                    _accumulator[slot] * scale,
-                    _accumulator[slot + 1] * scale,
-                    _accumulator[slot + 2] * scale));
+                _resolved[slot] = _accumulator[slot] * scale;
+                _resolved[slot + 1] = _accumulator[slot + 1] * scale;
+                _resolved[slot + 2] = _accumulator[slot + 2] * scale;
 
                 if (previous == 0)
                 {
@@ -142,6 +163,13 @@ public sealed class PathTracer : IRenderer
         });
 
         AccumulatedSamples = total;
+
+        if (Trace.Denoise)
+        {
+            Denoiser.Apply(_resolved, _albedo, _normal, _distance, width, height);
+        }
+
+        Present(surface, width, height);
 
         Stats.AddPixelCounts(width * height, 0);
         Stats.CalculationTime();
@@ -175,10 +203,31 @@ public sealed class PathTracer : IRenderer
         _width = width;
         _height = height;
 
-        _accumulator = new float[System.Math.Max(0, width * height * 3)];
-        _depth = new float[System.Math.Max(0, width * height)];
+        var pixels = System.Math.Max(0, width * height);
+
+        _accumulator = new float[pixels * 3];
+        _resolved = new float[pixels * 3];
+        _albedo = new float[pixels * 3];
+        _normal = new float[pixels * 3];
+        _distance = new float[pixels];
+        _depth = new float[pixels];
 
         AccumulatedSamples = 0;
+    }
+
+    private void Present(FrameBuffer surface, int width, int height)
+    {
+        var resolved = _resolved;
+
+        Parallel.For(0, height, y =>
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var slot = (x + y * width) * 3;
+
+                surface.PutBackground(x, y, new LinearColor(resolved[slot], resolved[slot + 1], resolved[slot + 2]));
+            }
+        });
     }
 
     private static float NormalizedDepth(Vector3 point, in Matrix4x4 viewProjection)

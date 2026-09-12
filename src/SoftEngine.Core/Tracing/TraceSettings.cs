@@ -17,4 +17,6 @@ public sealed class TraceSettings
     public uint Seed { get; set; } = 0x9E3779B9;
 
     public float RayOffset { get; set; } = 1e-4f;
+
+    public bool Denoise { get; set; }
 }

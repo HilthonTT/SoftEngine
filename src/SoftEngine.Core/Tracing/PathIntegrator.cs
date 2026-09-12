@@ -36,8 +36,13 @@ internal sealed class PathIntegrator
         _settings = settings;
     }
 
-    public LinearColor Radiance(Ray ray, ref Sampler sampler, out float firstDistance)
+    public LinearColor Radiance(Ray ray, ref Sampler sampler, out float firstDistance) =>
+        Radiance(ray, ref sampler, out firstDistance, out _);
+
+    public LinearColor Radiance(Ray ray, ref Sampler sampler, out float firstDistance, out PrimarySurface primary)
     {
+        primary = default;
+
         var radiance = LinearColor.Black;
         var throughput = LinearColor.White;
 
@@ -62,6 +67,8 @@ internal sealed class PathIntegrator
                 break;
             }
 
+            var capture = first;
+
             if (first)
             {
                 firstDistance = hit.Distance;
@@ -71,6 +78,11 @@ internal sealed class PathIntegrator
             var travelled = MathF.Max(hit.Distance, 1e-4f);
 
             var surface = Evaluate(_geometry, hit, ray);
+
+            if (capture)
+            {
+                primary = new PrimarySurface(surface.Normal, surface.Albedo, true);
+            }
 
             if (surface.Opacity < 1f && sampler.Next() >= surface.Opacity)
             {
@@ -505,6 +517,22 @@ internal sealed class PathIntegrator
         }
 
         return lights;
+    }
+
+    public readonly struct PrimarySurface
+    {
+        public PrimarySurface(Vector3 normal, LinearColor albedo, bool hit)
+        {
+            Normal = normal;
+            Albedo = albedo;
+            Hit = hit;
+        }
+
+        public Vector3 Normal { get; }
+
+        public LinearColor Albedo { get; }
+
+        public bool Hit { get; }
     }
 
     private readonly struct TracedSurface
