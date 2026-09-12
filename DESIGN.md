@@ -11,6 +11,7 @@ this is the reasoning, the trade-offs, and the traps already paid for.
 - [Post-processing](#post-processing)
 - [The surface channel](#the-surface-channel)
 - [Transparency](#transparency)
+- [Refraction](#refraction)
 - [Occlusion culling](#occlusion-culling)
 - [Motion, TAA and motion blur](#motion-taa-and-motion-blur)
 - [Scene graph, animation and skinning](#scene-graph-animation-and-skinning)
@@ -491,6 +492,44 @@ It is off by default. It changes the picture wherever the sort was getting it wr
 point, and is also why turning it on is a decision rather than a default. A probed pixel's history
 shows each stored fragment as its own entry, in the order the resolve blended them, naming the
 triangle that shaded it rather than the resolve that applied it.
+
+## Refraction
+
+A transmissive surface has to know what is behind it, and in a rasterizer what is behind it is the
+frame as it stood before that surface was drawn. So `Material.Transmission` routes a mesh into the
+transparent pass however opaque its alpha is, and the renderer captures the colour buffer into a
+[`Backdrop`](src/SoftEngine.Core/Buffers/Backdrop.cs) at the one moment it holds every opaque surface
+and the sky and nothing else — after `DrawSky`, before the first transparent triangle.
+
+The shader refracts the view ray through the shading normal at the material's index of refraction,
+walks it `Thickness` into the body, projects that exit point back to the screen and reads the
+backdrop there. Thickness is what separates glass from a hole in the wall: at zero the sample lands
+straight behind the pixel and a pane is a window, and the further the ray travels inside the object
+the more the background slides and bends. glTF describes the same thing the same way, so
+`KHR_materials_transmission`, `KHR_materials_ior` and the thickness out of `KHR_materials_volume`
+import straight onto those three fields.
+
+**One trap, paid for.** [Occlusion culling](#occlusion-culling) picked its occluders by asking
+whether a mesh was opaque, and a transmissive mesh still is — `Transmission` says what happens to the
+light reaching it, not how much of it arrives. So the glass was chosen as an occluder and culled the
+very geometry it was about to refract, and the backdrop behind it came back black. Both the occluder
+test and the transparent-pass test now ask `IMesh.DrawsAfterOpaque()`, one predicate, because the
+question they are really asking is the same one and two copies of it had already drifted.
+
+The backdrop keeps a short chain of half-size copies and a rough surface reads further down it,
+which is frosted glass for the price of a box filter. The transmitted colour is tinted by the base
+colour and scaled by `1 - F`, and the diffuse lobe is scaled by `1 - transmission` in exchange: a
+surface letting light through is not also scattering it. The index of refraction replaces the 0.04
+dielectric F0 while it is there, so a dense material is correctly more reflective at a glancing angle
+than glass is.
+
+**What it does not do.** One layer. The backdrop is captured once, so a transmissive surface does not
+refract another one behind it — the second pane shows what the first would have shown. There is no
+absorption through the body, no dispersion, and the refracted ray is a straight line through a flat
+interface rather than a path through a solid. For any of those the answer is the path tracer, which
+takes transmission as a real scattering lobe — Fresnel-weighted reflect-or-refract at the interface,
+entering and leaving tracked by which face the ray hit — and will therefore disagree with the
+rasterizer about a thick object, correctly.
 
 ## Occlusion culling
 
@@ -1190,6 +1229,8 @@ it flat again.
   things this was wanted for here — SSAO on the ambient term, reflectance per texel — without
   decoupling shading from the fill, which is still what would let a pixel be shaded once rather than
   once per surface that covered it.
+- Transmission through more than one surface, which needs the backdrop recaptured between sorted
+  transparent draws, and a rule for how often that is worth doing.
 - Reflections on transparent surfaces, which resolve after the opaque pass the reflection channel is
   written by, and so currently reflect nothing.
 - Testing occluders against each other, by building the pyramid front to back.

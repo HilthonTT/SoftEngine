@@ -596,6 +596,21 @@ public static class GltfImporter
                 material.AlphaCutoff = System.Math.Clamp(source.AlphaCutoff, float.Epsilon, 1f);
             }
 
+            if (source.Extensions?.Transmission is { } transmission)
+            {
+                material.Transmission = System.Math.Clamp(transmission.Factor, 0f, 1f);
+            }
+
+            if (source.Extensions?.IndexOfRefraction is { } refraction)
+            {
+                material.IndexOfRefraction = System.Math.Clamp(refraction.Value, 1f, 4f);
+            }
+
+            if (source.Extensions?.Volume is { } volume)
+            {
+                material.Thickness = MathF.Max(0f, volume.Thickness);
+            }
+
             _materials[index] = (material, opacity);
 
             return material;

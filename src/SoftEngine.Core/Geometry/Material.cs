@@ -35,6 +35,14 @@ public sealed class Material
 
     public float AlphaCutoff { get; set; }
 
+    public float Transmission { get; set; }
+
+    public float IndexOfRefraction { get; set; } = 1.5f;
+
+    public float Thickness { get; set; }
+
+    public bool IsTransmissive => Transmission > 0f;
+
     public bool IsCutout => AlphaCutoff > 0f && DiffuseMap is not null;
 
     public bool NeedsTangents => NormalMap is not null;

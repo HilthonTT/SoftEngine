@@ -185,7 +185,7 @@ public sealed partial class Renderer
                 VertexCount = vertexCount,
                 TriangleCount = triangleCount,
 
-                Transparent = mesh.Opacity < 1f,
+                Transparent = mesh.DrawsAfterOpaque(),
 
                 HasNormals = mesh.NormVertices.Length >= vertexCount,
 

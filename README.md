@@ -37,6 +37,8 @@ a reference.
 - **Screen-space reflections** of the local scene, over the environment reflection the shader
   already applies — tinted per channel, so a gold surface reflects a white wall as gold.
 - Materials: albedo, normal, specular, metallic-roughness and emissive maps, plus **alpha cutouts**.
+- **Refraction**: a transmissive material reads the frame behind it — thickness bends what it shows,
+  roughness frosts it, and glTF's transmission, ior and volume extensions drive it.
 - **Scene graph**, keyframed **animation** with clip **blending**, and linear-blend **skinning**.
 - Post-process stack: bloom, tone mapping, FXAA, vignette. Supersampling, **TAA** and **motion blur**.
 - Transparency sorted per triangle, or **order-independent** and resolved per pixel.
@@ -57,7 +59,7 @@ a reference.
 ```bash
 dotnet build SoftEngine.slnx
 dotnet run --project src/SoftEngine.WinForms                  # interactive viewer
-dotnet test tests/SoftEngine.Core.Tests                       # 928 tests
+dotnet test tests/SoftEngine.Core.Tests                       # 933 tests
 dotnet run -c Release --project bench/SoftEngine.Benchmarks   # Release, or you measure the debugger
 ```
 
@@ -153,7 +155,8 @@ src/
 │   ├── Acceleration/       # world triangles flattened, and the SAH BVH over them
 │   ├── Animation/          # tracks, interpolation, channels, clips, playback, blending
 │   ├── Baking/             # the irradiance bake and what it is allowed to spend
-│   ├── Buffers/            # FrameBuffer, velocity, fragments, pooled vertex/world buffers
+│   ├── Buffers/            # FrameBuffer, velocity, fragments, refraction backdrop, pooled
+│   │                       #   vertex/world buffers
 │   ├── Diagnostics/        # stats, event log, pixel history, frame captures
 │   ├── Editing/            # undoable edits and the history the tools record into
 │   ├── Geometry/           # IMesh, Material, triangles, tangents — Import/ Primitives/
@@ -183,7 +186,7 @@ tests/SoftEngine.Core.Tests/   # xUnit suite in folders mirroring the engine, an
 
 ## Testing
 
-`dotnet test tests/SoftEngine.Core.Tests` — **928 tests**. Alongside the unit tests, eighteen
+`dotnet test tests/SoftEngine.Core.Tests` — **933 tests**. Alongside the unit tests, eighteen
 generated scenes are rendered headless at 320×180 and compared against committed PNG baselines, so a
 change that alters the picture shows up in the diff as a picture. `SOFTENGINE_UPDATE_GOLDEN=1` is the
 only way to re-record one, and a failing run drops the actual frame and a diff image beside the

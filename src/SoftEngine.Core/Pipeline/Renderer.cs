@@ -163,6 +163,8 @@ public sealed partial class Renderer : IRenderer
 
         DrawSky(scene, surface, events);
 
+        scene.Backdrop?.Capture(surface);
+
         var orderIndependent = rendererSettings.OrderIndependentTransparency;
         var transparentCount = SortTransparent(worldBuffer, orderIndependent);
 

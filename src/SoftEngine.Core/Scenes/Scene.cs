@@ -23,6 +23,8 @@ public sealed class Scene
 
     public ShadowMap? ShadowMap { get; set; }
 
+    public Buffers.Backdrop? Backdrop { get; set; }
+
     public bool GammaCorrect { get; set; }
 
     public bool HighDynamicRange { get; set; }

@@ -108,7 +108,7 @@ public sealed class OcclusionCuller
         {
             var mesh = meshes[i];
 
-            if (!mesh.Visible || mesh.Opacity < 1f || mesh.Triangles.Length == 0)
+            if (!mesh.Visible || mesh.DrawsAfterOpaque() || mesh.Triangles.Length == 0)
             {
                 continue;
             }

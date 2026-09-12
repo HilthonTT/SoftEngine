@@ -50,6 +50,8 @@ public sealed partial class Renderer
         surface.SetAmbientRecording(
             (PostProcess?.NeedsAmbient ?? false) && (painter?.WritesAmbient ?? false));
 
+        scene.Backdrop = null;
+
         if (projection.IsOrthographic)
         {
             surface.SetLinearDepthRange();

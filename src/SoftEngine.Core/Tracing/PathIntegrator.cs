@@ -86,12 +86,16 @@ internal sealed class PathIntegrator
             var nDotV = MathF.Max(Vector3.Dot(normal, view), 1e-4f);
             var alpha = Ggx.Alpha(surface.Roughness);
 
+            var dielectricF0 = surface.Transmission > 0f
+                ? Refraction.SchlickF0(surface.IndexOfRefraction)
+                : Ggx.DielectricF0;
+
             var f0 = LinearColor.Lerp(
-                new LinearColor(Ggx.DielectricF0, Ggx.DielectricF0, Ggx.DielectricF0),
+                new LinearColor(dielectricF0, dielectricF0, dielectricF0),
                 surface.Albedo,
                 surface.Metallic);
 
-            var diffuseColor = surface.Albedo * (1f - surface.Metallic);
+            var diffuseColor = surface.Albedo * ((1f - surface.Metallic) * (1f - surface.Transmission));
 
             radiance += throughput * Direct(surface, view, nDotV, alpha, f0, diffuseColor, travelled);
 
@@ -125,7 +129,9 @@ internal sealed class PathIntegrator
                 break;
             }
 
-            ray = new Ray(surface.Point + normal * (travelled * _settings.RayOffset), direction);
+            var side = Vector3.Dot(direction, normal) < 0f ? -normal : normal;
+
+            ray = new Ray(surface.Point + side * (travelled * _settings.RayOffset), direction);
             bounce++;
         }
 
@@ -224,6 +230,70 @@ internal sealed class PathIntegrator
         out Vector3 direction,
         out LinearColor weight)
     {
+        var transmission = surface.Transmission;
+
+        if (transmission > 0f && sampler.Next() < transmission)
+        {
+            return Transmit(ref sampler, surface, view, normal, nDotV, transmission, out direction, out weight);
+        }
+
+        if (!ScatterOpaque(ref sampler, surface, view, normal, nDotV, alpha, f0, diffuseColor, out direction, out weight))
+        {
+            return false;
+        }
+
+        if (transmission > 0f)
+        {
+            weight = (1f / (1f - transmission)) * weight;
+        }
+
+        return true;
+    }
+
+    private static bool Transmit(
+        ref Sampler sampler,
+        in TracedSurface surface,
+        Vector3 view,
+        Vector3 normal,
+        float nDotV,
+        float transmission,
+        out Vector3 direction,
+        out LinearColor weight)
+    {
+        var eta = surface.FrontFacing
+            ? 1f / surface.IndexOfRefraction
+            : surface.IndexOfRefraction;
+
+        var f0 = Refraction.SchlickF0(surface.IndexOfRefraction);
+        var reflectance = f0 + (1f - f0) * MathF.Pow(1f - nDotV, 5f);
+
+        var scale = 1f / transmission;
+
+        var refracted = Refraction.Refract(-view, normal, eta, out direction);
+
+        if (!refracted || sampler.Next() < reflectance)
+        {
+            direction = Vector3.Reflect(-view, normal);
+            weight = scale * LinearColor.White;
+            return true;
+        }
+
+        weight = scale * surface.Albedo;
+        return true;
+    }
+
+    private static bool ScatterOpaque(
+        ref Sampler sampler,
+        in TracedSurface surface,
+        Vector3 view,
+        Vector3 normal,
+        float nDotV,
+        float alpha,
+        LinearColor f0,
+        LinearColor diffuseColor,
+        out Vector3 direction,
+        out LinearColor weight)
+    {
         direction = default;
         weight = LinearColor.Black;
 
@@ -296,7 +366,9 @@ internal sealed class PathIntegrator
             ? Vector3.Normalize(shading)
             : Vector3.Normalize(Vector3.Cross(b - a, c - a));
 
-        if (Vector3.Dot(normal, ray.Direction) > 0f)
+        var frontFacing = Vector3.Dot(normal, ray.Direction) <= 0f;
+
+        if (!frontFacing)
         {
             normal = -normal;
         }
@@ -348,6 +420,9 @@ internal sealed class PathIntegrator
             Roughness = System.Math.Clamp(roughness, 0f, 1f),
             Emissive = emissive,
             Opacity = System.Math.Clamp(mesh.Opacity, 0f, 1f),
+            Transmission = System.Math.Clamp(material?.Transmission ?? 0f, 0f, 1f),
+            IndexOfRefraction = MathF.Max(material?.IndexOfRefraction ?? 1.5f, 1f),
+            FrontFacing = frontFacing,
         };
     }
 
@@ -447,5 +522,11 @@ internal sealed class PathIntegrator
         public required LinearColor Emissive { get; init; }
 
         public required float Opacity { get; init; }
+
+        public required float Transmission { get; init; }
+
+        public required float IndexOfRefraction { get; init; }
+
+        public required bool FrontFacing { get; init; }
     }
 }

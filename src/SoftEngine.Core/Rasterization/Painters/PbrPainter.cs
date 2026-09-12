@@ -19,6 +19,9 @@ public sealed class PbrPainter(ILight? light = null, float ambient = 0.12f) : Li
 
     private Vector3 _eye;
 
+    private readonly Backdrop _backdrop = new();
+    private ScreenProjector _projector;
+
     public TextureFiltering Filtering { get; set; } = TextureFiltering.Bilinear;
 
     public bool UseMipMaps { get; set; } = true;
@@ -40,6 +43,7 @@ public sealed class PbrPainter(ILight? light = null, float ambient = 0.12f) : Li
             : scene.Camera.Position;
 
         ResolveEnvironment(scene);
+        ResolveTransmission(scene);
 
         foreach (var mesh in scene.World.Meshes)
         {
@@ -64,6 +68,36 @@ public sealed class PbrPainter(ILight? light = null, float ambient = 0.12f) : Li
             material.RoughnessMap?.EnsureMipMaps();
             material.EmissiveMap?.EnsureMipMaps();
         }
+    }
+
+    private void ResolveTransmission(Scene scene)
+    {
+        var wanted = false;
+
+        foreach (var mesh in scene.World.Meshes)
+        {
+            if (mesh.Visible && mesh.Material is { IsTransmissive: true })
+            {
+                wanted = true;
+                break;
+            }
+        }
+
+        if (!wanted)
+        {
+            _backdrop.Reset();
+            scene.Backdrop = null;
+            return;
+        }
+
+        var surface = scene.Surface;
+
+        _projector = new ScreenProjector(
+            scene.Camera.ViewMatrix * scene.Projection.ProjectionMatrix(surface.Width, surface.Height),
+            surface.Width,
+            surface.Height);
+
+        scene.Backdrop = _backdrop;
     }
 
     private void ResolveEnvironment(Scene scene)
@@ -139,7 +173,8 @@ public sealed class PbrPainter(ILight? light = null, float ambient = 0.12f) : Li
             _eye,
             AmbientLight,
             _prefiltered,
-            Shadows);
+            Shadows,
+            new TransmissionField(material, _backdrop, _projector));
 
         var v0 = new MaterialVarying(a.World, a.Norm, tangent0, uv0);
         var v1 = new MaterialVarying(b.World, b.Norm, tangent1, uv1);

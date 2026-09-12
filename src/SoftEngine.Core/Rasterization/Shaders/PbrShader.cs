@@ -26,6 +26,8 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
     private readonly float _roughness;
     private readonly float _normalStrength;
 
+    private readonly TransmissionField _transmission;
+
     public PbrShader(
         ColorRGB baseColor,
         in TextureSampler albedo,
@@ -41,7 +43,8 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
         Vector3 eye,
         AmbientField ambient,
         PrefilteredEnvironment? environment,
-        ShadowMap? shadows)
+        ShadowMap? shadows,
+        in TransmissionField transmission = default)
     {
         _baseColor = baseColor;
         _albedo = albedo;
@@ -58,6 +61,7 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
         _ambient = ambient;
         _environment = environment;
         _shadows = shadows;
+        _transmission = transmission;
     }
 
     public static bool WritesSurface => true;
@@ -90,14 +94,21 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
 
         var nDotV = MathF.Max(Vector3.Dot(n, view), 1e-4f);
 
-        var f0 = LinearColor.Lerp(new LinearColor(Ggx.DielectricF0, Ggx.DielectricF0, Ggx.DielectricF0), albedo, metallic);
-        var diffuseColor = albedo * (1f - metallic);
+        var dielectricF0 = _transmission.Strength > 0f
+            ? Refraction.SchlickF0(_transmission.IndexOfRefraction)
+            : Ggx.DielectricF0;
+
+        var f0 = LinearColor.Lerp(new LinearColor(dielectricF0, dielectricF0, dielectricF0), albedo, metallic);
+
+        var transmitted = Transmitted(v.World, n, view, nDotV, roughness, albedo, f0, out var transmission);
+
+        var diffuseColor = albedo * ((1f - metallic) * (1f - transmission));
 
         var ambient = Ambient(v.World, n, view, nDotV, roughness, f0, diffuseColor);
 
         surface = new SurfaceSample(ambient, SurfaceReflectance.FromMetallic(albedo, metallic, roughness));
 
-        var result = Direct(v.World, n, view, nDotV, alpha, f0, diffuseColor) + ambient;
+        var result = Direct(v.World, n, view, nDotV, alpha, f0, diffuseColor) + ambient + transmitted;
 
         if (_emissiveMap.HasTexture)
         {
@@ -110,6 +121,38 @@ public readonly struct PbrShader : IPixelShader<MaterialVarying>
         }
 
         return result;
+    }
+
+    private LinearColor Transmitted(
+        Vector3 world,
+        Vector3 n,
+        Vector3 view,
+        float nDotV,
+        float roughness,
+        LinearColor albedo,
+        LinearColor f0,
+        out float transmission)
+    {
+        transmission = 0f;
+
+        if (!_transmission.IsActive)
+        {
+            return LinearColor.Black;
+        }
+
+        if (!_transmission.Behind(world, n, view, roughness, out var behind))
+        {
+            return LinearColor.Black;
+        }
+
+        transmission = _transmission.Strength;
+
+        var fresnel = Ggx.Fresnel(f0, nDotV);
+
+        return transmission * new LinearColor(
+            behind.R * albedo.R * (1f - fresnel.R),
+            behind.G * albedo.G * (1f - fresnel.G),
+            behind.B * albedo.B * (1f - fresnel.B));
     }
 
     private LinearColor Direct(

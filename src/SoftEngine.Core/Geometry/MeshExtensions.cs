@@ -4,6 +4,9 @@ namespace SoftEngine.Core.Geometry;
 
 public static class MeshExtensions
 {
+    public static bool DrawsAfterOpaque(this IMesh mesh) =>
+        mesh.Opacity < 1f || mesh.Material is { IsTransmissive: true };
+
     public static IEnumerable<Vector3> BuildVector3s(this float[] vertices)
     {
         for (int i = 0; i + 2 < vertices.Length; i += 3)

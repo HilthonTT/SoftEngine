@@ -177,6 +177,33 @@ internal sealed class GltfMaterialExtensions
 {
     [JsonPropertyName("KHR_materials_emissive_strength")]
     public GltfEmissiveStrength? EmissiveStrength { get; set; }
+
+    [JsonPropertyName("KHR_materials_transmission")]
+    public GltfTransmission? Transmission { get; set; }
+
+    [JsonPropertyName("KHR_materials_ior")]
+    public GltfIndexOfRefraction? IndexOfRefraction { get; set; }
+
+    [JsonPropertyName("KHR_materials_volume")]
+    public GltfVolume? Volume { get; set; }
+}
+
+internal sealed class GltfTransmission
+{
+    [JsonPropertyName("transmissionFactor")]
+    public float Factor { get; set; }
+}
+
+internal sealed class GltfIndexOfRefraction
+{
+    [JsonPropertyName("ior")]
+    public float Value { get; set; } = 1.5f;
+}
+
+internal sealed class GltfVolume
+{
+    [JsonPropertyName("thicknessFactor")]
+    public float Thickness { get; set; }
 }
 
 internal sealed class GltfEmissiveStrength
