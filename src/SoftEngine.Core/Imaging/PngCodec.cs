@@ -80,6 +80,7 @@ public static class PngCodec
 
         var width = 0;
         var height = 0;
+        var channels = 4;
         var seenHeader = false;
         var idat = new MemoryStream();
 
@@ -117,10 +118,13 @@ public static class PngCodec
                             $"{path} declares {width}x{height} pixels, past the {MaxPixels:N0} this decoder allocates for.");
                     }
 
-                    if (data[8] != 8 || data[9] != 6)
+                    if (data[8] != 8 || data[9] is not (2 or 6))
                     {
-                        throw new NotSupportedException($"{path} is not 8-bit RGBA (depth {data[8]}, colour type {data[9]}).");
+                        throw new NotSupportedException(
+                            $"{path} is not 8-bit RGB or RGBA (depth {data[8]}, colour type {data[9]}).");
                     }
+
+                    channels = data[9] == 6 ? 4 : 3;
 
                     if (data[12] != 0)
                     {
@@ -155,7 +159,7 @@ public static class PngCodec
         idat.Position = 0;
         using var inflate = new ZLibStream(idat, CompressionMode.Decompress);
 
-        var stride = width * 4;
+        var stride = width * channels;
         var raw = new byte[(stride + 1) * height];
 
         try
@@ -179,16 +183,17 @@ public static class PngCodec
             var filter = raw[row];
 
             raw.AsSpan(row + 1, stride).CopyTo(current);
-            Unfilter(filter, current, previous, 4);
+            Unfilter(filter, current, previous, channels);
 
             var destination = y * width;
 
             for (var x = 0; x < width; x++)
             {
-                var i = x * 4;
+                var i = x * channels;
+                var alpha = channels == 4 ? current[i + 3] : 0xFF;
 
                 pixels[destination + x] =
-                    (current[i + 3] << 24) |
+                    (alpha << 24) |
                     (current[i] << 16) |
                     (current[i + 1] << 8) |
                     current[i + 2];

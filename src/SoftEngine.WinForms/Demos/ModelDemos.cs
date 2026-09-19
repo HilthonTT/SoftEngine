@@ -1,12 +1,14 @@
 using SoftEngine.Core.Animation;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry.Import;
+using SoftEngine.Core.Geometry.Import.Gltf;
 using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Geometry.Skinning;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Graph;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
+using SoftEngine.WinForms.Interop;
 using System.Numerics;
 
 namespace SoftEngine.WinForms.Demos;
@@ -174,6 +176,83 @@ internal static class ModelDemos
         });
 
         return new WorldSetup(world, new Vector3(0, 0, -230), null) { SkeletonTickSize = 5f };
+    }
+
+    public static WorldSetup Fox(IProgress<float>? progress)
+    {
+        var world = new SimpleWorld();
+
+        var scene = ImportGltf("fox.glb", progress);
+
+        // Stands on y = 0 and runs along z; lift its middle to the orbit centre and turn it
+        // three-quarters on so the opening view is not straight down its nose.
+        scene.Root.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, -MathF.PI / 3f);
+        scene.Root.Position = new Vector3(0, -40, 0);
+
+        world.Root = scene.Root;
+        world.Meshes.AddRange(scene.Meshes);
+
+        // Survey, Walk and Run all drive the same joints; playing them together would fight.
+        if ((scene.Clips.FirstOrDefault(clip => clip.Name == "Walk") ?? scene.Clips.FirstOrDefault()) is { } walk)
+        {
+            world.Players.Add(new AnimationPlayer(scene.Root, walk));
+        }
+
+        AddStudioLights(world);
+
+        return new WorldSetup(world, new Vector3(0, 0, -260), null) { SkeletonTickSize = 3f };
+    }
+
+    public static WorldSetup WaterBottle(IProgress<float>? progress)
+    {
+        var world = new SimpleWorld();
+
+        var scene = ImportGltf("waterbottle.glb", progress);
+
+        // Authored in metres at 26 cm tall; scaled up to the size the default camera frames.
+        scene.Root.Scale = new Vector3(100f);
+
+        world.Root = scene.Root;
+        world.Meshes.AddRange(scene.Meshes);
+
+        AddStudioLights(world);
+
+        return new WorldSetup(world, new Vector3(0, 0, -55), null);
+    }
+
+    public static WorldSetup Lantern(IProgress<float>? progress)
+    {
+        var world = new SimpleWorld();
+
+        var scene = ImportGltf("lantern.glb", progress);
+
+        // The pole's base sits at the origin with the lantern hanging off to -x; centre it.
+        scene.Root.Position = new Vector3(4, -13, 0);
+
+        world.Root = scene.Root;
+        world.Meshes.AddRange(scene.Meshes);
+
+        AddStudioLights(world);
+
+        return new WorldSetup(world, DemoDefaults.CameraPosition, null);
+    }
+
+    private static ImportedScene ImportGltf(string fileName, IProgress<float>? progress) =>
+        GltfImporter.Import(DemoDefaults.ModelPath(fileName), progress, ImageTexture.Load);
+
+    private static void AddStudioLights(SimpleWorld world)
+    {
+        world.Lights.Add(new DirectionalLight
+        {
+            Direction = ModelFileLoader.DefaultLightDirection,
+            Color = new ColorRGB(255, 240, 220),
+        });
+        world.Lights.Add(new DirectionalLight
+        {
+            Direction = new Vector3(0.6f, -0.2f, 0.8f),
+            Color = new ColorRGB(140, 180, 255),
+            Intensity = 0.45f,
+        });
     }
 
     private static AnimationClip JulietPose(SceneNode root)

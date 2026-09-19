@@ -220,6 +220,15 @@ Started from David Rousset's
 [*Learning how to write a 3D soft engine from scratch*](https://www.davrous.com/2013/06/13/tutorial-series-learning-how-to-write-a-3d-soft-engine-from-scratch-in-c-typescript-or-javascript/)
 before growing its own pipeline, rasterizer and shading system.
 
+The glTF demo models come from the Khronos
+[glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets):
+
+- **Fox**: model by PixelMannen ([CC0](https://creativecommons.org/publicdomain/zero/1.0/)); rigging
+  and animation by tomkranis, glTF conversion by @AsoboStudio and @scurest
+  ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)).
+- **Water bottle** (Microsoft) and **Lantern** (sbtron for Microsoft):
+  [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
+
 ## License
 
 [MIT](LICENSE) © Hilthon

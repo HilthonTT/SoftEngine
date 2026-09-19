@@ -643,9 +643,11 @@ covering fewer vertices than its mesh leaves the rest at bind pose rather than t
 ![The parrot's sixty-node rig](docs/screenshots/rig.png)
 
 `Settings.ShowSkeleton` draws the hierarchy, since a rig is invisible by construction and a subtly
-wrong rig is indistinguishable from a subtly wrong mesh. Three demos cover it: **Bone chain**
+wrong rig is indistinguishable from a subtly wrong mesh. Four demos cover it: **Bone chain**
 (generated geometry, rig and clip), **Juliet** (a real 205-joint skin), **Parrot rig** (a 12-second
-clip over 60 nodes with no skin, so a cube per joint makes the hierarchy the model).
+clip over 60 nodes with no skin, so a cube per joint makes the hierarchy the model), and **Fox** (a
+glTF skin driven by the file's own Walk clip, the one demo whose skin and animation both arrive
+through `GltfImporter`).
 
 ## Importers and primitives
 
