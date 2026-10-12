@@ -123,7 +123,16 @@ public sealed class ModalTransform
             delta = direction * (to - from);
         }
 
-        if (Snap.Enabled)
+        if (Snap.Enabled && Axis != GizmoAxis.None)
+        {
+            // Only the constrained coordinate snaps; rounding the other two would move the
+            // object off the axis it is locked to.
+            var direction = TransformGizmo.Direction(Axis);
+            var start = Vector3.Dot(_origin, direction);
+
+            delta = direction * (Snap.Round(start + Vector3.Dot(delta, direction), Snap.TranslateStep) - start);
+        }
+        else if (Snap.Enabled)
         {
             var landing = _origin + delta;
 

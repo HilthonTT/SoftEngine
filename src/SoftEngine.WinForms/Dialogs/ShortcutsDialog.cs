@@ -70,6 +70,7 @@ internal sealed class ShortcutsDialog : Form
     public ShortcutsDialog()
     {
         Text = "Keyboard and mouse";
+        Icon = Theme.AppIcon;
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.Sizable;
         SizeGripStyle = SizeGripStyle.Show;

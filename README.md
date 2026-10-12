@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo/softengine.svg" alt="SoftEngine logo: a triangle rasterized into shaded pixels" width="128" height="128">
+</p>
+
 # SoftEngine
 
 [![CI](https://github.com/HilthonTT/SoftEngine/actions/workflows/ci.yml/badge.svg)](https://github.com/HilthonTT/SoftEngine/actions/workflows/ci.yml)

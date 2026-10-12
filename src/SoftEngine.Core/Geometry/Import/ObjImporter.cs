@@ -350,6 +350,20 @@ public static class ObjImporter
             Dictionary<string, Texture?> textureCache)
         {
             var normals = _hasNormals ? Normals.ToArray() : ComputeNormals(Vertices, Indices);
+
+            // A group can mix faces that give normals with faces that do not. The ones that
+            // do not would otherwise keep a zero normal and shade black.
+            if (_hasNormals && Array.IndexOf(normals, Vector3.Zero) >= 0)
+            {
+                var computed = ComputeNormals(Vertices, Indices);
+                for (var i = 0; i < normals.Length; i++)
+                {
+                    if (normals[i] == Vector3.Zero)
+                    {
+                        normals[i] = computed[i];
+                    }
+                }
+            }
             var diffuse = material?.Diffuse ?? ColorRGB.Gray;
 
             var mesh = new Mesh(

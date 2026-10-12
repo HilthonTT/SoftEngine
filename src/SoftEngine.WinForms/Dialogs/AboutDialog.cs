@@ -13,7 +13,7 @@ internal sealed class AboutDialog : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MinimizeBox = false;
         MaximizeBox = false;
-        ClientSize = new Size(460, 300);
+        ClientSize = new Size(460, 350);
         BackColor = Theme.Background;
         ForeColor = Theme.TextPrimary;
         Font = new Font("Segoe UI", 9.75f);
@@ -27,14 +27,40 @@ internal sealed class AboutDialog : Form
             BackColor = Theme.Background,
         };
 
-        stack.Controls.Add(new Label
+        var header = new FlowLayoutPanel
+        {
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoSize = true,
+            BackColor = Theme.Background,
+            Margin = new Padding(0, 0, 0, 8),
+        };
+
+        if (Theme.AppIcon is { } appIcon)
+        {
+            Icon = appIcon;
+
+            using var large = new Icon(appIcon, 48, 48);
+            header.Controls.Add(new PictureBox
+            {
+                Image = large.ToBitmap(),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Size = new Size(48, 48),
+                Margin = new Padding(0, 0, 12, 0),
+            });
+        }
+
+        header.Controls.Add(new Label
         {
             Text = "SoftEngine",
             AutoSize = true,
             Font = new Font("Segoe UI Semibold", 16f, FontStyle.Bold),
             ForeColor = Theme.TextPrimary,
-            Margin = new Padding(0, 0, 0, 2),
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(0, 8, 0, 0),
         });
+
+        stack.Controls.Add(header);
 
         stack.Controls.Add(new Label
         {

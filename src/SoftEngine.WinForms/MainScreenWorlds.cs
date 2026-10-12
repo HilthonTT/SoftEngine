@@ -19,29 +19,34 @@ public sealed partial class MainScreen
             (lblLoading.ClientSize.Width - prgLoading.Width) / 2,
             lblLoading.ClientSize.Height / 2 + 40);
 
+    // What is being shown is only recorded once the load has succeeded. A load refused because
+    // another is running, or one that fails, must leave the scene file, the screenshot name and
+    // the recent-files list describing the world still on screen.
     private Task PrepareWorldAsync(string id)
     {
-        _currentDemoId = id;
-        _modelPath = null;
-
         string label = Demos.FirstOrDefault(demo => demo.Id == id)?.Display ?? id;
 
-        return PrepareWorldCoreAsync(progress => DemoCatalog.Build(id, progress), label);
+        return PrepareWorldCoreAsync(progress => DemoCatalog.Build(id, progress), label, () =>
+        {
+            _currentDemoId = id;
+            _modelPath = null;
+        });
     }
 
     private Task PrepareWorldFromFileAsync(string path)
     {
-        _currentDemoId = string.Empty;
-        _modelPath = path;
+        return PrepareWorldCoreAsync(progress => BuildWorldFromFile(path, progress), Path.GetFileName(path), () =>
+        {
+            _currentDemoId = string.Empty;
+            _modelPath = path;
 
-        RememberRecentFile(path);
-
-        return PrepareWorldCoreAsync(progress => BuildWorldFromFile(path, progress), Path.GetFileName(path));
+            RememberRecentFile(path);
+        });
     }
 
     private bool _loading;
 
-    private async Task PrepareWorldCoreAsync(Func<IProgress<float>?, WorldSetup> build, string label)
+    private async Task PrepareWorldCoreAsync(Func<IProgress<float>?, WorldSetup> build, string label, Action loaded)
     {
         if (_loading)
         {
@@ -91,6 +96,8 @@ public sealed partial class MainScreen
             panel3D1.ClearPick();
 
             panel3D1.Scene?.World = setup.World;
+
+            loaded();
 
             ClearBakedLight();
 

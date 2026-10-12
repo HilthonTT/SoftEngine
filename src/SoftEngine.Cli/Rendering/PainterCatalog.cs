@@ -6,6 +6,9 @@ namespace SoftEngine.Cli.Rendering;
 
 internal static class PainterCatalog
 {
+    public static bool IsKnown(string name) => name.ToLowerInvariant() is
+        "none" or "classic" or "flat" or "gouraud" or "phong" or "textured" or "material" or "pbr" or "physicallybased";
+
     public static IPainter? Create(string name, TextureFiltering filtering)
     {
         var mipMaps = filtering != TextureFiltering.Nearest;

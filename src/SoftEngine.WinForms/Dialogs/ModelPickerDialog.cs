@@ -9,6 +9,7 @@ internal sealed class ModelPickerDialog : Form
     public ModelPickerDialog(IReadOnlyList<DemoEntry> demos, string? currentId)
     {
         Text = "Load model";
+        Icon = Theme.AppIcon;
         StartPosition = FormStartPosition.CenterParent;
 
         FormBorderStyle = FormBorderStyle.Sizable;

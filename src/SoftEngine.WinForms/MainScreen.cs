@@ -30,6 +30,7 @@ public sealed partial class MainScreen : Form
     public MainScreen()
     {
         InitializeComponent();
+        Icon = Theme.AppIcon;
         ApplyTheme();
 
         CenterToScreen();

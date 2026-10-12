@@ -362,6 +362,66 @@ public class GltfImporterTests
         Assert.Equal(2, loaded);
     }
 
+    [Fact]
+    public void Import_MaterialWithoutBaseColorFactor_IsWhiteAsTheSpecDefaults()
+    {
+        var scene = Import(Triangle().Gltf("""
+            {
+              "asset": {"version": "2.0"},
+              "scene": 0,
+              "scenes": [{"nodes": [0]}],
+              "nodes": [{"mesh": 0}],
+              "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1, "material": 0}]}],
+              "materials": [{"pbrMetallicRoughness": {"metallicFactor": 0}}],
+              "accessors": [
+                {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+                {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}
+              ],
+              "bufferViews": [
+                {"buffer": 0, "byteOffset": @pos@, "byteLength": @posLength@},
+                {"buffer": 0, "byteOffset": @idx@, "byteLength": @idxLength@}
+              ],
+              "buffers": [{"uri": "@BUFFER@", "byteLength": @LENGTH@}]
+            }
+            """));
+
+        var material = Assert.Single(scene.Meshes).Material;
+        Assert.NotNull(material);
+
+        Assert.Equal((255, 255, 255), (material.Diffuse.R, material.Diffuse.G, material.Diffuse.B));
+    }
+
+    [Fact]
+    public void Import_NodesOutsideTheActiveScene_AreNotRendered()
+    {
+        var scene = Import(Triangle().Gltf("""
+            {
+              "asset": {"version": "2.0"},
+              "scene": 1,
+              "scenes": [{"nodes": [0]}, {"nodes": [1]}],
+              "nodes": [
+                {"mesh": 0, "translation": [5, 0, 0]},
+                {"mesh": 0, "translation": [0, 7, 0]},
+                {"mesh": 0, "translation": [0, 0, 9]}
+              ],
+              "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1}]}],
+              "accessors": [
+                {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+                {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}
+              ],
+              "bufferViews": [
+                {"buffer": 0, "byteOffset": @pos@, "byteLength": @posLength@},
+                {"buffer": 0, "byteOffset": @idx@, "byteLength": @idxLength@}
+              ],
+              "buffers": [{"uri": "@BUFFER@", "byteLength": @LENGTH@}]
+            }
+            """));
+
+        var mesh = Assert.Single(scene.Meshes);
+
+        Assert.Equal(new Vector3(0f, 7f, 0f), Vector3.Transform(Vector3.Zero, mesh.WorldMatrix));
+    }
+
     [Theory]
     [InlineData("BLEND", 0.25f)]
     [InlineData("OPAQUE", 1f)]

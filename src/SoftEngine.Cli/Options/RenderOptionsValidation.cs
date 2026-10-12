@@ -1,3 +1,5 @@
+using SoftEngine.Cli.Rendering;
+
 namespace SoftEngine.Cli.Options;
 
 internal static class RenderOptionsValidation
@@ -88,9 +90,21 @@ internal static class RenderOptionsValidation
             options.Errors.Add("--environment-size must be between 8 and 512");
         }
 
+        // Both are names the render would otherwise only resolve after the model has loaded —
+        // and an unknown painter would silently render as Gouraud.
+        if (!PainterCatalog.IsKnown(options.Painter))
+        {
+            options.Errors.Add($"unknown painter '{options.Painter}'");
+        }
+
+        if (options.DebugView is { } view && !DebugViewNames.TryParse(view, out _))
+        {
+            options.Errors.Add($"unknown buffer view '{view}'");
+        }
+
         foreach (var effect in options.Post)
         {
-            if (effect is not ("ssr" or "ssao" or "bloom" or "tonemap" or "fxaa" or "vignette"))
+            if (effect.ToLowerInvariant() is not ("ssr" or "ssao" or "bloom" or "tonemap" or "fxaa" or "vignette"))
             {
                 options.Errors.Add($"unknown post effect '{effect}'");
             }

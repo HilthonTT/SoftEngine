@@ -12,6 +12,7 @@ public sealed class SceneGeometry
     private readonly Vector4[] _tangents;
 
     private readonly int[] _meshIndices;
+    private readonly int[] _worldIndices;
     private readonly int[] _triangleIndices;
     private readonly IMesh[] _meshes;
 
@@ -24,6 +25,7 @@ public sealed class SceneGeometry
         Vector2[] texCoords,
         Vector4[] tangents,
         int[] meshIndices,
+        int[] worldIndices,
         int[] triangleIndices,
         IMesh[] meshes,
         bool hasTexCoords,
@@ -34,6 +36,7 @@ public sealed class SceneGeometry
         _texCoords = texCoords;
         _tangents = tangents;
         _meshIndices = meshIndices;
+        _worldIndices = worldIndices;
         _triangleIndices = triangleIndices;
         _meshes = meshes;
         _hasTexCoords = hasTexCoords;
@@ -64,7 +67,8 @@ public sealed class SceneGeometry
 
     public IMesh Mesh(int triangle) => _meshes[_meshIndices[triangle]];
 
-    public int MeshIndex(int triangle) => _meshIndices[triangle];
+    /// <summary>The mesh's index in <see cref="IWorld.Meshes"/>, which counts the hidden meshes this geometry leaves out.</summary>
+    public int MeshIndex(int triangle) => _worldIndices[_meshIndices[triangle]];
 
     public int SourceTriangle(int triangle) => _triangleIndices[triangle];
 
@@ -73,16 +77,20 @@ public sealed class SceneGeometry
         ArgumentNullException.ThrowIfNull(world, nameof(world));
 
         var meshes = new List<IMesh>();
+        var worldIndices = new List<int>();
         var total = 0;
 
-        foreach (var mesh in world.Meshes)
+        for (var w = 0; w < world.Meshes.Count; w++)
         {
+            var mesh = world.Meshes[w];
+
             if (!mesh.Visible || mesh.Opacity <= 0f || mesh.Triangles.Length == 0)
             {
                 continue;
             }
 
             meshes.Add(mesh);
+            worldIndices.Add(w);
             total += mesh.Triangles.Length;
         }
 
@@ -191,7 +199,7 @@ public sealed class SceneGeometry
 
         return new SceneGeometry(
             positions, normals, texCoords, tangents,
-            meshIndices, triangleIndices, [.. meshes],
+            meshIndices, [.. worldIndices], triangleIndices, [.. meshes],
             anyTexCoords, anyTangents);
     }
 

@@ -16,6 +16,8 @@ public sealed class GpuMesh : IDisposable
     private uint _colorBuffer;
     private uint _colorTexture;
 
+    private Vector4[]? _tangentSource;
+
     private int _vertexCapacity;
     private int _indexCapacity;
 
@@ -65,12 +67,16 @@ public sealed class GpuMesh : IDisposable
 
         var vertices = mesh.Vertices;
 
-        if (!force && ReferenceEquals(Source, vertices) && IndexCount == mesh.Triangles.Length * 3)
+        // Tangents are compared as well: a painter switch can build them for a mesh that was
+        // first uploaded without, and its vertex array does not change when that happens.
+        if (!force && ReferenceEquals(Source, vertices) && ReferenceEquals(_tangentSource, mesh.Tangents)
+            && IndexCount == mesh.Triangles.Length * 3)
         {
             return;
         }
 
         Source = vertices;
+        _tangentSource = mesh.Tangents;
 
         var count = vertices.Length;
         var normals = mesh.NormVertices;

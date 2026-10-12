@@ -62,7 +62,24 @@ public sealed class PathTracer : IRenderer
         events.Add(GraphicsEventKind.FrameBegin, -1, Diagnostics.FrameNumber);
         events.Add(GraphicsEventKind.RendererSetViewport, SceneObjectIds.RenderTarget, surface.Width, surface.Height);
 
+        // The same per-frame surface state the rasterizer sets in BeginFrame. Without it a fresh
+        // surface has no depth range (so SSAO and SSR find nothing to read), and one last used by
+        // the rasterizer still records ambient light that this frame never writes.
         surface.SetHighDynamicRange(scene.HighDynamicRange);
+        surface.SetOverdrawCounting(false);
+        surface.SetMipLevelRecording(false);
+        surface.SetReflectanceRecording(false);
+        surface.SetAmbientRecording(false);
+
+        if (scene.Projection.IsOrthographic)
+        {
+            surface.SetLinearDepthRange();
+        }
+        else
+        {
+            surface.SetDepthRange(scene.Projection.ZNear, scene.Projection.ZFar);
+        }
+
         surface.Clear();
 
         Refresh(world, surface.Width, surface.Height);

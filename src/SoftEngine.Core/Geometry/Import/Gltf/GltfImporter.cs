@@ -155,7 +155,9 @@ public static class GltfImporter
                 }
             }
 
-            for (var i = 0; i < _nodes.Length; i++)
+            // A file with scenes shows the chosen one and nothing else; only a file without
+            // any scene has its loose nodes collected under the root.
+            for (var i = 0; i < _nodes.Length && root.Scenes.Count == 0; i++)
             {
                 if (!parented[i] && _nodes[i] is { } orphan)
                 {
@@ -226,7 +228,7 @@ public static class GltfImporter
                     continue;
                 }
 
-                if (Node(i) is not { } node)
+                if (Node(i) is not { } node || !_root.IsAncestorOf(node))
                 {
                     continue;
                 }
@@ -547,7 +549,9 @@ public static class GltfImporter
             }
 
             var source = root.Materials[index];
-            var material = new Material();
+
+            // The spec's default baseColorFactor is white; Material's own default is gray.
+            var material = new Material { Diffuse = new LinearColor(1f, 1f, 1f).ToColorRGB() };
 
             var blended = string.Equals(source.AlphaMode, "BLEND", StringComparison.Ordinal);
             var masked = string.Equals(source.AlphaMode, "MASK", StringComparison.Ordinal);

@@ -86,6 +86,22 @@ public class ModalTransformTests
     }
 
     [Fact]
+    public void Translate_ConstrainedToXWithSnap_LeavesTheOtherAxesWhereTheyWere()
+    {
+        var (scene, transform, cube) = Setup();
+        cube.Position = new Vector3(0.3f, 0.7f, 0f);
+
+        transform.Snap = new GizmoSnap { Enabled = true, TranslateStep = 1f };
+        transform.Begin(scene, cube, GizmoMode.Translate, Center, Center);
+        transform.Constrain(GizmoAxis.X);
+        transform.Update(scene, Center + 60, Center - 25);
+
+        Assert.Equal(MathF.Round(cube.Position.X), cube.Position.X, 4);
+        Assert.Equal(0.7f, cube.Position.Y, 4);
+        Assert.Equal(0f, cube.Position.Z, 4);
+    }
+
+    [Fact]
     public void Constrain_TheSameAxisTwice_LetsItGoAgain()
     {
         var (scene, transform, cube) = Setup();

@@ -37,7 +37,8 @@ try
     return RenderCommand.Execute(options);
 }
 catch (Exception exception) when (
-    exception is IOException or NotSupportedException or InvalidDataException or UnauthorizedAccessException)
+    exception is IOException or NotSupportedException or InvalidDataException or UnauthorizedAccessException
+        or System.Text.Json.JsonException or System.Xml.XmlException)
 {
     Console.Error.WriteLine($"softengine: {exception.Message}");
     return 1;

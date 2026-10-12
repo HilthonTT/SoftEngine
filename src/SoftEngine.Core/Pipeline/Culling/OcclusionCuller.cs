@@ -108,7 +108,9 @@ public sealed class OcclusionCuller
         {
             var mesh = meshes[i];
 
-            if (!mesh.Visible || mesh.DrawsAfterOpaque() || mesh.Triangles.Length == 0)
+            // A cutout is drawn with the opaque meshes but is not solid: what shows through its
+            // holes must not be culled behind it.
+            if (!mesh.Visible || mesh.DrawsAfterOpaque() || mesh.Material is { IsCutout: true } || mesh.Triangles.Length == 0)
             {
                 continue;
             }

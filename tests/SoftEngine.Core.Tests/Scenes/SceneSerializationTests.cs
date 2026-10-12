@@ -195,6 +195,23 @@ public class SceneSerializationTests
         Assert.Equal(new Vector3(9f, 9f, 9f), scene.World.Meshes[0].Position);
     }
 
+    [Theory]
+    [InlineData("perspective")]
+    [InlineData("orthographic")]
+    public void Apply_OfAProjectionThatNamesOnlyItsKind_GivesAUsableMatrix(string kind)
+    {
+        var scene = NewScene();
+
+        SceneSerializer.Apply(SceneSerializer.FromJson($$"""
+            { "projection": { "kind": "{{kind}}" } }
+            """), scene);
+
+        var matrix = scene.Projection.ProjectionMatrix(64f, 64f);
+
+        Assert.True(float.IsFinite(matrix.M11) && matrix.M11 > 0f);
+        Assert.True(float.IsFinite(matrix.M22) && matrix.M22 > 0f);
+    }
+
     [Fact]
     public void CaptureAndApply_OfALightWithNoFalloff_KeepsItInfinite()
     {

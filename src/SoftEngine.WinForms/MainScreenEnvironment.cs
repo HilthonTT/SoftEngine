@@ -128,6 +128,8 @@ public sealed partial class MainScreen
         btnBake.Enabled = false;
         UseWaitCursor = true;
 
+        var world = scene.World;
+
         try
         {
             var volume = await Task.Run(() => IrradianceBaker.Bake(scene, new BakeSettings
@@ -136,6 +138,13 @@ public sealed partial class MainScreen
                 Rays = 128,
                 Bounces = 2,
             }));
+
+            // Another world may have been loaded while this one baked. Its probes would light
+            // the new geometry with the old one's bounds and occlusion.
+            if (!ReferenceEquals(panel3D1.Scene?.World, world))
+            {
+                return;
+            }
 
             _bakedLight = volume;
 

@@ -113,6 +113,22 @@ public class BvhTests
     }
 
     [Fact]
+    public void Pick_PastAHiddenMesh_ReportsTheIndexInTheWorld()
+    {
+        var world = new SimpleWorld();
+        world.Meshes.Add(new Cube { Visible = false });
+        world.Meshes.Add(new Cube());
+
+        var ray = new Ray(new Vector3(0f, 0f, 10f), -Vector3.UnitZ);
+
+        var accelerated = ScenePicker.Pick(Bvh.Build(SceneGeometry.Build(world)), ray);
+
+        Assert.NotNull(accelerated);
+        Assert.Equal(1, accelerated!.Value.MeshIndex);
+        Assert.Equal(ScenePicker.Pick(world, ray)!.Value.MeshIndex, accelerated.Value.MeshIndex);
+    }
+
+    [Fact]
     public void Intersect_AgreesWithThePicker()
     {
         var world = CubeGrid(3, spacing: 2f);

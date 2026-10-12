@@ -12,6 +12,10 @@ internal static class Theme
     public static readonly Color Accent = Color.FromArgb(138, 124, 245);
     public static readonly Color Selection = Color.FromArgb(56, 52, 84);
 
+    // The logo is the executable's own icon (ApplicationIcon in the .csproj), so there is
+    // one copy of it and every window shows the same thing the taskbar and Explorer do.
+    public static readonly Icon? AppIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+
     public static GraphicsPath RoundedRect(Rectangle bounds, int radius)
     {
         var d = radius * 2;

@@ -49,9 +49,12 @@ public sealed class ProjectionState
 {
     public string Kind { get; set; } = "perspective";
 
-    public float FieldOfView { get; set; }
+    // A hand-written scene may name the kind and nothing else. Zero is not a usable value
+    // for either — a zero field of view throws and a zero view height divides by zero — so
+    // the defaults are the ones the viewer and the CLI start with.
+    public float FieldOfView { get; set; } = 40f * MathF.PI / 180f;
 
-    public float ViewHeight { get; set; }
+    public float ViewHeight { get; set; } = 10f;
 
     public float Near { get; set; } = 0.01f;
 

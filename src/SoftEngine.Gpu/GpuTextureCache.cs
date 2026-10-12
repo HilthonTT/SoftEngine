@@ -16,7 +16,9 @@ public sealed class GpuTextureCache : IDisposable
 
     private readonly GL _gl;
 
-    private readonly Dictionary<Texture, uint> _textures = [];
+    // Keyed by the sampler state too: the shadow pass reads a cutout's albedo unfiltered, and the
+    // viewer can change filtering at run time, so one texture may be needed under several states.
+    private readonly Dictionary<(Texture Texture, TextureFiltering Filtering, bool MipMaps), uint> _textures = [];
     private readonly Dictionary<CubeMap, uint> _cubes = [];
 
     /// <summary>The driver's anisotropy ceiling; 0 once queried on a driver without the extension, -1 until asked.</summary>
@@ -92,7 +94,7 @@ public sealed class GpuTextureCache : IDisposable
     {
         ArgumentNullException.ThrowIfNull(texture, nameof(texture));
 
-        if (_textures.TryGetValue(texture, out var existing))
+        if (_textures.TryGetValue((texture, filtering, mipMaps), out var existing))
         {
             return existing;
         }
@@ -133,7 +135,7 @@ public sealed class GpuTextureCache : IDisposable
             ApplyAnisotropy();
         }
 
-        _textures[texture] = handle;
+        _textures[(texture, filtering, mipMaps)] = handle;
         return handle;
     }
 
