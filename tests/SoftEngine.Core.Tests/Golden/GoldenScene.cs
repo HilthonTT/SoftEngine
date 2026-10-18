@@ -18,33 +18,12 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Tests.Golden;
 
-/// <summary>
-/// One frame the suite keeps a picture of.
-///
-/// <para>
-/// The scenes are chosen the way the benchmark scenes are, but along a different axis. A
-/// benchmark covers the shapes of *work* the renderer does; a baseline covers the paths that
-/// produce a *value* — every painter, the shadow pass and its cascades, the material and
-/// physically-based shading models, transparency, fog, the post-process effects, skinning, and
-/// the resolve at the end. Each is a body of arithmetic no unit test pins down end to end, and
-/// each is one edit away from being quietly wrong in a way only the frame shows.
-/// </para>
-///
-/// <para>
-/// Everything is generated: no scene loads a file. A baseline that depends on a model in the
-/// front-end's assets folder is a baseline that breaks when the model is re-exported, which
-/// teaches everyone to re-record on failure without looking — the exact habit the harness is
-/// built to prevent.
-/// </para>
-/// </summary>
 internal sealed class GoldenScene(string name, string description, Action<GoldenScene.Build> build)
 {
-    /// <summary>Small enough that thirteen of them are a fast test and a modest set of files, large enough to see a shading change in.</summary>
     public const int Width = 320;
 
     public const int Height = 180;
 
-    /// <summary>The renderer, scene and painter a case assembles, handed to it half-built.</summary>
     internal sealed class Build
     {
         public required Renderer Renderer { get; init; }
@@ -53,18 +32,8 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
 
         public IPainter Painter { get; set; } = new GouraudPainter();
 
-        /// <summary>
-        /// Supersampling factor. Above 1 the whole pipeline runs at a multiple of the display
-        /// resolution and the frame is averaged back down, which is the one case where the
-        /// image verified is not the render target itself.
-        /// </summary>
         public int SuperSample { get; set; } = 1;
 
-        /// <summary>
-        /// Whether transparency is resolved per pixel rather than by sorting the transparent
-        /// triangles. Off, as the renderer leaves it, so a scene that wants it says so — and the
-        /// scenes that do not keep the baselines they had before it existed.
-        /// </summary>
         public bool OrderIndependentTransparency { get; set; }
 
         public SimpleWorld World => (SimpleWorld)Scene.World;
@@ -78,19 +47,12 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
 
     public string Description { get; } = description;
 
-    /// <summary>Renders this scene and returns the finished image, together with its dimensions.</summary>
-    /// <param name="occlusionCulling">
-    /// Left on, as the renderer leaves it. Switching it off is how a test asks whether the pass
-    /// changed the picture — which it must not, since it only ever decides what to skip.
-    /// </param>
     public (int[] Pixels, int Width, int Height) Render(bool occlusionCulling = true)
     {
         var renderer = new Renderer();
         renderer.Settings.BackFaceCulling = true;
         renderer.Settings.OcclusionCulling = occlusionCulling;
 
-        // The event log allocates nothing but does real work per mesh, and none of it can
-        // reach a pixel. A baseline should be a recording of the renderer, not of its debugger.
         renderer.Diagnostics.Events.IsEnabled = false;
 
         var built = new Build
@@ -130,7 +92,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
         return (resolved, Width, Height);
     }
 
-    /// <summary>A camera that does not move, so a baseline is a function of the scene alone.</summary>
     private sealed class StillCamera(Vector3 position, Vector3 target) : ICamera
     {
         public Vector3 Position { get; set; } = position;
@@ -148,9 +109,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
             "one sphere per unlit and per-triangle painter, side by side",
             b =>
             {
-                // Three painters cannot draw one frame, so the case that covers the cheap end
-                // of the ladder is Gouraud over geometry whose facets are large enough that
-                // per-vertex interpolation is unmistakable.
                 b.Meshes.Add(Sphere(2, new Vector3(-1.3f, 0f, 0f), 1f, new ColorRGB(210, 90, 70)));
                 b.Meshes.Add(Sphere(4, new Vector3(1.3f, 0f, 0f), 1f, new ColorRGB(70, 150, 210)));
                 b.Lights.Add(Sun(1.1f));
@@ -164,9 +122,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
                 b.Meshes.Add(Sphere(4, new Vector3(0f, 0.35f, 0f), 1f, ColorRGB.Gray));
                 b.Meshes.Add(Ground(6f, -0.7f, new ColorRGB(150, 148, 140)));
 
-                // Two coloured lights rather than one white one: the whole point of summing
-                // over a light list is that the lit side and the fill differ in hue, and a
-                // single light would verify none of it.
                 b.Lights.Add(new PointLight
                 {
                     Position = new Vector3(2.4f, 2.6f, 2.2f),
@@ -206,8 +161,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
             "the same pass split into three cascades over a long view",
             b =>
             {
-                // A receding row is the case cascades exist for: the near cubes want texels
-                // the far ones would otherwise take an equal share of.
                 for (var i = 0; i < 9; i++)
                 {
                     b.Meshes.Add(Cube(new Vector3(i % 2 == 0 ? -1.1f : 1.1f, 0.5f, -i * 3.1f), 0.5f,
@@ -228,9 +181,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
             "a checkerboard floor running to the horizon",
             b =>
             {
-                // The one scene where mip selection is the subject. A checkerboard receding to
-                // the horizon aliases into noise the moment the chain or the level choice is
-                // wrong, and does it in a way no per-pixel assertion would describe.
                 var floor = Ground(40f, -1f, ColorRGB.White);
                 floor.TexCoords = [new Vector2(0f, 0f), new Vector2(16f, 0f), new Vector2(16f, 16f), new Vector2(0f, 16f)];
                 floor.Texture = Texture.Checkerboard(128, 8, new ColorRGB(232, 228, 216), new ColorRGB(52, 60, 78));
@@ -247,12 +197,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
             "a tessellated floor whose triangles each choose their own mip level, blended",
             b =>
             {
-                // The floor above is two triangles, so it holds two mip levels and shows the
-                // boundary between them once. The artifact trilinear filtering exists for is
-                // what happens when the ground is tessellated: this engine chooses a level per
-                // triangle, so neighbouring triangles at slightly different depths pick
-                // different levels and the seam between them is visible as a change in
-                // sharpness. A grid of them puts every one of those seams in one picture.
                 var floor = new PlaneMesh(40f, 40f, 12, 12, uvScale: 16f)
                 {
                     Position = new Vector3(0f, -1f, 0f),
@@ -308,10 +252,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
                     {
                         var sphere = Sphere(3, new Vector3(x - 2f, y - 1f, 0f) * 1.15f, 0.5f, ColorRGB.Gray);
 
-                        // On the material rather than the triangle colours, which this painter
-                        // only falls back to when a material has nothing to say. A warm albedo
-                        // rather than a grey one because the metallic row *tints its reflection
-                        // with it* — against grey, a broken tint and a working one look alike.
                         sphere.Material.Diffuse = new ColorRGB(214, 162, 92);
                         sphere.Material.Roughness = (x + 0.5f) / 5f;
                         sphere.Material.Metallic = y / 2f;
@@ -322,9 +262,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
 
                 b.Lights.Add(Sun(1.2f));
 
-                // The environment is half of what this painter reads: the split-sum lookup and
-                // the ambient cube both come off it, and with no sky the grid would be testing
-                // the direct term alone.
                 b.Scene.Environment = SkyBox.Gradient(SunDirection, resolution: 32);
                 b.Scene.HighDynamicRange = true;
                 b.Scene.GammaCorrect = true;
@@ -338,8 +275,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
             {
                 b.Meshes.Add(Cube(new Vector3(0f, 0f, -1.2f), 0.9f, new ColorRGB(196, 92, 76)));
 
-                // Overlapping, at stepped depths, so the frame is only right if the panes were
-                // sorted farthest-first and blended in linear light.
                 b.Meshes.Add(Pane(new Vector3(-0.55f, 0.25f, 0.6f), 1.5f, new ColorRGB(90, 200, 140), 0.45f));
                 b.Meshes.Add(Pane(new Vector3(0.15f, -0.1f, 1.1f), 1.5f, new ColorRGB(120, 140, 235), 0.5f));
                 b.Meshes.Add(Pane(new Vector3(0.7f, 0.35f, 1.6f), 1.5f, new ColorRGB(240, 200, 90), 0.4f));
@@ -358,10 +293,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
             {
                 b.Meshes.Add(Cube(new Vector3(0f, -0.1f, -1.4f), 0.8f, new ColorRGB(196, 92, 76)));
 
-                // Turned about Y so that each pane passes through the other two: along part of
-                // every seam one is nearer and along the rest the other is. No order to draw
-                // them in is right everywhere, which is the whole subject of this baseline —
-                // the sorted path renders it differently, and there is a test that says so.
                 var green = Pane(new Vector3(-0.35f, 0.1f, 0.3f), 2.2f, new ColorRGB(90, 200, 140), 0.45f);
                 var blue = Pane(new Vector3(0.35f, 0.1f, 0.3f), 2.2f, new ColorRGB(120, 140, 235), 0.5f);
                 var amber = Pane(new Vector3(0f, 0.15f, 0.5f), 2.2f, new ColorRGB(240, 200, 90), 0.4f);
@@ -390,9 +321,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
                 b.Meshes.Add(Sphere(4, new Vector3(-1.2f, 0f, 0f), 0.9f, new ColorRGB(230, 232, 236)));
                 b.Meshes.Add(Cube(new Vector3(1.15f, 0f, 0.2f), 0.75f, new ColorRGB(180, 70, 60)));
 
-                // Bright enough to sit well above white, which is the whole reason the target
-                // is a float buffer: what bloom gathers and what the curve rolls off are both
-                // range an 8-bit target would have flattened before either ran.
                 var lamp = Sphere(3, new Vector3(0.1f, 1.35f, 1f), 0.28f, ColorRGB.White);
                 lamp.Material.Emissive = new ColorRGB(255, 236, 190);
                 lamp.Material.EmissiveStrength = 7f;
@@ -400,9 +328,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
                 b.Meshes.Add(lamp);
                 b.Meshes.Add(Ground(6f, -1.05f, new ColorRGB(120, 124, 132)));
 
-                // The emissive lamp carries the range this case is about; the sun only has to
-                // light the rest, and a brighter one would clip the sphere into a flat white
-                // disc that no change to the curve could ever move.
                 b.Lights.Add(Sun(1.3f));
 
                 b.Scene.HighDynamicRange = true;
@@ -423,9 +348,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
             "boxes meeting a floor, with the depth-buffer occlusion pass on",
             b =>
             {
-                // Contact points and creases are the whole subject, so the geometry is chosen
-                // to have them: three boxes sitting on a floor, close enough to shade each
-                // other's corners.
                 b.Meshes.Add(Cube(new Vector3(-1.05f, -0.35f, 0f), 0.65f, new ColorRGB(198, 196, 190)));
                 b.Meshes.Add(Cube(new Vector3(0.1f, -0.45f, 0.55f), 0.55f, new ColorRGB(198, 196, 190)));
                 b.Meshes.Add(Cube(new Vector3(1.15f, -0.25f, -0.15f), 0.75f, new ColorRGB(198, 196, 190)));
@@ -448,11 +370,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
             "coloured blocks over a polished floor that reflects them",
             b =>
             {
-                // Saturated and distinct, because the floor reflects them: a reflection that
-                // lost its tint, or picked up the wrong block, is a different picture rather
-                // than a slightly different one. On the material, like the sphere grid above —
-                // this painter reads the triangle colours only when a material says nothing,
-                // and every mesh carries one.
                 b.Meshes.Add(Block(new Vector3(-1.15f, -0.35f, -0.2f), 0.6f, new ColorRGB(214, 62, 54)));
                 b.Meshes.Add(Block(new Vector3(0.15f, -0.5f, 0.5f), 0.45f, new ColorRGB(74, 186, 96)));
                 b.Meshes.Add(Block(new Vector3(1.3f, -0.25f, -0.35f), 0.7f, new ColorRGB(72, 118, 214)));
@@ -484,17 +401,10 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
 
                 b.Renderer.PostProcess = stack;
 
-                // With a sky, so the frame shows both halves of what a reflective surface does
-                // here: the environment the shader already gave it, and the local scene this
-                // pass marches for. Without one the floor would be black wherever a ray missed,
-                // which makes a missed ray look like a working one.
                 b.Scene.Environment = SkyBox.Gradient(SunDirection, resolution: 32);
                 b.Scene.HighDynamicRange = true;
                 b.Scene.GammaCorrect = true;
 
-                // Low and close to the floor: a reflection is a grazing-angle phenomenon, and
-                // a camera looking down at it would test the four percent rather than the
-                // ninety.
                 b.Scene.Camera = Look(new Vector3(0f, -0.35f, 4.4f), new Vector3(0f, -0.5f, -0.5f));
                 b.Painter = new PbrPainter();
             }),
@@ -531,14 +441,8 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
                 b.Meshes.Add(rig.Mesh);
                 b.Lights.Add(Sun(1.2f));
 
-                // One step of a fixed length rather than however long the last frame took:
-                // the pose is part of what the baseline records, so the clock has to be too.
                 b.World.Update(0.75f);
 
-                // No wireframe, though seeing the rings crowd on the inside of a bend is how a
-                // person reads a pose. At this size the overlay covers the tube in magenta and
-                // the shading underneath stops being verified at all — and the overlay has a
-                // case of its own further down.
                 b.Scene.Camera = Look(new Vector3(2.6f, 2.4f, 3.6f), new Vector3(0f, 2.1f, 0f));
                 b.Painter = new GouraudPainter();
             }),
@@ -563,10 +467,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
             "a wall with meshes hidden behind it and meshes reaching past its edges",
             b =>
             {
-                // Enough meshes for the occlusion pass to consider the scene worth its time, so
-                // the committed baseline is a picture of a frame the pass really did act on.
-                // What it pins is the invariant: the culled frame and the uncalled one are the
-                // same picture, and the picture is this one.
                 b.Meshes.Add(Wall(1.6f, 0f, new ColorRGB(120, 126, 140)));
 
                 for (var i = 0; i < 40; i++)
@@ -609,11 +509,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
     private static DirectionalLight Sun(float intensity) =>
         new() { Direction = SunDirection, Intensity = intensity };
 
-    /// <summary>
-    /// A sphere as a plain <see cref="Mesh"/> rather than the primitive itself: primitives
-    /// share one static colour array between every instance, so a scene of them would be
-    /// several views of the same colours.
-    /// </summary>
     private static Mesh Sphere(int recursion, Vector3 position, float radius, ColorRGB color)
     {
         var source = new IcoSphere(recursion);
@@ -667,7 +562,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
             [color, color]);
     }
 
-    /// <summary>A square facing the camera, large enough to stand in front of things.</summary>
     private static Mesh Wall(float half, float z, ColorRGB color)
     {
         Vector3[] vertices =
@@ -687,7 +581,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
             [color, color]);
     }
 
-    /// <summary>A square facing the camera, used where the subject is what happens when they overlap.</summary>
     private static Mesh Pane(Vector3 position, float size, ColorRGB color, float opacity)
     {
         var half = size * 0.5f;
@@ -702,8 +595,6 @@ internal sealed class GoldenScene(string name, string description, Action<Golden
 
         Triangle[] triangles = [new(0, 1, 2), new(0, 2, 3)];
 
-        // Facing the camera, which sits on +Z. A pane normal pointing away would leave every
-        // one of them unlit, and the case would verify the blend over a set of black squares.
         var normal = Vector3.UnitZ;
 
         return new Mesh(vertices, triangles, [normal, normal, normal, normal], [color, color])

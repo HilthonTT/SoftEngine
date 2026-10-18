@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo/softengine.svg" alt="SoftEngine logo: a triangle rasterized into shaded pixels" width="128" height="128">
+</p>
+
 # SoftEngine
 
 [![CI](https://github.com/HilthonTT/SoftEngine/actions/workflows/ci.yml/badge.svg)](https://github.com/HilthonTT/SoftEngine/actions/workflows/ci.yml)
@@ -23,19 +27,28 @@ a reference.
 ## What it does
 
 - Loads `.obj`, `.dae` (Collada) and **glTF 2.0** `.gltf`/`.glb`, plus procedural primitives.
-- Tiled, vectorized scanline fill with a z-buffer, hierarchical-Z and **occlusion culling**.
+- Tiled, vectorized scanline fill with a z-buffer, hierarchical-Z and **occlusion culling**,
+  or a **block-based half-space** fill over the same tiles.
 - Eight shading modes from wireframe to **physically based** (Cook-Torrance metallic-roughness).
+- Texture filtering up to **anisotropic**, which measures the two axes of a pixel's footprint
+  apart so a floor seen edge-on stays sharp instead of blurring.
 - Any number of coloured directional / point / spot lights, in an **HDR linear float target**.
 - **Cascaded shadow maps**, SSAO, and an environment cube map as both skybox and ambient — loadable
   from a Radiance `.hdr` panorama that keeps its range.
+- SSAO darkens **the ambient term alone**, from a per-pixel record of what ambient light contributed,
+  so a face in full sun is not dimmed for standing near a corner.
 - **Baked indirect light**: the path tracer measured into a grid of probes the rasterizer reads.
 - **Screen-space reflections** of the local scene, over the environment reflection the shader
   already applies — tinted per channel, so a gold surface reflects a white wall as gold.
 - Materials: albedo, normal, specular, metallic-roughness and emissive maps, plus **alpha cutouts**.
+- **Refraction**: a transmissive material reads the frame behind it — thickness bends what it shows,
+  roughness frosts it, and glTF's transmission, ior and volume extensions drive it.
 - **Scene graph**, keyframed **animation** with clip **blending**, and linear-blend **skinning**.
 - Post-process stack: bloom, tone mapping, FXAA, vignette. Supersampling, **TAA** and **motion blur**.
 - Transparency sorted per triangle, or **order-independent** and resolved per pixel.
 - **Scene editing**: ray-cast picking, drag gizmos and Blender-style keyboard transforms, undoable.
+- A **path-traced reference** with an a-trous **denoiser** guided by its own albedo, normals and
+  depth, so a handful of paths per pixel is already an image you can read.
 - **JSON scene files**, a **headless CLI** (stills and sequences), and a **graphics debugger** with
   buffer views and frame history.
 
@@ -52,7 +65,7 @@ a reference.
 ```bash
 dotnet build SoftEngine.slnx
 dotnet run --project src/SoftEngine.WinForms                  # interactive viewer
-dotnet test tests/SoftEngine.Core.Tests                       # 796 tests
+dotnet test tests/SoftEngine.Core.Tests                       # 949 tests
 dotnet test tests/SoftEngine.WinForms.Tests                   # 88 viewer tests, Windows only
 dotnet run -c Release --project bench/SoftEngine.Benchmarks   # Release, or you measure the debugger
 ```
@@ -96,6 +109,16 @@ live in `%APPDATA%\SoftEngine\viewer.json`; nothing in there may throw, so a cor
 viewer is a demonstration of a software rasterizer, and defaulting to the graphics card would quietly
 show you something else.
 
+On a laptop with two adapters, **View ▸ Rendered by ▸ Graphics adapter** names them and picks
+between them — the driver hands an application the integrated one unless it is told otherwise, which
+is rarely what "render on the GPU" was meant to mean. The submenu appears only where there is a
+choice, and the entries are the devices themselves rather than words about power:
+
+> Automatic  ·  High performance — NVIDIA GeForce RTX 5060 Laptop GPU  ·  Power saving — Intel(R) Graphics
+
+The driver's OpenGL is loaded once per session, so changing this once the viewport has been on the
+GPU takes effect at the next launch, and the viewer says so rather than appearing to do nothing.
+
 ## Headless rendering
 
 ```bash
@@ -106,14 +129,15 @@ dotnet run -c Release --project src/SoftEngine.Cli -- model.gltf -o frame.png -w
 | --- | --- |
 | `-w`, `-h`, `--ss` | resolution and supersampling |
 | `-p`, `--post`, `--view`, `--filter` | painter, post effects, buffer view, texture filtering |
+| `--fill` | `scanline` (default) or `half-space` — how triangles are filled |
 | `--yaw`, `--pitch`, `--zoom`, `--camera`, `-t` | where to stand, and how far into the animation |
 | `--env`, `--environment-size`, `--hdr-sky` | light it with a panorama or the linear-light sky |
 | `--shadows`, `--cascades` | shadow pass |
 | `--oit` | resolve transparency per pixel instead of by sorting the triangles |
 | `--bake`, `--bake-resolution`, `--bake-rays`, `--bake-bounces` | measure indirect light into probes first |
-| `--trace`, `--samples`, `--bounces`, `--physical` | path-trace instead of rasterizing |
+| `--trace`, `--samples`, `--bounces`, `--physical`, `--denoise` | path-trace instead of rasterizing |
 | `--frames`, `--fps`, `--turntable`, `--shutter` | render a numbered sequence |
-| `--backend`, `--gpu`, `--cpu`, `--gpu-info` | where the frame is filled |
+| `--backend`, `--gpu`, `--cpu`, `--adapter`, `--gpu-info` | where the frame is filled, and on which adapter |
 | `--scene`, `--stats` | apply a saved scene; print counts and timings |
 
 ```bash
@@ -138,7 +162,8 @@ src/
 │   ├── Acceleration/       # world triangles flattened, and the SAH BVH over them
 │   ├── Animation/          # tracks, interpolation, channels, clips, playback, blending
 │   ├── Baking/             # the irradiance bake and what it is allowed to spend
-│   ├── Buffers/            # FrameBuffer, velocity, fragments, pooled vertex/world buffers
+│   ├── Buffers/            # FrameBuffer, velocity, fragments, refraction backdrop, pooled
+│   │                       #   vertex/world buffers
 │   ├── Diagnostics/        # stats, event log, pixel history, frame captures
 │   ├── Editing/            # undoable edits and the history the tools record into
 │   ├── Geometry/           # IMesh, Material, triangles, tangents — Import/ Primitives/
@@ -148,11 +173,13 @@ src/
 │   ├── Picking/            # ray, intersection, scene picker
 │   ├── Pipeline/           # Renderer, clipping, sky — Culling/ Debugging/ PostProcess/
 │   │                       #   Shadows/ Temporal/
-│   ├── Rasterization/      # scanline filler, tiles, sampling — Painters/ Shaders/ Varyings/
+│   ├── Rasterization/      # scanline and half-space fills, tiles, sampling — Painters/ Shaders/ Varyings/
 │   ├── Scenes/             # world, camera, projections, lights — Graph/ Serialization/
-│   ├── Shading/            # linear colour, light sets, ambient cube, GGX, BRDF LUT
+│   ├── Shading/            # linear colour, light sets, ambient cube, GGX, BRDF LUT,
+│   │                       #   the surface channel a shader reports per pixel
 │   ├── Textures/           # Texture, filtering, cube maps, equirectangular, procedural sky
-│   └── Tracing/            # path tracer, the integrator it shares with the bake, sampler
+│   └── Tracing/            # path tracer, the integrator it shares with the bake, sampler,
+│                           #   denoiser
 ├── SoftEngine.Gpu/         # OpenGL backend via Silk.NET, and Shaders/
 ├── SoftEngine.Cli/         # headless renderer (net10.0 console)
 │   ├── Options/            # the flags, their parser, their bounds, the usage text
@@ -168,7 +195,7 @@ tests/SoftEngine.WinForms.Tests/ # the viewer's window-free logic (net10.0-windo
 
 ## Testing
 
-`dotnet test tests/SoftEngine.Core.Tests` — **796 tests**. Alongside the unit tests, eighteen
+`dotnet test tests/SoftEngine.Core.Tests` — **949 tests**. Alongside the unit tests, eighteen
 generated scenes are rendered headless at 320×180 and compared against committed PNG baselines, so a
 change that alters the picture shows up in the diff as a picture. `SOFTENGINE_UPDATE_GOLDEN=1` is the
 only way to re-record one, and a failing run drops the actual frame and a diff image beside the
@@ -188,13 +215,25 @@ image test fails. If your change moves a golden baseline, re-record it deliberat
 baseline is the one thing that makes that suite worthless.
 
 Security reports go through [private advisories](SECURITY.md), not public issues. The file parsers
-— glTF, Collada, OBJ, PNG, Radiance HDR — are where the real attack surface is.
+— glTF, Collada, OBJ, PNG, Radiance HDR — are where the real attack surface is, and each of them is
+swept by a seeded mutation fuzzer that requires a broken file to fail as `InvalidDataException` or
+`NotSupportedException` and nothing else. `SOFTENGINE_FUZZ_ROUNDS=200000 dotnet test` runs the long
+version; see [DESIGN.md § Reading files nobody here wrote](DESIGN.md#reading-files-nobody-here-wrote).
 
 ## Credits
 
 Started from David Rousset's
 [*Learning how to write a 3D soft engine from scratch*](https://www.davrous.com/2013/06/13/tutorial-series-learning-how-to-write-a-3d-soft-engine-from-scratch-in-c-typescript-or-javascript/)
 before growing its own pipeline, rasterizer and shading system.
+
+The glTF demo models come from the Khronos
+[glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets):
+
+- **Fox**: model by PixelMannen ([CC0](https://creativecommons.org/publicdomain/zero/1.0/)); rigging
+  and animation by tomkranis, glTF conversion by @AsoboStudio and @scurest
+  ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)).
+- **Water bottle** (Microsoft) and **Lantern** (sbtron for Microsoft):
+  [CC0](https://creativecommons.org/publicdomain/zero/1.0/).
 
 ## License
 

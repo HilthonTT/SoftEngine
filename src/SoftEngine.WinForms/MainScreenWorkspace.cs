@@ -3,34 +3,12 @@ using SoftEngine.WinForms.Dialogs;
 
 namespace SoftEngine.WinForms;
 
-/// <summary>
-/// Everything about the viewer as an <em>application</em> rather than as a renderer: where its
-/// window is, which panels are open, what it has opened lately, and how any of that is discovered.
-///
-/// <para>
-/// Kept apart from <c>MainScreen.cs</c> because none of it is about drawing. That file wires
-/// checkboxes to the pipeline; this one is the shell around it.
-/// </para>
-///
-/// <para>
-/// Named <c>MainScreenWorkspace.cs</c> rather than <c>MainScreen.Workspace.cs</c> on purpose.
-/// <c>.Designer.cs</c> is special-cased by the SDK, but any other dotted partial of a
-/// <see cref="Form"/> invites Visual Studio to generate a <c>.resx</c> beside it, and that file's
-/// manifest resource name collides with <c>MainScreen.resx</c> — an MSB3577 build break in a file
-/// nobody added and git never sees.
-/// </para>
-/// </summary>
 public sealed partial class MainScreen
 {
     private SidebarSection? _displaySection;
     private SidebarSection? _shadingSection;
     private SidebarSection? _postSection;
 
-    /// <summary>
-    /// What the workspace looked like before F11 hid it, or null when the viewport is not
-    /// focused. Restoring the panels that were open — rather than opening all of them — is the
-    /// difference between a mode you can leave and one that rearranges your desk on the way out.
-    /// </summary>
     private (bool Sidebar, bool PixelHistory, bool ObjectTable, bool EventList)? _beforeFocus;
 
     private void InitializeWorkspace()
@@ -63,22 +41,11 @@ public sealed partial class MainScreen
         mnuLayoutDebugger.Click += (s, e) => ApplyLayout(panels: true);
         mnuFocusViewport.CheckedChanged += (s, e) => ApplyFocusMode(mnuFocusViewport.Checked);
 
-        // The presets are shortcuts for the three checkboxes below them in the same menu, so the
-        // tick that says which one you are on has to follow those rather than the last click.
         mnuView.DropDownOpening += (s, e) => UpdateLayoutMenu();
     }
 
-    /// <summary>
-    /// Opens or closes all three debugger panels at once.
-    ///
-    /// Driving the menu items rather than the split containers keeps one path to the panels:
-    /// their <c>CheckedChanged</c> handlers are what actually collapse the panes, and are also
-    /// what the saved workspace is read back through.
-    /// </summary>
     private void ApplyLayout(bool panels)
     {
-        // Leaving focus mode by choosing a layout, rather than making somebody press F11 first to
-        // find out why the menu appears to do nothing.
         if (mnuFocusViewport.Checked)
         {
             mnuFocusViewport.Checked = false;
@@ -100,15 +67,6 @@ public sealed partial class MainScreen
         mnuLayoutDebugger.Checked = all && !mnuFocusViewport.Checked;
     }
 
-    /// <summary>
-    /// Hides everything that is not the picture, and puts it all back.
-    ///
-    /// <para>
-    /// The sidebar goes with the panels. A "focus the viewport" that left a 290-pixel column of
-    /// checkboxes standing would be answering a different question than the one F11 is pressed to
-    /// ask.
-    /// </para>
-    /// </summary>
     private void ApplyFocusMode(bool focused)
     {
         if (focused)
@@ -139,8 +97,6 @@ public sealed partial class MainScreen
 
         UpdateLayoutMenu();
 
-        // Whatever had the keyboard may have just been hidden, and the fly controls belong to the
-        // viewport anyway.
         panel3D1.Focus();
     }
 
@@ -160,7 +116,6 @@ public sealed partial class MainScreen
         RebuildRecentMenu();
     }
 
-    /// <summary>Records a file the user opened, and writes the list straight back to disk.</summary>
     private void RememberRecentFile(string path)
     {
         if (!_settings.RememberRecentFile(path))
@@ -172,21 +127,8 @@ public sealed partial class MainScreen
         RebuildRecentMenu();
     }
 
-    /// <summary>
-    /// Rebuilds the recent list.
-    ///
-    /// <para>
-    /// A file that has since been moved or deleted stays on the list, greyed out and saying so.
-    /// Silently dropping it would make the list appear to forget things at random; the entry is
-    /// also the only remaining record of where the file used to be.
-    /// </para>
-    /// </summary>
     private void RebuildRecentMenu()
     {
-        // The clear item is reused rather than rebuilt, so its handler is only ever wired once —
-        // which is also why it has to be taken out before the rest are disposed rather than after.
-        // Clear() detaches items without disposing them, so the entries built below would
-        // otherwise accumulate a menu's worth of controls on every open.
         mnuOpenRecent.DropDownItems.Remove(mnuClearRecent);
 
         foreach (var stale in mnuOpenRecent.DropDownItems.Cast<ToolStripItem>().ToArray())
@@ -202,9 +144,6 @@ public sealed partial class MainScreen
 
             var item = new ToolStripMenuItem
             {
-                // &-prefixed ordinal, so the first nine are reachable by one key once the menu is
-                // open. The path is escaped because a folder with an ampersand in it would
-                // otherwise swallow the next character into an accelerator.
                 Text = $"&{(index + 1) % 10}  {Path.GetFileName(path).Replace("&", "&&", StringComparison.Ordinal)}",
                 ToolTipText = exists ? path : $"{path}\n\nThis file is no longer there.",
                 Enabled = exists,
@@ -226,10 +165,6 @@ public sealed partial class MainScreen
         mnuOpenRecent.Enabled = _settings.RecentFiles.Count > 0;
     }
 
-    /// <summary>
-    /// <see cref="File.Exists(string?)"/> answers false for a malformed path, but a path on a
-    /// disconnected network share can still throw on the way to finding out.
-    /// </summary>
     private static bool SafeFileExists(string path)
     {
         try
@@ -259,15 +194,6 @@ public sealed partial class MainScreen
 
     #region Dropped files
 
-    /// <summary>
-    /// Lets a model, a scene or a panorama be opened by dropping it on the window.
-    ///
-    /// <para>
-    /// Both the form and the viewport accept the drop. Drag-and-drop targets whichever control is
-    /// under the pointer, and the viewport covers most of the window — registering only the form
-    /// would mean the drop failing everywhere it most obviously ought to work.
-    /// </para>
-    /// </summary>
     private void InitializeFileDrop()
     {
         foreach (var target in new Control[] { this, panel3D1 })
@@ -290,15 +216,11 @@ public sealed partial class MainScreen
             return;
         }
 
-        // The drop leaves the source application waiting on this handler, and loading a world is
-        // seconds of work. Activating first also puts the window in front, which is what somebody
-        // who just dropped something on it is expecting.
         Activate();
 
         await OpenPathAsync(path);
     }
 
-    /// <summary>The first dropped file this viewer knows what to do with, or null.</summary>
     private static string? DroppedPath(DragEventArgs e)
     {
         if (e.Data?.GetData(DataFormats.FileDrop) is not string[] paths)
@@ -321,16 +243,6 @@ public sealed partial class MainScreen
         Panorama,
     }
 
-    /// <summary>
-    /// What a path is, by extension.
-    ///
-    /// <para>
-    /// A scene is checked before anything else because <c>.scene.json</c> ends in <c>.json</c> and
-    /// nothing else here claims that extension. The image formats are panoramas rather than
-    /// textures because a texture has no meaning without a mesh to put it on, and a panorama is
-    /// the only thing the viewer can do with an image on its own.
-    /// </para>
-    /// </summary>
     private static FileKind KindOf(string path) => Path.GetExtension(path).ToLowerInvariant() switch
     {
         ".obj" or ".dae" or ".gltf" or ".glb" => FileKind.Model,
@@ -340,7 +252,6 @@ public sealed partial class MainScreen
         _ => FileKind.Unknown,
     };
 
-    /// <summary>Opens a file as whatever its extension says it is.</summary>
     private async Task OpenPathAsync(string path)
     {
         switch (KindOf(path))
@@ -394,15 +305,6 @@ public sealed partial class MainScreen
 
     #region Persistence
 
-    /// <summary>
-    /// Puts the window back where it was, if it is still somewhere a person can see.
-    ///
-    /// <para>
-    /// The bounds are checked against the screens that exist <em>now</em>. A window restored onto
-    /// a monitor that has since been unplugged is not merely inconvenient — it opens somewhere
-    /// with no way to drag it back, which is worse than ignoring the saved position entirely.
-    /// </para>
-    /// </summary>
     private void RestoreWindowPlacement()
     {
         if (_settings.Window is not { Width: > 0, Height: > 0 } placement)
@@ -412,8 +314,6 @@ public sealed partial class MainScreen
 
         var bounds = new Rectangle(placement.X, placement.Y, placement.Width, placement.Height);
 
-        // Some of it, not all: a window hanging a little off the right edge is where the user put
-        // it, and moving it would be the surprising thing.
         if (!Screen.AllScreens.Any(screen => screen.WorkingArea.IntersectsWith(bounds)))
         {
             return;
@@ -428,15 +328,6 @@ public sealed partial class MainScreen
         }
     }
 
-    /// <summary>
-    /// Restores the workspace once the form has been laid out.
-    ///
-    /// <para>
-    /// Not in the constructor: a <see cref="SplitContainer"/> rejects a splitter distance that
-    /// does not fit inside it, and before the first layout it is still at its designer size rather
-    /// than at the size the restored window just gave it.
-    /// </para>
-    /// </summary>
     protected override void OnLoad(EventArgs e)
     {
         base.OnLoad(e);
@@ -447,9 +338,6 @@ public sealed partial class MainScreen
             return;
         }
 
-        // Distances first. Setting one on a collapsed pane is legal but pointless — the value is
-        // kept and applied when the pane comes back — and doing it in this order means the panes
-        // that are about to be shown are already the right size when they appear.
         SetSplitterDistance(splitMain, workspace.SidebarWidth);
         SetSplitterDistance(splitLeft, workspace.SidebarHeight);
         SetSplitterDistance(splitRight, workspace.ViewportWidth);
@@ -493,24 +381,6 @@ public sealed partial class MainScreen
         UpdateLayoutMenu();
     }
 
-    /// <summary>
-    /// Applies a saved splitter distance, if it fits.
-    ///
-    /// <para>
-    /// A layout saved on a wide monitor and reopened on a narrow one can ask for a sidebar wider
-    /// than the whole window, and <see cref="SplitContainer.SplitterDistance"/> answers that with
-    /// an exception — so the value has to be checked either way.
-    /// </para>
-    ///
-    /// <para>
-    /// A value that does not fit is <em>dropped</em> rather than clamped to the nearest edge. It
-    /// was measured against a geometry this window does not have, and pinning it to the boundary
-    /// produces the worst arrangement available — a 9000-pixel sidebar clamped into a 1000-pixel
-    /// window becomes a 658-pixel column of checkboxes next to a sliver of viewport. The designer's
-    /// own distance is a considered number and is the better answer. Anything that merely fits
-    /// differently is still applied exactly, which is the case that actually happens.
-    /// </para>
-    /// </summary>
     private static void SetSplitterDistance(SplitContainer split, int? distance)
     {
         if (distance is not { } value)
@@ -530,23 +400,12 @@ public sealed partial class MainScreen
         split.SplitterDistance = value;
     }
 
-    /// <summary>
-    /// Writes the window and the workspace back on the way out.
-    ///
-    /// <para>
-    /// <see cref="Form.RestoreBounds"/> rather than <see cref="Control.Bounds"/>: a maximized
-    /// window's bounds are the screen's, and saving those would reopen a window that fills the
-    /// display, believes it is a normal one, and has no smaller size to be restored to.
-    /// </para>
-    /// </summary>
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         base.OnFormClosing(e);
 
         var bounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
 
-        // A minimized window is not a placement anybody wants reopened, and RestoreBounds can be
-        // empty before the window has ever been anywhere.
         if (bounds is { Width: > 0, Height: > 0 })
         {
             _settings.Window = new WindowPlacement
@@ -559,8 +418,6 @@ public sealed partial class MainScreen
             };
         }
 
-        // Focus mode is a temporary view of the workspace rather than a workspace of its own, so
-        // what gets written is what F11 would put back.
         var panels = _beforeFocus ?? (
             Sidebar: !splitMain.Panel1Collapsed,
             PixelHistory: mnuPixelHistory.Checked,

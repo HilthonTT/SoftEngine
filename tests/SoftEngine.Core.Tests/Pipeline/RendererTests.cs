@@ -85,9 +85,6 @@ public class RendererTests
     [Fact]
     public void Render_MeshScaledByItsParentNode_IsCulledAsIfItScaledItself()
     {
-        // The bounding sphere the frustum cull tests has to follow the whole scene-graph
-        // chain, not just the mesh's own Scale. Sized from the mesh alone it is eight times
-        // too small here, and a cube reaching well into the frame is rejected whole.
         var node = new SceneNode("rig")
         {
             Position = new Vector3(0, 6f, 0),
@@ -98,8 +95,6 @@ public class RendererTests
         var (parented, parentedScene) = MakeCubeScene(new Vector3(0, 0, 5f));
         parentedScene.World.Meshes[0] = new Cube { Parent = node };
 
-        // The same cube placed and scaled directly, which is the answer the parented one
-        // has to agree with.
         var (direct, directScene) = MakeCubeScene(new Vector3(0, 0, 5f));
         directScene.World.Meshes[0] = new Cube
         {
@@ -183,10 +178,6 @@ public class RendererTests
         Assert.True(renderer.Stats.DrawnPixelCount > 0);
     }
 
-    /// <summary>
-    /// Two spheres, the second squarely behind the first: enough triangles for the parallel
-    /// tiled fill and enough depth complexity for a tile to reject some of them.
-    /// </summary>
     private static (Renderer Renderer, Scene Scene) MakeOccludedScene()
     {
         var renderer = new Renderer();
@@ -223,7 +214,6 @@ public class RendererTests
         rejecting.Render(rejectingScene, new PhongPainter());
         plain.Render(plainScene, new PhongPainter());
 
-        // The rejection has to be doing something here, or the comparison proves nothing.
         Assert.True(rejecting.Stats.OccludedTriangleCount > 0);
         Assert.Equal(0, plain.Stats.OccludedTriangleCount);
 
@@ -248,8 +238,6 @@ public class RendererTests
         renderer.Render(scene, new PhongPainter());
         reference.Render(referenceScene, new PhongPainter());
 
-        // Rejected triangles never reach the depth test, so they stop being counted as
-        // z-rejected pixels — but the pixels that actually get drawn must not change.
         Assert.Equal(reference.Stats.DrawnPixelCount, renderer.Stats.DrawnPixelCount);
         Assert.True(renderer.Stats.BehindZPixelCount < reference.Stats.BehindZPixelCount);
     }

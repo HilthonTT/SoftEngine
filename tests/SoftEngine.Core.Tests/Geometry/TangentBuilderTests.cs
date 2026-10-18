@@ -5,7 +5,6 @@ namespace SoftEngine.Core.Tests.Geometry;
 
 public class TangentBuilderTests
 {
-    // A unit quad in the XY plane facing +Z, as two triangles.
     private static readonly Vector3[] _quad =
     [
         new(0, 0, 0),
@@ -46,7 +45,6 @@ public class TangentBuilderTests
     [Fact]
     public void Build_MirroredUvs_FlipsTheHandedness()
     {
-        // U runs the other way, which mirrors the UV island.
         Vector2[] uvs = [new(1, 0), new(0, 0), new(0, 1), new(1, 1)];
 
         var tangents = TangentBuilder.Build(_quad, _normals, uvs, _triangles);
@@ -77,7 +75,6 @@ public class TangentBuilderTests
     [Fact]
     public void Build_DegenerateUvs_FallsBackToAUsableFrame()
     {
-        // Every corner on the same UV: there is no gradient to solve for.
         Vector2[] uvs = [Vector2.Zero, Vector2.Zero, Vector2.Zero, Vector2.Zero];
 
         var tangents = TangentBuilder.Build(_quad, _normals, uvs, _triangles);

@@ -1,4 +1,4 @@
-﻿# SoftEngine — design notes
+# SoftEngine — design notes
 
 Why the renderer is built the way it is. [README.md](README.md) is what it does and how to run it;
 this is the reasoning, the trade-offs, and the traps already paid for.
@@ -9,7 +9,9 @@ this is the reasoning, the trade-offs, and the traps already paid for.
 - [Shadows](#shadows)
 - [Environment and ambient](#environment-and-ambient)
 - [Post-processing](#post-processing)
+- [The surface channel](#the-surface-channel)
 - [Transparency](#transparency)
+- [Refraction](#refraction)
 - [Occlusion culling](#occlusion-culling)
 - [Motion, TAA and motion blur](#motion-taa-and-motion-blur)
 - [Scene graph, animation and skinning](#scene-graph-animation-and-skinning)
@@ -48,6 +50,76 @@ access. Worth about **1.5–2×** over a row-interleaved fill at 720p on eight t
 What is deliberately *not* vectorized is the interpolation either side of the divide: `float.Lerp`
 contracts into an FMA that no arrangement of vector ops reproduces bit for bit, and every golden
 image would have to be re-recorded to absorb the drift.
+
+### The other fill, and why it is not the default
+
+[`HalfSpaceRasterizer`](src/SoftEngine.Core/Rasterization/HalfSpaceRasterizer.cs) fills the same
+triangles a different way. Instead of walking two edges, it evaluates one signed distance per edge —
+positive inside — and keeps the pixels where all three are. Every quantity it needs is linear in
+screen space, so depth, 1/w and each varying divided by w are evaluated once at a block's first
+pixel and stepped by a gradient from there; only the three edge functions are evaluated outright at
+every pixel, for the reason in the second bullet below. A block of 8×8 pixels
+is classified from its four corners before any pixel is touched, so a block no edge crosses costs
+three comparisons and a block wholly inside skips coverage testing altogether.
+
+Two things had to be right for it to agree with the scanline fill, and both are the kind of thing
+that only shows up in a test:
+
+- **The top-left rule.** A pixel centre landing exactly on an edge is inside *both* triangles that
+  share it. Filling it twice is invisible on an opaque z-buffered quad and unmissable everywhere
+  else: it double-blends a seam along every diagonal, and it counts overdraw the scene never asked
+  for. `OverdrawViewTests` caught it as 12 writes where 8 were due. Each edge is given to exactly
+  one of its two triangles — kept if the triangle lies to its right, or below it when it is
+  horizontal. Excluding an edge means testing "greater than zero" rather than "at least zero", and
+  for IEEE floats those are the same comparison against `float.Epsilon`, so there is no tolerance to
+  pick and nothing that drifts with the size of the triangle.
+- **Agreeing on where the edge is.** The rule above only settles a pixel if both triangles compute
+  the *same* value for their shared edge, and in float arithmetic they do not unless made to. Each
+  measured the edge from its own first vertex and stepped from its own bounding-box corner, so the
+  two values differed in their last bits, and a pixel centre the diagonal passed through could land
+  inside both triangles or inside neither. Integer test vertices never showed it because their edge
+  products are exact; a brute-force search over diagonals aimed through pixel centres mis-tiled
+  about a third of them. Now each edge is measured from its lexicographically lower endpoint, blocks
+  are aligned to the screen rather than to the triangle, and every pixel — scalar path, vector path
+  and the corner classifier alike — evaluates the edge with the same two operations from the block
+  origin. The two triangles' coefficients are then exact negatives of each other and IEEE rounding
+  is symmetric in sign, so their values are exact negatives too, and the top-left rule has
+  something exact to decide. `Fill_TrianglesSharingAnEdgeAtFractionalCoordinates_AreWatertight`
+  keeps the two quads that found it.
+- **Weights that sum to zero.** `IVarying.Combine` is a plain weighted sum, not a pair of nested
+  lerps, because the same routine that evaluates a pixel from barycentric weights also produces the
+  gradient between two pixels — and *those* weights sum to zero. A nested-lerp implementation is
+  correct for the first and silently wrong for the second.
+
+It is switchable rather than default because, measured, it is **slower**: 0.7–0.95× of the scanline
+fill across the benchmark scenes, consistently, after the obvious costs were taken out of it. Three
+rounds of that are worth recording, because two of them were real and the third explains the rest:
+
+- Rebuilding each varying from all three vertices at every pixel is about three times the arithmetic
+  of a lerp along a span. Stepping it by a gradient instead — one add per pixel — removed that, and
+  is why `IVarying` grew an `Add`.
+- Indexing a `Vector<T>` by lane makes the JIT spill the whole register to the stack for *each*
+  access. At five reads a pixel that cost more than the vector work saved; the lanes are written out
+  once per run and read back as plain memory, which is the same trick `ScanlineRasterizer.VectorSpan`
+  already used. This alone took `big-triangles` from 0.66× to 0.94×.
+- Building the block's vector constants is wasted on a triangle covering nine pixels, so the scalar
+  and vector block fills are separate methods and a triangle inside a single block skips the corner
+  classification entirely.
+
+What is left is the actual reason. The half-space fill saves per-span setup, per-pixel coverage
+branching and the per-pixel divide — but it cannot yet *spend* what it saves, because every pixel is
+still shaded on its own by a scalar `IPixelShader.Shade`. Coverage arrives as a vector mask over
+eight pixels and is then immediately unpacked to shade them one at a time. The block traversal is
+the half of the work that has to come first; the win needs the other half, a shader interface that
+takes a vector of pixels and a coverage mask. Until that exists, this is a correct and fully tested
+alternative fill and a foundation, not a speed-up, and `--fill half-space` and the viewer's
+**Half-space fill** checkbox are there to measure it: `--compare fill` in the benchmark harness runs
+both over the same scene.
+
+Both fills draw the same pixels, which is asserted rather than assumed: `HalfSpaceRasterizerTests`
+compares them pixel for pixel at triangle sizes either side of the block edge, and every one of the
+eighteen golden scenes is rendered twice and diffed in
+`Scene_RendersTheSameWithEitherRasterizer`.
 
 Every consumer of a mesh's world-space extent goes through
 [`MeshExtensions.WorldBoundingRadius`](src/SoftEngine.Core/Geometry/MeshExtensions.cs) — the frustum
@@ -162,6 +234,38 @@ It costs a second bilinear tap wherever a surface lies between levels, so it is 
 trilinear`, or the viewer's **Trilinear** checkbox. The GPU backend says the same thing in a sampler
 parameter — `LINEAR_MIPMAP_NEAREST` for bilinear, `LINEAR_MIPMAP_LINEAR` for trilinear — rather than
 blending levels the software path would not.
+
+#### Anisotropic
+
+Both of the above share an assumption that a floor exposes immediately: that a pixel's texture
+footprint is *square*. An area ratio cannot tell a square footprint from a long thin one, so a
+surface seen at a glancing angle has only two outcomes, and both are wrong. Pick the level from the
+short axis and the long one aliases into shimmer; pick it from the long axis and the short one is
+blurred by a factor it never needed.
+
+`TextureFiltering.Anisotropic` measures the two axes separately. Inverting the triangle's
+screen-space edge basis and applying it to its UV edges gives the Jacobian — how far the texture
+moves for a one-pixel step in x and in y — and the lengths of those two vectors, in texels, are the
+footprint's axes. The mip level then comes from the **minor** axis, and the major axis is covered by
+walking several bilinear taps across it rather than by blurring. Three details:
+
+- **The level follows the taps, not the axis.** Each of *n* taps covers `major / n` texels, so that
+  width is what the level has to resolve — not the whole major axis. Raising the tap count and
+  lowering the level are the same decision made once.
+- **A cap has to be paid for.** `MipSelector.MaxAnisotropy` bounds the taps at 8 by default, the way
+  hardware does. When the ratio exceeds the cap, the residue of the long axis has to go back into
+  the level, or what the taps no longer reach aliases. This is asserted directly: a tighter cap must
+  produce a coarser level.
+- **A square footprint costs nothing.** The ratio collapses to one, the tap count with it, and the
+  selection lands exactly where trilinear does — which is a test, not a hope.
+
+It costs one bilinear fetch per tap, so it too is opt-in: `--filter anisotropic`, or the viewer's
+**Anisotropic** checkbox, which supersedes **Trilinear** rather than stacking with it because it
+does its own level blending. The GPU backend hands the same `MaxAnisotropy` to the driver as
+`GL_TEXTURE_MAX_ANISOTROPY` where `EXT_texture_filter_anisotropic` exists, and stays trilinear
+where it does not. Note that this is still chosen per *triangle*, like every other mode
+here — the Jacobian of a triangle, not of a pixel. Per-pixel gradients would want the fill to hand
+them over, which is exactly what the block traversal above computes and does not yet expose.
 
 ## Shadows
 
@@ -305,6 +409,37 @@ The GPU backend records nothing here — its fragment shaders write one target �
 exactly as it does for the mip-level channel. A GPU frame keeps its environment reflections and
 gains no screen-space ones. The path tracer needs none of this: it reflects the scene by tracing it.
 
+## The surface channel
+
+[Reflections](#reflections) needed one thing the image does not contain, and solved it by writing a
+second small buffer as each pixel was shaded. That buffer was written per *triangle*: the painter
+packed the mesh's material once into `RasterState` and every pixel the triangle covered recorded the
+same two numbers. That is right for a gloss which is uniform across a surface, and quietly wrong for
+one that is painted on.
+
+`IPixelShader.Shade` now has a second form that also hands back a
+[`SurfaceSample`](src/SoftEngine.Core/Shading/SurfaceSample.cs) — what the ambient term contributed
+at that pixel, and the reflectance of the surface as the maps were actually sampled. A shader opts in
+with `static WritesSurface => true`. The flag is a static abstract on the interface, so a fill
+instantiated over a shader that does not write one folds the whole branch away and the pixel loop is
+the one that was there before. [`PbrShader`](src/SoftEngine.Core/Rasterization/Shaders/PbrShader.cs)
+writes it, which is what puts a metallic-roughness map into the reflection instead of beside it.
+
+**SSAO can now darken the ambient term alone.** It used to scale the finished pixel, which is the
+approximation everyone starts with and the reason screen-space occlusion tends to look like dirt: a
+face in full sun is not less lit for standing near a corner. With the channel in hand the effect
+subtracts `ambient x occlusion` and leaves the direct term where it was. There is a test that says
+exactly this — with the ambient level at zero, SSAO changes no pixel at all.
+
+**What it is not.** This is not deferred shading. There is no G-buffer of material parameters and no
+second pass that lights it; shading still happens at the moment of the fill, and the channel records
+what it decided rather than what it would need to decide later. What that buys is the two things a
+deferred path was wanted for here, for one float3 per pixel and no change to the fill's structure.
+The painter declares whether its shaders can separate an ambient term at all
+(`IPainter.WritesAmbient`), and where none can — the older painters fold ambient into a diffuse
+accumulator and, off the linear path, into a byte — recording is never switched on and SSAO falls
+back to scaling the pixel. Which is why the golden images for those painters did not move.
+
 ## Transparency
 
 Transparent meshes skip the opaque fill and blend over the finished image afterwards, depth-tested
@@ -358,6 +493,44 @@ point, and is also why turning it on is a decision rather than a default. A prob
 shows each stored fragment as its own entry, in the order the resolve blended them, naming the
 triangle that shaded it rather than the resolve that applied it.
 
+## Refraction
+
+A transmissive surface has to know what is behind it, and in a rasterizer what is behind it is the
+frame as it stood before that surface was drawn. So `Material.Transmission` routes a mesh into the
+transparent pass however opaque its alpha is, and the renderer captures the colour buffer into a
+[`Backdrop`](src/SoftEngine.Core/Buffers/Backdrop.cs) at the one moment it holds every opaque surface
+and the sky and nothing else — after `DrawSky`, before the first transparent triangle.
+
+The shader refracts the view ray through the shading normal at the material's index of refraction,
+walks it `Thickness` into the body, projects that exit point back to the screen and reads the
+backdrop there. Thickness is what separates glass from a hole in the wall: at zero the sample lands
+straight behind the pixel and a pane is a window, and the further the ray travels inside the object
+the more the background slides and bends. glTF describes the same thing the same way, so
+`KHR_materials_transmission`, `KHR_materials_ior` and the thickness out of `KHR_materials_volume`
+import straight onto those three fields.
+
+**One trap, paid for.** [Occlusion culling](#occlusion-culling) picked its occluders by asking
+whether a mesh was opaque, and a transmissive mesh still is — `Transmission` says what happens to the
+light reaching it, not how much of it arrives. So the glass was chosen as an occluder and culled the
+very geometry it was about to refract, and the backdrop behind it came back black. Both the occluder
+test and the transparent-pass test now ask `IMesh.DrawsAfterOpaque()`, one predicate, because the
+question they are really asking is the same one and two copies of it had already drifted.
+
+The backdrop keeps a short chain of half-size copies and a rough surface reads further down it,
+which is frosted glass for the price of a box filter. The transmitted colour is tinted by the base
+colour and scaled by `1 - F`, and the diffuse lobe is scaled by `1 - transmission` in exchange: a
+surface letting light through is not also scattering it. The index of refraction replaces the 0.04
+dielectric F0 while it is there, so a dense material is correctly more reflective at a glancing angle
+than glass is.
+
+**What it does not do.** One layer. The backdrop is captured once, so a transmissive surface does not
+refract another one behind it — the second pane shows what the first would have shown. There is no
+absorption through the body, no dispersion, and the refracted ray is a straight line through a flat
+interface rather than a path through a solid. For any of those the answer is the path tracer, which
+takes transmission as a real scattering lobe — Fresnel-weighted reflect-or-refract at the interface,
+entering and leaving tracked by which face the ray hit — and will therefore disagree with the
+rasterizer about a thick object, correctly.
+
 ## Occlusion culling
 
 Frustum culling answers *is it on screen*. In a real scene most of what is on screen is behind
@@ -384,9 +557,29 @@ Three decisions that matter:
 - **A wall's bounding sphere reaches the camera, and that must not disqualify it.** A wall's sphere
   is as wide as its diagonal. Rejecting those throws away the best occluder in most scenes.
 
-Measured ≈**1.6×** on 512 meshes behind a wall, and within noise elsewhere. Two limits: an occluder
+Measured ≈**1.5×** on 512 meshes behind a wall, and within noise elsewhere. Two limits: an occluder
 is never tested against the buffer it helped write, and because level 0 is centre-sampled, a mesh
 visible only through a roughly pixel-wide gap can be culled.
+
+### Nearest meshes first
+
+Hierarchical-Z rejects a triangle against the farthest depth already drawn into its tile, so that
+bound is only ever as near as the nearest thing already there. A pass that happens to work backwards
+fills most of a tile with pixels it is about to cover and tightens the bound at the end, when there
+is nothing left to reject. `NearestMeshesFirst` sorts the mesh list by view depth before phase 1, so
+the surfaces that will still be visible when the tile is finished are the ones drawn first.
+
+**At the mesh and not at the triangle, which is the whole finding.** Sorting each tile's *binned
+triangles* orders the fill perfectly and loses twice over: once for the sort — a hundred thousand
+triangle-in-tile pairs against a few thousand meshes — and again because the fill then reads its
+vertices in depth order out of arrays far larger than the cache. Measured on `dense-model` that cost
+**0.60×**, of which 0.80× was the sort and the rest the lost locality. A mesh keeps its triangles
+contiguous and in their original order, so the reads stay sequential.
+
+It works: on the 4,096-cube scene it takes the pixels actually shaded from 1.11M to **0.50M** and
+raises the coarse-depth rejections eightfold. It is worth about **1.05×** there and nothing
+elsewhere, because that scene turned out not to be shading-bound — which is the next section. Off
+while a frame is probed or captured, where the order things happened in is the thing being reported.
 
 ## Motion, TAA and motion blur
 
@@ -450,9 +643,11 @@ covering fewer vertices than its mesh leaves the rest at bind pose rather than t
 ![The parrot's sixty-node rig](docs/screenshots/rig.png)
 
 `Settings.ShowSkeleton` draws the hierarchy, since a rig is invisible by construction and a subtly
-wrong rig is indistinguishable from a subtly wrong mesh. Three demos cover it: **Bone chain**
+wrong rig is indistinguishable from a subtly wrong mesh. Four demos cover it: **Bone chain**
 (generated geometry, rig and clip), **Juliet** (a real 205-joint skin), **Parrot rig** (a 12-second
-clip over 60 nodes with no skin, so a cube per joint makes the hierarchy the model).
+clip over 60 nodes with no skin, so a cube per joint makes the hierarchy the model), and **Fox** (a
+glTF skin driven by the file's own Walk clip, the one demo whose skin and animation both arrive
+through `GltfImporter`).
 
 ## Importers and primitives
 
@@ -630,6 +825,37 @@ driver, and slower. So the backend reads the driver's account of itself and refu
 hardware. An unrecognised device is treated as hardware — new cards appear constantly and new CPU
 rasterizers essentially never.
 
+**Which adapter, on a machine with two.** A laptop drives its display from the integrated GPU and
+keeps the discrete one asleep, so every OpenGL context created without saying otherwise lands on the
+integrated part — which is the right default for battery and the wrong one for "render this on the
+GPU". Saying otherwise is harder than it should be. The extensions that come closest are one vendor
+each (`WGL_NV_gpu_affinity` is workstation-only, `WGL_AMD_gpu_association` is AMD), and the trick
+native applications use — exporting `NvOptimusEnablement` from the executable — needs an executable
+this repository does not build, since a managed program's entry point is a generic host and the
+driver reads the exports of the `.exe`.
+
+What is left is the setting Windows itself exposes under Settings ▸ Display ▸ Graphics: a
+per-application preference, keyed by the program's path, that the driver reads when it hands out a
+device. `GpuPreferences` writes the same value, in the same place, that the operating system's own
+interface writes — and asking for Automatic *deletes* it rather than writing a "no preference", so
+the application leaves nothing behind it did not need to. It is also not re-applied on startup when
+it is Automatic: in a settings file that means "never chose", and undoing a preference somebody set
+in Windows' own settings on the strength of having no opinion would be the wrong way round.
+
+**It is read once per process**, which was measured rather than assumed: writing the preference and
+then creating a context picks it up, and writing it again after a context exists does not — a second
+context comes back on the same adapter. So the front-ends apply it before anything creates one, and
+`GpuPreferences.TakesEffectImmediately` is what lets the viewer say "next launch" only when that is
+actually true, rather than saying it always and being wrong for the common case of a session that
+has not been on the GPU yet.
+
+`GpuDevices` reads the installed adapters from the display-class registry key so the choice can be
+offered by name — "High performance — NVIDIA GeForce RTX 5060 Laptop GPU" — rather than as two words
+about power. Deliberately a different type from `GpuAdapter`: a list of installed devices is a guess
+about what a preference will select, and the adapter behind a live context is a fact. It names no
+device at all where the machine's adapters do not sort into exactly one candidate, because a menu
+naming the wrong one is worse than a menu naming none — the first is believed.
+
 **What runs where.** Everything that scales with triangles × pixels runs on the adapter: shadow
 cascades, the opaque fill, sky, transparency, wireframe. Everything that runs once over the finished
 image runs where it already did — post-process, debug views, gizmos — over a frame read back into
@@ -690,6 +916,28 @@ wherever a light is doing the work. The environment lights the trace at `SkyInte
 **In the viewport,** *Rendered by → Path tracer* traces two paths per pixel per paint and averages
 into what is there, up to 512 samples or until something moves. Seeded per pixel rather than from a
 shared generator, so two runs produce the same image down to the last bit.
+
+### Denoising
+
+Two paths per pixel is a noisy image and 512 is a slow one, and the gap between them is where a
+reference renderer is least useful. The [`Denoiser`](src/SoftEngine.Core/Tracing/Denoiser.cs) is an
+a-trous wavelet filter over the traced frame: a five-tap B3 spline kernel, four passes, the tap
+spacing doubling each pass, so it reaches 32 pixels away for about the cost of a 5x5.
+
+Blurring a rendered image destroys texture, so the filter is not run on one. The tracer keeps the
+albedo, the normal and the distance of each pixel's first hit; the frame is divided by the albedo
+before filtering and multiplied by it after, so what gets smoothed is the light, and everything the
+surface already knew about itself survives untouched. A checkerboard stays a checkerboard.
+
+Each tap is then weighted by how far the neighbour agrees with the centre — normals raised to a high
+power, distance relative to the centre's own, luminance against a fixed sigma — so the filter stops
+at a fold instead of rounding it off. Pixels where nothing was hit are left exactly alone: the sky is
+sampled once per ray and was never noisy.
+
+It is a filter and not an estimator. It trades bias for variance and it cannot invent detail no path
+found. In the viewport it runs only while the accumulation is under 64 samples and switches itself
+off above that, so what you watch converges and what you are left looking at is the image the tracer
+actually computed. `--denoise` turns it on for a headless render, where the trade is yours to make.
 
 ## Baked indirect light
 
@@ -833,6 +1081,47 @@ The occlusion pass gets a stronger test: every golden scene is rendered twice, w
 off, and compared at **zero** tolerance. An optimization that decides what not to draw is only
 correct if what is drawn does not change — no count of rejected meshes says that.
 
+### Reading files nobody here wrote
+
+The parsers are the only part of this engine that ever sees bytes written somewhere else, and the
+rest of the suite only ever checks that a **correct** file decodes correctly. That is the easier
+half. A reader can be right about every well-formed file and still be one truncated download away
+from an unhandled exception.
+
+So `ParserFuzzTests` takes a file that works, breaks it — a flipped byte, a length field set to
+`0xFFFFFFFF`, the end cut off, a digit grown into a much larger number, one to three of those
+compounded — and requires the reader to still fail as `InvalidDataException` or
+`NotSupportedException` (or `JsonException` / `XmlException`, since two of these formats *are* a JSON
+and an XML document). What is deliberately **not** accepted is `IndexOutOfRangeException`,
+`OverflowException` or `OutOfMemoryException`: those are the bug rather than the report of one, and a
+suite that tolerated them would pass while the thing it exists to catch went on happening.
+
+Mutations are seeded by their round number, so a failure at round 6,857 is a failure anyone can
+reproduce. The default sweep is 2,000 rounds a reader — a couple of seconds, which is what a test
+everybody runs on every change can cost. `SOFTENGINE_FUZZ_ROUNDS` runs the long version.
+
+It found three, and none of them were in the code anyone would have looked at:
+
+- **A Collada face indexing past its own vertices** surfaced as an `IndexOutOfRangeException` from
+  inside `Mesh`'s constructor, where it computes vertex normals — the model never opened, and the
+  message named neither the file nor the face. The glTF reader had dropped out-of-range faces from
+  the day it was written; `BuildTriangleIndices` now takes the vertex count and does the same for
+  the other two, which is the fix being in one place instead of three.
+- **One non-numeric token in a Collada index array** threw `FormatException` out of
+  `Convert.ChangeType` and took the whole model with it — while the animation half of the *same
+  importer* had always skipped tokens it could not read. The two halves reading one file to two
+  standards was the actual defect.
+- **A corrupt DEFLATE stream in a PNG** threw `ZLibException`. Truncated data was already handled;
+  data that was the wrong length and data that was the wrong *bytes* fail differently inside the
+  decompressor, and only one of them had been thought about.
+
+Alongside those, the three formats that carry their own dimensions — PNG, Radiance HDR, glTF
+accessors — now bound them before allocating. A sixty-byte PNG header can name a hundred-gigapixel
+image, a twenty-byte Radiance resolution line can do the same, and `{"count":2000000000,"type":"MAT4"}`
+is forty characters asking for a hundred and twenty-eight gigabytes of floats — which in `int`
+arithmetic does not even reach the allocation, it wraps negative first. None of them are checks a
+well-formed file ever meets.
+
 ### Benchmarks
 
 ```bash
@@ -843,9 +1132,15 @@ dotnet run -c Release --project bench/SoftEngine.Benchmarks -- --compare occlusi
 Seven scenes covering the shapes the renderer is built around, reporting the **median** frame time —
 a desktop frame-time distribution has a long right tail belonging to the scheduler, and one preempted
 frame moves a mean but not a median. Warm-up frames are discarded. `--compare` re-runs each scene
-with one optimization off: hierarchical-Z is worth ≈**4×** on the overdraw scene and ≈1× elsewhere,
-occlusion culling ≈**1.6×** on the scene built around it, vectorized spans **1.16×** on
-`big-triangles` and within noise where spans are a few pixels wide.
+with one optimization off — `hi-z`, `occlusion`, `spans`, `order` or `phase1` — and reports the
+ratio.
+Hierarchical-Z is worth ≈**2.4×** on the overdraw scene and ≈1× elsewhere, occlusion culling ≈**1.5×**
+on the scene built around it, nearest-meshes-first ≈**1.05×** on the scenes with depth to them.
+
+Those first two numbers used to be larger, and the optimizations did not get worse: the frames they
+are a fraction of got faster, once the contended counter below stopped dominating every one of them.
+A speedup ratio is a statement about the baseline as much as about the change, which is the argument
+for keeping the switch rather than writing the number down and moving on.
 
 **Work the frame no longer does.** Measured at 1280×720 on twenty threads, best of thirty frames.
 
@@ -853,8 +1148,95 @@ occlusion culling ≈**1.6×** on the scene built around it, vectorized spans **
 | --- | --- |
 | Parallel fill chosen by **tile coverage** rather than triangle count — sixteen viewport-filling triangles are 14M pixels and were drawn on one core | `big-triangles` 22.3 → 3.4 ms |
 | The clear split into bands of rows, and not clearing a buffer the HDR resolve rewrites anyway | `overdraw` 7.8 → 6.0 ms, `shadows` 7.2 → 5.4 ms |
-| Model-to-view transform split across cores (a pure map); the cull phase around it stays sequential, since the draw list's order matters | `dense-model` 9.2 → 7.9 ms |
+| Model-to-view transform split across cores (a pure map) — the first half of the step below | `dense-model` 9.2 → 7.9 ms |
+| The rest of phase 1 split too: every vertex projected up front so the triangles can be classified in parallel, with the ordering and the near-plane clipping left to two cheap sequential passes — see below | `dense-model` 3.0 → 2.0 ms, `many-meshes` 4.5 → 3.6 ms, `pbr` 3.0 → 2.4 ms |
 | Vectorized spans: one packed divide instead of eight scalar ones | 1.16× `big-triangles`, 1.08× `shadows` |
+| The pixel counters striped across cache lines and flushed per triangle rather than per scanline — see below | `many-meshes` 14.3 → 4.8 ms, `big-triangles` 4.6 → 2.2 ms |
+
+### The statistics cost more than the rasterizer
+
+`RenderStats` counts two things per pixel: how many were drawn and how many the depth test rejected.
+The fill accumulated them locally and flushed them with `Interlocked.Add` once per **scanline** —
+which reads as careful, and is the single most expensive thing the renderer used to do.
+
+A tile is 32 pixels wide, so a scanline is at most 32 pixels, so a frame of ordinary geometry flushes
+those counters a few hundred thousand times. Every flush from every one of twenty threads landed on
+the same two adjacent `int`s, which is to say the same 64-byte cache line, which then spent the whole
+fill phase bouncing between cores. The cost was never the additions — an uncontended atomic add is
+about twenty cycles — it was that no core could hold the line long enough to do anything else.
+
+Deleting the two calls outright was worth **2.6×** on the 4,096-cube scene, which is how the
+measurement was made: not by guessing which arithmetic was slow, but by removing a line that could
+not possibly be slow and finding the frame time halve. Keeping the counters exact and giving each
+worker a stripe of its own recovers essentially all of it.
+
+The general shape is worth stating, because nothing about the code looked wrong: **a shared counter
+is a shared cache line, and a shared cache line in a parallel inner loop is a lock you did not know
+you took.** Batching alone would not have fixed it — flushing per triangle instead of per scanline is
+worth the last few percent, and striping is worth the rest.
+
+### Phase 1 divided, and what had to stay in order
+
+Once the fill divides across every thread, the half that does not is what is left. Phase 1 —
+transform, cull, project, clip — was one sequential loop over the meshes, and measured at 320×180,
+where the fill is nearly free, it was **3.07 of `dense-model`'s 4.47 ms** and **4.53 of
+`many-meshes`' 7.82**. That is the ceiling, and it is Amdahl's rather than anything about the
+arithmetic.
+
+Running the loop in parallel is not available, for three reasons and only one of them is obvious:
+
+- **The draw list's order is load-bearing.** Nearest-meshes-first is worth nothing if the fill draws
+  the list in whatever order the workers finished in, and a pixel probe reports the writes in the
+  order they happened.
+- **The event log is a record in pipeline order**, which is most of what makes a frame capture
+  readable.
+- **Near-plane clipping appends to the mesh's own vertex and triangle lists**, and nothing
+  synchronises them.
+
+There is a fourth, and it is the one that decides the shape of the fix. Projection and the
+world-space transform were **memoized per vertex** behind a `Proj == Vector4.Zero` sentinel, so a
+vertex was computed the first time a triangle asked for it. Two triangles sharing a vertex are then
+a read-modify-write of the same struct from two threads, and the loser of that race silently loses a
+field — not a crash, a wrong normal.
+
+So the phase became four passes instead of one loop:
+
+| | | |
+| --- | --- | --- |
+| **1a** | sequential | Whole-mesh rejection: visibility, the bounding sphere against the frustum, the occlusion buffer. Two sphere tests and a matrix per mesh, and the only place the scene graph is read — `IMesh.WorldMatrix` walks a parent chain, which is not a thing to do from twenty threads. |
+| **1b** | **parallel** | Every vertex of every surviving mesh to view, clip and world space. A pure map, banded across meshes rather than within one, so a world that is one dense model divides as evenly as one that is four thousand cubes. |
+| **1c** | **parallel** | Every triangle classified: behind, back-facing, off-screen, drawn, or straddling the near plane. Read-only on the vertex buffers, so a band writes nothing but its own kept-list and its own counters. |
+| **1d** | sequential | Append the kept triangles to the draw lists in mesh order, clip the straddlers, emit the events, sum the counters. |
+
+Pass 1b is what removes the sharing: computing every vertex once, unconditionally, means 1c never
+writes one. It costs the projections of vertices that only a back-facing or off-screen triangle would
+have asked for — on a closed model, a little under twice as many — and buys a pass that divides
+perfectly. Pass 1d is what keeps the order: it walks the meshes as the sequential loop did, so the
+draw list and the event log come out identical, and the clipper runs on one thread so appending to a
+mesh's clipped geometry needs no lock. A straddling triangle is one touching the camera plane, so a
+frame usually has none.
+
+Worth **1.5× on `dense-model`**, ≈1.3× on `overdraw` and `pbr`, ≈1.15–1.3× on `many-meshes` and the
+occlusion scene, and nothing on `big-triangles` — sixteen triangles, correctly, take the sequential
+path in both. `--compare phase1` measures it.
+
+**The claim is that only the time changed**, so it is tested rather than asserted, the same way
+vectorized spans are: `Renderer.ParallelCullPhase` is a diagnostic seam nothing in the pipeline
+reads, and the golden suite renders every one of its eighteen scenes both ways in one process and
+compares the frames pixel for pixel.
+
+That catches a wrong *value* and, it turns out, nothing about order: for opaque geometry the depth
+buffer makes the fill order-independent, so reversing a mesh's triangles produces the same image.
+Found by trying it — a deliberately broken merge passed all eighteen scenes. Order is visible in
+`BehindZPixelCount` and in the coarse-depth rejections, since both are statements about what was
+already in the tile when a triangle arrived, and that is what `CullPhaseTests` pins instead.
+
+One measurement note that cost an hour. The first version allocated a closure and a delegate per
+pass per frame, which is four objects — nothing, until you notice the frame is 1.7 ms and there are
+six hundred of them a second. It showed up as a **5% regression on `big-triangles`**, a scene whose
+sixteen triangles never reach a parallel path at all, so the two configurations were running
+identical code. Hoisting the pass bodies out of the closures and holding their state in fields made
+it flat again.
 
 ## Roadmap
 
@@ -867,9 +1249,15 @@ occlusion culling ≈**1.6×** on the scene built around it, vectorized spans **
   traversal loop.
 - More than one shadow-casting light, which needs a depth buffer and a pass per light.
 - Morph targets, the one part of glTF's animation the importer reads past.
-- A deferred or visibility-buffer path, so SSAO could darken the ambient term alone — and so
-  [reflectance](#reflections) could be recorded per texel instead of per triangle, which is the one
-  thing standing between a painted-on gloss map and a reflection that follows it.
+- A real deferred or visibility-buffer path. [The surface channel](#the-surface-channel) took the two
+  things this was wanted for here — SSAO on the ambient term, reflectance per texel — without
+  decoupling shading from the fill, which is still what would let a pixel be shaded once rather than
+  once per surface that covered it.
+- Transmission through more than one surface, which needs the backdrop recaptured between sorted
+  transparent draws, and a rule for how often that is worth doing.
+- A denoiser guided by a variance estimate rather than a fixed luminance sigma, which needs the
+  tracer to carry a second moment per pixel — and a temporal one, which needs it to carry the
+  previous frame.
 - Reflections on transparent surfaces, which resolve after the opaque pass the reflection channel is
   written by, and so currently reflect nothing.
 - Testing occluders against each other, by building the pyramid front to back.

@@ -11,52 +11,18 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Tracing;
 
-/// <summary>
-/// The reference renderer: the same scene, answered by tracing light through it instead of by
-/// filling triangles.
-///
-/// <para>
-/// Everything the rasterizer does about light that does not arrive straight from a lamp is an
-/// approximation standing in for this. Ambient light is a constant, or six of them. Occlusion is a
-/// screen-space guess made from a depth buffer. A reflection is a prefiltered cube looked up along
-/// one direction, and shadows are a depth map with a bias that has to be tuned. Each of those is
-/// defensible on its own and none of them can be checked against anything — which is the problem
-/// this solves. A path tracer computes the same integral by following actual paths, so the
-/// approximations have something to be wrong *against*: render both, subtract, and the difference
-/// is the error rather than an opinion.
-/// </para>
-///
-/// <para>
-/// It is an <see cref="IRenderer"/>, so it drops into the same slot the rasterizer and the GPU
-/// backend occupy — same scene, same <see cref="FrameBuffer"/>, same post-process stack — and it
-/// ignores the <see cref="IPainter"/> it is handed, because choosing a shading model per mesh is
-/// exactly the thing it is here to not have to do.
-/// </para>
-///
-/// <para>
-/// What it is not: a production renderer. There is no bidirectional path tracing, no multiple
-/// importance sampling and no light hierarchy, so a scene lit through a keyhole will be noise for a
-/// very long time. Lights are the engine's own delta lights, sampled directly and shadowed with one
-/// ray, so they cast hard shadows and no caustics. What it does have is unbiased diffuse and
-/// specular interreflection, true ambient occlusion, and shadows with no bias to tune — the three
-/// things nothing else here can produce.
-/// </para>
-///
-/// <para>
-/// The path walk itself is <see cref="PathIntegrator"/>, which <see cref="Baking.IrradianceBaker"/>
-/// also asks — so what a bake stores as ambient light is what this renderer would have found there.
-/// A baked <see cref="Shading.IrradianceVolume"/> on the scene is ignored here: this computes the
-/// thing the volume is an approximation of.
-/// </para>
-/// </summary>
 public sealed class PathTracer : IRenderer
 {
     private Bvh? _accelerator;
     private int _geometryStamp;
 
-    /// <summary>Running sum of radiance per pixel, three floats each, when accumulating.</summary>
     private float[] _accumulator = [];
     private float[] _depth = [];
+
+    private float[] _resolved = [];
+    private float[] _albedo = [];
+    private float[] _normal = [];
+    private float[] _distance = [];
 
     private int _width;
     private int _height;
@@ -69,20 +35,14 @@ public sealed class PathTracer : IRenderer
 
     public RenderDiagnostics Diagnostics { get; } = new();
 
-    /// <summary>How many paths per pixel to spend, and what they are allowed to do.</summary>
     public TraceSettings Trace { get; } = new();
 
-    /// <summary>
-    /// The tree the last render built, or null before the first one. Exposed because building it is
-    /// the expensive half of a first frame and a caller may want to know what it got — how many
-    /// nodes, how deep — or to reuse it for something else that casts rays.
-    /// </summary>
+    public Denoiser Denoiser { get; } = new();
+
     public Bvh? Accelerator => _accelerator;
 
-    /// <summary>Paths per pixel averaged into the image so far. Always <see cref="TraceSettings.SamplesPerPixel"/> unless accumulating.</summary>
     public int AccumulatedSamples { get; private set; }
 
-    /// <summary>Throws away the accumulated image, so the next render starts from nothing.</summary>
     public void Reset() => AccumulatedSamples = 0;
 
     public void Render(Scene scene, IPainter? painter)
@@ -102,7 +62,24 @@ public sealed class PathTracer : IRenderer
         events.Add(GraphicsEventKind.FrameBegin, -1, Diagnostics.FrameNumber);
         events.Add(GraphicsEventKind.RendererSetViewport, SceneObjectIds.RenderTarget, surface.Width, surface.Height);
 
+        // The same per-frame surface state the rasterizer sets in BeginFrame. Without it a fresh
+        // surface has no depth range (so SSAO and SSR find nothing to read), and one last used by
+        // the rasterizer still records ambient light that this frame never writes.
         surface.SetHighDynamicRange(scene.HighDynamicRange);
+        surface.SetOverdrawCounting(false);
+        surface.SetMipLevelRecording(false);
+        surface.SetReflectanceRecording(false);
+        surface.SetAmbientRecording(false);
+
+        if (scene.Projection.IsOrthographic)
+        {
+            surface.SetLinearDepthRange();
+        }
+        else
+        {
+            surface.SetDepthRange(scene.Projection.ZNear, scene.Projection.ZFar);
+        }
+
         surface.Clear();
 
         Refresh(world, surface.Width, surface.Height);
@@ -120,9 +97,6 @@ public sealed class PathTracer : IRenderer
 
         var camera = new CameraFrame(scene);
 
-        // The walk itself lives in PathIntegrator, which the irradiance bake asks the same question
-        // of from points that have no pixel. Sharing it is what keeps a baked ambient term and a
-        // traced one from being two different opinions about the same light.
         var integrator = new PathIntegrator(
             accelerator,
             PathIntegrator.Lights(world),
@@ -140,9 +114,6 @@ public sealed class PathTracer : IRenderer
             Array.Clear(_accumulator);
         }
 
-        // The view-projection, for turning a hit position into the normalized depth the buffer
-        // holds — so the depth view and the depth-reading post effects have the frame's geometry
-        // even though no triangle was ever projected.
         var viewProjection = scene.Camera.ViewMatrix *
             scene.Projection.ProjectionMatrix(surface.Width, surface.Height);
 
@@ -158,29 +129,38 @@ public sealed class PathTracer : IRenderer
                 var sum = LinearColor.Black;
                 var depth = 1f;
 
+                var slot = pixel * 3;
+
                 for (var s = 0; s < samples; s++)
                 {
                     var sampler = new Sampler(Trace.Seed, pixel, previous + s);
 
-                    // Jittered inside the pixel: the sample position *is* the antialiasing, since
-                    // there is no coverage to compute and nothing to supersample afterwards.
                     var ray = camera.Through(
                         x + sampler.Next(),
                         y + sampler.Next());
 
-                    sum += integrator.Radiance(ray, ref sampler, out var distance);
+                    sum += integrator.Radiance(ray, ref sampler, out var distance, out var primary);
 
-                    // The depth buffer is one number per pixel and this is a distribution, so it
-                    // records the first sample's hit rather than an average of positions that may
-                    // be on different surfaces. Accumulating leaves the first frame's, which is the
-                    // one the geometry has not moved since.
-                    if (s == 0 && previous == 0 && !float.IsPositiveInfinity(distance))
+                    if (s != 0 || previous != 0)
+                    {
+                        continue;
+                    }
+
+                    _distance[pixel] = distance;
+
+                    if (!float.IsPositiveInfinity(distance))
                     {
                         depth = NormalizedDepth(ray.At(distance), viewProjection);
                     }
-                }
 
-                var slot = pixel * 3;
+                    _albedo[slot] = primary.Albedo.R;
+                    _albedo[slot + 1] = primary.Albedo.G;
+                    _albedo[slot + 2] = primary.Albedo.B;
+
+                    _normal[slot] = primary.Normal.X;
+                    _normal[slot + 1] = primary.Normal.Y;
+                    _normal[slot + 2] = primary.Normal.Z;
+                }
 
                 _accumulator[slot] += sum.R;
                 _accumulator[slot + 1] += sum.G;
@@ -188,10 +168,9 @@ public sealed class PathTracer : IRenderer
 
                 var scale = 1f / total;
 
-                surface.PutBackground(x, y, new LinearColor(
-                    _accumulator[slot] * scale,
-                    _accumulator[slot + 1] * scale,
-                    _accumulator[slot + 2] * scale));
+                _resolved[slot] = _accumulator[slot] * scale;
+                _resolved[slot + 1] = _accumulator[slot + 1] * scale;
+                _resolved[slot + 2] = _accumulator[slot + 2] * scale;
 
                 if (previous == 0)
                 {
@@ -201,6 +180,13 @@ public sealed class PathTracer : IRenderer
         });
 
         AccumulatedSamples = total;
+
+        if (Trace.Denoise)
+        {
+            Denoiser.Apply(_resolved, _albedo, _normal, _distance, width, height);
+        }
+
+        Present(surface, width, height);
 
         Stats.AddPixelCounts(width * height, 0);
         Stats.CalculationTime();
@@ -214,11 +200,6 @@ public sealed class PathTracer : IRenderer
         Stats.StopTime();
     }
 
-    /// <summary>
-    /// Rebuilds the acceleration structure when the world has moved, and the accumulation buffers
-    /// when the frame has changed size. Either invalidates whatever was accumulated: an average of
-    /// samples taken against different geometry is not an image of anything.
-    /// </summary>
     private void Refresh(IWorld world, int width, int height)
     {
         var stamp = SceneGeometry.Stamp(world);
@@ -239,17 +220,33 @@ public sealed class PathTracer : IRenderer
         _width = width;
         _height = height;
 
-        _accumulator = new float[System.Math.Max(0, width * height * 3)];
-        _depth = new float[System.Math.Max(0, width * height)];
+        var pixels = System.Math.Max(0, width * height);
+
+        _accumulator = new float[pixels * 3];
+        _resolved = new float[pixels * 3];
+        _albedo = new float[pixels * 3];
+        _normal = new float[pixels * 3];
+        _distance = new float[pixels];
+        _depth = new float[pixels];
 
         AccumulatedSamples = 0;
     }
 
-    /// <summary>
-    /// Where a world position lands in the depth buffer's [0, 1]. The same divide the rasterizer's
-    /// clip-space z goes through, so a traced depth buffer and a rasterized one hold the same
-    /// numbers for the same surface.
-    /// </summary>
+    private void Present(FrameBuffer surface, int width, int height)
+    {
+        var resolved = _resolved;
+
+        Parallel.For(0, height, y =>
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var slot = (x + y * width) * 3;
+
+                surface.PutBackground(x, y, new LinearColor(resolved[slot], resolved[slot + 1], resolved[slot + 2]));
+            }
+        });
+    }
+
     private static float NormalizedDepth(Vector3 point, in Matrix4x4 viewProjection)
     {
         var clip = Vector4.Transform(new Vector4(point, 1f), viewProjection);
@@ -262,10 +259,6 @@ public sealed class PathTracer : IRenderer
         return System.Math.Clamp(clip.Z / clip.W, 0f, 1f);
     }
 
-    /// <summary>
-    /// The same resolve the rasterizer ends a frame with: the post-process stack when there is one,
-    /// and otherwise the encode an HDR target still needs.
-    /// </summary>
     private void Resolve(FrameBuffer surface, Scene scene)
     {
         var stack = PostProcess is { HasEffects: true } candidate ? candidate : null;
@@ -280,14 +273,6 @@ public sealed class PathTracer : IRenderer
         }
     }
 
-    /// <summary>
-    /// The camera, reduced to what firing a ray through a pixel needs.
-    ///
-    /// <see cref="ScenePicker.RayThrough"/> answers the same question and inverts the projection
-    /// every time it is asked, which is right for one click a second and wrong for a million rays a
-    /// frame. The arithmetic is deliberately identical, so a traced pixel and a picked one look
-    /// along the same line.
-    /// </summary>
     private readonly struct CameraFrame
     {
         private readonly Matrix4x4 _inverseView;
@@ -322,8 +307,6 @@ public sealed class PathTracer : IRenderer
             var ndcX = x * _toNdcX - 1f;
             var ndcY = 1f - y * _toNdcY;
 
-            // A parallel projection fires every ray the same way and moves the origin instead; a
-            // perspective one fires them all from the eye.
             var (origin, direction) = _orthographic
                 ? (new Vector3(ndcX * _invScaleX, ndcY * _invScaleY, 0f), -Vector3.UnitZ)
                 : (Vector3.Zero, new Vector3(ndcX * _invScaleX, ndcY * _invScaleY, -1f));
@@ -332,6 +315,5 @@ public sealed class PathTracer : IRenderer
                 Vector3.Transform(origin, _inverseView),
                 Vector3.Normalize(Vector3.TransformNormal(direction, _inverseView)));
         }
-
     }
 }

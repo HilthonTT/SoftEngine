@@ -21,7 +21,6 @@ public class SceneGraphTests
     [Fact]
     public void WorldMatrix_RotatedParent_MovesChildAroundIt()
     {
-        // A quarter turn about Y sends the child's local +X offset to -Z.
         var parent = new SceneNode("parent")
         {
             Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2f),
@@ -82,12 +81,6 @@ public class SceneGraphTests
             node.Add(node);
         });
 
-    /// <summary>
-    /// A cycle is the one malformed hierarchy that cannot be survived: both
-    /// <see cref="SceneNode.UpdateWorldMatrices()"/> and
-    /// <see cref="SceneNode.SelfAndDescendants"/> recurse down the child list, so a loop is an
-    /// unbounded recursion and a stack overflow — which no caller can catch.
-    /// </summary>
     [Fact]
     public void Add_Ancestor_Throws()
     {
@@ -98,7 +91,6 @@ public class SceneGraphTests
         Assert.Throws<ArgumentException>(() => leaf.Add(root));
         Assert.Throws<ArgumentException>(() => leaf.Add(branch));
 
-        // Refused, not half-applied: the tree the caller had is the tree it still has.
         Assert.Same(branch, leaf.Parent);
         Assert.Null(root.Parent);
         Assert.Empty(leaf.Children);
@@ -145,7 +137,6 @@ public class SceneGraphTests
         Approx.Equal(new Vector3(2f), node.Scale);
         Approx.Equal(new Vector3(4, 5, 6), node.Position);
 
-        // The components have to rebuild the matrix they came from, not merely look plausible.
         Approx.Equal(matrix.Translation, node.LocalMatrix.Translation);
         Approx.Equal(Vector3.Transform(Vector3.UnitX, matrix), Vector3.Transform(Vector3.UnitX, node.LocalMatrix));
     }
@@ -212,8 +203,6 @@ public class SceneGraphTests
 
         IMesh mesh = new Cube { Parent = node, Position = new Vector3(1, 0, 0) };
 
-        // The offset is scaled by the parent, which is what makes a marker on a scaled rig
-        // come out the wrong size unless the scale is divided back out.
         Approx.Equal(new Vector3(4, 0, 0), mesh.WorldMatrix.Translation);
     }
 }

@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 
 namespace SoftEngine.Core.Diagnostics;
 
@@ -17,73 +17,79 @@ public sealed class RenderStats
 
     public int BehindViewTriangleCount { get; internal set; }
 
-    /// <summary>Triangles that straddled the near plane and were split instead of discarded.</summary>
     public int NearClippedTriangleCount { get; internal set; }
 
-    /// <summary>
-    /// Triangles belonging to meshes the occlusion pass rejected whole, because something
-    /// nearer already covered every pixel they could have reached.
-    ///
-    /// <para>
-    /// Counted apart from <see cref="OutOfViewTriangleCount"/> rather than folded into it. A
-    /// mesh rejected here was inside the frustum and facing the camera — it was in view, and
-    /// merely hidden — so adding it to the out-of-view total would answer a question nobody
-    /// asked and lose the one number that says whether the pass is paying for itself.
-    /// </para>
-    /// </summary>
     public int OccludedMeshTriangleCount { get; internal set; }
 
-    /// <summary>Meshes the occlusion pass rejected whole.</summary>
     public int OccludedMeshCount { get; internal set; }
 
-    /// <summary>Meshes the occlusion pass rasterized to do it.</summary>
     public int OccluderMeshCount { get; internal set; }
 
-    /// <summary>
-    /// Transparent fragments stored for the order-independent resolve, and the pixels they
-    /// covered. Both zero when the frame sorted its transparent triangles instead.
-    /// </summary>
     public int TransparentFragmentCount { get; internal set; }
 
-    /// <summary>Pixels holding at least one stored transparent fragment.</summary>
     public int TransparentPixelCount { get; internal set; }
 
-    /// <summary>
-    /// How many times a pixel held its maximum number of fragments and had to composite its two
-    /// farthest into one. Zero means the frame's transparency resolved exactly; a large number
-    /// means the scene wants a bigger <see cref="Buffers.FragmentBuffer.Capacity"/>.
-    /// </summary>
     public int TransparentOverflowCount { get; internal set; }
 
-    private int _drawnPixelCount;
-    private int _behindZPixelCount;
     private int _occludedTriangleCount;
 
-    public int DrawnPixelCount => _drawnPixelCount;
+    private const int StripeStride = 16;
 
-    public int BehindZPixelCount => _behindZPixelCount;
+    private static readonly int StripeCount = StripeCountFor(Environment.ProcessorCount);
 
-    /// <summary>
-    /// Triangle-in-tile pairs the fill phase dropped whole because the tile was already
-    /// covered by nearer geometry. Counted per tile, so a triangle spanning several tiles
-    /// can be rejected by some and drawn by others.
-    /// </summary>
+    private static readonly int StripeMask = StripeCount - 1;
+
+    private readonly int[] _pixelStripes = new int[StripeCount * StripeStride];
+
+    public int DrawnPixelCount => SumStripes(0);
+
+    public int BehindZPixelCount => SumStripes(1);
+
     public int OccludedTriangleCount => _occludedTriangleCount;
 
-    /// <summary>Thread-safe batched count of coarse-depth rejections, flushed once per tile.</summary>
     public void AddOccludedTriangles(int count) => Interlocked.Add(ref _occludedTriangleCount, count);
 
-    /// <summary>Thread-safe batched pixel counts, flushed by the rasterizer per scanline.</summary>
     public void AddPixelCounts(int drawn, int behindZ)
     {
+        if (drawn == 0 && behindZ == 0)
+        {
+            return;
+        }
+
+        var stripe = (Environment.CurrentManagedThreadId & StripeMask) * StripeStride;
+
         if (drawn != 0)
         {
-            Interlocked.Add(ref _drawnPixelCount, drawn);
+            Interlocked.Add(ref _pixelStripes[stripe], drawn);
         }
         if (behindZ != 0)
         {
-            Interlocked.Add(ref _behindZPixelCount, behindZ);
+            Interlocked.Add(ref _pixelStripes[stripe + 1], behindZ);
         }
+    }
+
+    private int SumStripes(int offset)
+    {
+        var total = 0;
+
+        for (var i = offset; i < _pixelStripes.Length; i += StripeStride)
+        {
+            total += Volatile.Read(ref _pixelStripes[i]);
+        }
+
+        return total;
+    }
+
+    private static int StripeCountFor(int processors)
+    {
+        var stripes = 8;
+
+        while (stripes < processors && stripes < 64)
+        {
+            stripes *= 2;
+        }
+
+        return stripes;
     }
 
     public long CalculationTimeMs => _caclSw.ElapsedMilliseconds;
@@ -125,8 +131,7 @@ public sealed class RenderStats
         TransparentFragmentCount = 0;
         TransparentPixelCount = 0;
         TransparentOverflowCount = 0;
-        _drawnPixelCount = 0;
-        _behindZPixelCount = 0;
+        Array.Clear(_pixelStripes);
         _occludedTriangleCount = 0;
     }
 }

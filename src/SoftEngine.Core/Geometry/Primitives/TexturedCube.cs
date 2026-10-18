@@ -4,11 +4,6 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Geometry.Primitives;
 
-/// <summary>
-/// A unit cube with 24 vertices (4 per face) so every face carries its own 0..1 UV
-/// square and a hard face normal — the shared-corner <see cref="Cube"/> cannot be
-/// textured per face.
-/// </summary>
 public sealed class TexturedCube : Mesh
 {
     private static readonly Vector3[] _vertices;
@@ -18,17 +13,15 @@ public sealed class TexturedCube : Mesh
 
     static TexturedCube()
     {
-        // Each face: origin corner plus U and V axes chosen so that U x V is the
-        // outward normal (matching the winding convention used by Cube).
         var h = 0.5f;
         (Vector3 Origin, Vector3 U, Vector3 V)[] faces =
         [
-            (new(-h, -h, h), Vector3.UnitX, Vector3.UnitY),   // +Z
-            (new(-h, -h, -h), Vector3.UnitY, Vector3.UnitX),  // -Z
-            (new(h, -h, -h), Vector3.UnitY, Vector3.UnitZ),   // +X
-            (new(-h, -h, -h), Vector3.UnitZ, Vector3.UnitY),  // -X
-            (new(-h, h, -h), Vector3.UnitZ, Vector3.UnitX),   // +Y
-            (new(-h, -h, -h), Vector3.UnitX, Vector3.UnitZ),  // -Y
+            (new(-h, -h, h), Vector3.UnitX, Vector3.UnitY),
+            (new(-h, -h, -h), Vector3.UnitY, Vector3.UnitX),
+            (new(h, -h, -h), Vector3.UnitY, Vector3.UnitZ),
+            (new(-h, -h, -h), Vector3.UnitZ, Vector3.UnitY),
+            (new(-h, h, -h), Vector3.UnitZ, Vector3.UnitX),
+            (new(-h, -h, -h), Vector3.UnitX, Vector3.UnitZ),
         ];
 
         _vertices = new Vector3[faces.Length * 4];

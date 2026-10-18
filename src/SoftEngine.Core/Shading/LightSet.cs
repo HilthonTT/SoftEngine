@@ -4,14 +4,6 @@ using System.Runtime.CompilerServices;
 
 namespace SoftEngine.Core.Shading;
 
-/// <summary>
-/// The scene's lights, flattened for a frame's worth of shading.
-///
-/// A struct wrapping an array, so a painter can hand the whole set to a shader — which is
-/// itself a struct, copied per triangle — without copying the lights with it and without
-/// allocating. The array is rebuilt only when the world's lights change shape, so a static
-/// scene reuses the same one frame after frame.
-/// </summary>
 public readonly struct LightSet
 {
     private readonly ShaderLight[] _lights;
@@ -30,11 +22,6 @@ public readonly struct LightSet
         get => ref _lights[index];
     }
 
-    /// <summary>
-    /// A set from a fixed list of lights, allocating its own storage. For callers outside
-    /// the frame loop — a test, a one-off render — where reusing an array buys nothing.
-    /// The first light is the shadow caster, as in <see cref="Build"/>.
-    /// </summary>
     public static LightSet Of(params ILight[] lights)
     {
         ArgumentNullException.ThrowIfNull(lights, nameof(lights));
@@ -49,14 +36,6 @@ public readonly struct LightSet
         return new LightSet(flattened, lights.Length);
     }
 
-    /// <summary>
-    /// Builds the set from a world, into <paramref name="storage"/> when it is big enough
-    /// and a fresh array otherwise. A world with no lights of its own gets
-    /// <paramref name="fallback"/>, so a scene is never rendered pitch black by omission.
-    ///
-    /// The first light is marked as the shadow caster, matching
-    /// <see cref="SceneLights.Resolve"/> — the light the renderer built the shadow map from.
-    /// </summary>
     public static LightSet Build(IWorld world, ILight? fallback, ref ShaderLight[] storage)
     {
         ArgumentNullException.ThrowIfNull(world, nameof(world));

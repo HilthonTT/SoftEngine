@@ -8,12 +8,6 @@ using SoftEngine.Core.Textures;
 
 namespace SoftEngine.Core.Rasterization.Painters;
 
-/// <summary>
-/// Perspective-correct textured fill with Gouraud lighting. Meshes without a texture
-/// or UVs fall back to plain Gouraud shading, so mixed scenes still render sensibly.
-/// Samples bilinearly from a mip level chosen per triangle by default; both can be
-/// turned off to get the raw nearest-neighbour look back.
-/// </summary>
 public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f) : LitPainter(light, ambient)
 {
     public TextureFiltering Filtering { get; set; } = TextureFiltering.Bilinear;
@@ -27,8 +21,6 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
             return;
         }
 
-        // Mip chains are built here, before the parallel paint phase, so DrawTriangle
-        // never mutates a texture from multiple threads.
         foreach (var mesh in scene.World.Meshes)
         {
             mesh.Texture?.EnsureMipMaps();
@@ -41,7 +33,6 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
 
         var mesh = vertexBuffer.Mesh;
         var t = vertexBuffer.GetTriangle(triangleIndice);
-        t.TransformWorld(vertexBuffer);
 
         var (a, b, c) = (vertexBuffer.GetVertex(t.I0), vertexBuffer.GetVertex(t.I1), vertexBuffer.GetVertex(t.I2));
 
@@ -58,7 +49,7 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
 
         if (uvs is null || texture is null)
         {
-            ScanlineRasterizer.Fill(
+            Rasterizer.Fill(
                 surface,
                 p0, p1, p2,
                 1f / a.Proj.W, 1f / b.Proj.W, 1f / c.Proj.W,
@@ -90,11 +81,9 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
         var invW1 = 1f / b.Proj.W;
         var invW2 = 1f / c.Proj.W;
 
-        // Two calls rather than one with a wrapped shader, because the wrapping is what
-        // decides whether the fill is compiled with an alpha test in it at all.
         if (mesh.Material is { IsCutout: true } cutout)
         {
-            ScanlineRasterizer.Fill(
+            Rasterizer.Fill(
                 surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2,
                 new CutoutShader<TextureVarying, TexturedShader>(shader, albedo, cutout.AlphaCutoff),
                 state,
@@ -102,7 +91,7 @@ public sealed class TexturedPainter(ILight? light = null, float ambient = 0.12f)
             return;
         }
 
-        ScanlineRasterizer.Fill(
+        Rasterizer.Fill(
             surface, p0, p1, p2, invW0, invW1, invW2, v0, v1, v2,
             shader,
             state,

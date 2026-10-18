@@ -8,9 +8,6 @@ public sealed class VertexBuffer : IDisposable
 {
     private static readonly ArrayPool<Vertices> _verticeBag = ArrayPool<Vertices>.Create();
 
-    // Geometry produced by near-plane clipping this frame. Clipped vertex indices start
-    // at Size and clipped triangle indices at Mesh.Triangles.Length, so painters address
-    // both kinds through the Get* accessors without knowing which is which.
     private readonly List<Vertices> _clippedVertices = [];
     private readonly List<Vector2> _clippedTexCoords = [];
     private readonly List<Vector4> _clippedTangents = [];
@@ -38,7 +35,6 @@ public sealed class VertexBuffer : IDisposable
         _clippedTriangles.Clear();
     }
 
-    /// <summary>Adds a vertex produced by clipping; returns its index (≥ <see cref="Size"/>).</summary>
     public int AddClippedVertex(in Vertices vertex, Vector2 texCoord, Vector4 tangent = default)
     {
         _clippedVertices.Add(vertex);
@@ -47,10 +43,6 @@ public sealed class VertexBuffer : IDisposable
         return Size + _clippedVertices.Count - 1;
     }
 
-    /// <summary>
-    /// Adds a triangle produced by clipping <paramref name="sourceTriangle"/>;
-    /// returns its index (≥ <c>Mesh.Triangles.Length</c>).
-    /// </summary>
     public int AddClippedTriangle(in Triangle triangle, int sourceTriangle)
     {
         _clippedTriangles.Add((triangle, sourceTriangle));
@@ -65,7 +57,6 @@ public sealed class VertexBuffer : IDisposable
             : _clippedTriangles[triangleIndex - baseCount].Triangle;
     }
 
-    /// <summary>The mesh triangle a triangle index originates from — itself unless clipped.</summary>
     public int SourceTriangleIndex(int triangleIndex)
     {
         var baseCount = Mesh!.Triangles.Length;
@@ -82,10 +73,6 @@ public sealed class VertexBuffer : IDisposable
             ? Mesh?.TexCoords?[vertexIndex] ?? Vector2.Zero
             : _clippedTexCoords[vertexIndex - Size];
 
-    /// <summary>
-    /// The vertex's tangent frame in model space, or <see cref="Vector4.Zero"/> when the mesh
-    /// has none — normal mapping treats that as "use the interpolated normal as-is".
-    /// </summary>
     public Vector4 GetTangent(int vertexIndex) =>
         vertexIndex < Size
             ? Mesh?.Tangents?[vertexIndex] ?? Vector4.Zero

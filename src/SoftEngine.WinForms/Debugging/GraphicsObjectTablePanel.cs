@@ -1,12 +1,5 @@
 namespace SoftEngine.WinForms.Debugging;
 
-/// <summary>
-/// The graphics object table: every resource the frame is built from — render target,
-/// depth buffer, camera, projection, painter, lights, meshes and textures — with the
-/// same <c>obj:N</c> identifiers the event list uses. Unchecking a mesh drops it from
-/// the frame. Virtual, because a generated town is tens of thousands of meshes and
-/// building that many list items up front freezes the UI for seconds.
-/// </summary>
 internal sealed class GraphicsObjectTablePanel : UserControl
 {
     private readonly ListView _list;
@@ -50,12 +43,10 @@ internal sealed class GraphicsObjectTablePanel : UserControl
         Controls.Add(new DockPanelHeader("Graphics Object Table"));
     }
 
-    /// <summary>Raised when a mesh is activated or deactivated, so the viewport can redraw.</summary>
     public event EventHandler? ActiveChanged;
 
     public SceneObjectCatalog Catalog => _catalog;
 
-    /// <summary>Points the view at the new rows; they are materialized on demand.</summary>
     public void SetCatalog(SceneObjectCatalog catalog)
     {
         _catalog = catalog;
@@ -75,7 +66,6 @@ internal sealed class GraphicsObjectTablePanel : UserControl
         _list.Invalidate();
     }
 
-    /// <summary>Highlights the row an event or pixel write refers to.</summary>
     public void SelectObject(int objectId)
     {
         var rows = _catalog.Rows;
@@ -93,7 +83,6 @@ internal sealed class GraphicsObjectTablePanel : UserControl
 
     private void RetrieveVirtualItem(object? sender, RetrieveVirtualItemEventArgs e)
     {
-        // The list can ask for a row a shrinking catalog has just dropped.
         if ((uint)e.ItemIndex >= (uint)_catalog.Rows.Count)
         {
             e.Item = new ListViewItem(string.Empty);
@@ -127,7 +116,6 @@ internal sealed class GraphicsObjectTablePanel : UserControl
             return;
         }
 
-        // Only meshes have an active flag; the rest of the frame can't be switched off.
         if (!_catalog.Rows[e.Index].CanToggle)
         {
             e.NewValue = e.CurrentValue;
@@ -136,8 +124,6 @@ internal sealed class GraphicsObjectTablePanel : UserControl
 
     private void ItemChecked(object? sender, ItemCheckedEventArgs e)
     {
-        // The check state itself lives on the mesh — virtual items are transient, so the
-        // next repaint reads it back through the row's Active property.
         if (e.Item.Tag is not SceneObjectRow { Mesh: { } mesh } || mesh.Visible == e.Item.Checked)
         {
             return;

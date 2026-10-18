@@ -2,10 +2,6 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Animation;
 
-/// <summary>
-/// A rotation curve: keyed <see cref="Quaternion"/> values, spherically blended along the
-/// shorter of the two arcs between neighbours.
-/// </summary>
 public sealed class QuaternionTrack
 {
     private readonly float[] _times;
@@ -75,9 +71,6 @@ public sealed class QuaternionTrack
 
         if (Interpolation == TrackInterpolation.CubicSpline)
         {
-            // The spline runs through the four components as if they were any other vector,
-            // which is what the glTF specification prescribes; the result is renormalized
-            // because nothing about a cubic keeps its output on the unit sphere.
             var value = Keyframes.Hermite(
                 _values[index],
                 _outTangents![index],
@@ -89,10 +82,6 @@ public sealed class QuaternionTrack
             return value.LengthSquared() > 1e-12f ? Quaternion.Normalize(value) : _values[index];
         }
 
-        // q and -q are the same rotation but opposite ends of the sphere, so blending
-        // neighbours written with opposite signs could take the long way round — a joint
-        // spinning 300° to reach a pose 60° away. Slerp already negates one end when their
-        // dot is negative, so the short arc is the one taken.
         return Quaternion.Normalize(Quaternion.Slerp(_values[index], _values[index + 1], blend));
     }
 }

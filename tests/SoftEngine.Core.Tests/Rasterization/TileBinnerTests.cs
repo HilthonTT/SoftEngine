@@ -37,7 +37,6 @@ public class TileBinnerTests
     {
         var binner = Binner();
 
-        // Well inside the first tile.
         binner.Add(4f, 4f, 10f, 10f, 0f);
         binner.Build();
 
@@ -55,7 +54,6 @@ public class TileBinnerTests
         var binner = Binner();
         var size = TileBinner.TileSize;
 
-        // Straddles the boundary between the first two tiles of the first two rows.
         binner.Add(size - 2f, size - 2f, size + 2f, size + 2f, 0f);
         binner.Build();
 
@@ -110,8 +108,6 @@ public class TileBinnerTests
 
         Assert.Equal(1234, binner.NearestDepth(0));
 
-        // A depth in front of the near plane clamps rather than going negative, so the
-        // comparison against a stored depth stays meaningful.
         Assert.Equal(0, binner.NearestDepth(1));
     }
 

@@ -8,10 +8,6 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Rasterization.Painters;
 
-/// <summary>
-/// Per-pixel Blinn-Phong: interpolates world position and normal across the triangle
-/// and lights every fragment, giving smooth highlights that Gouraud misses.
-/// </summary>
 public sealed class PhongPainter(
     ILight? light = null,
     float ambient = 0.12f,
@@ -25,8 +21,6 @@ public sealed class PhongPainter(
 
     protected override void PrepareCore(Scene scene)
     {
-        // Camera.Position is the translation fed into the view matrix, not the eye's
-        // world position — invert the view matrix to get the true eye point.
         _eye = Matrix4x4.Invert(scene.Camera.ViewMatrix, out var inverseView)
             ? inverseView.Translation
             : scene.Camera.Position;
@@ -37,11 +31,10 @@ public sealed class PhongPainter(
         ArgumentNullException.ThrowIfNull(vertexBuffer.Mesh, nameof(vertexBuffer));
 
         var t = vertexBuffer.GetTriangle(triangleIndice);
-        t.TransformWorld(vertexBuffer);
 
         var (a, b, c) = (vertexBuffer.GetVertex(t.I0), vertexBuffer.GetVertex(t.I1), vertexBuffer.GetVertex(t.I2));
 
-        ScanlineRasterizer.Fill(
+        Rasterizer.Fill(
             surface,
             surface.ToScreen3(a.Proj), surface.ToScreen3(b.Proj), surface.ToScreen3(c.Proj),
             1f / a.Proj.W, 1f / b.Proj.W, 1f / c.Proj.W,

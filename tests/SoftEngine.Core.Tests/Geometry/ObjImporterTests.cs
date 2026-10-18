@@ -1,4 +1,5 @@
 ﻿using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Import;
 using SoftEngine.Core.Textures;
 using System.Numerics;
@@ -106,6 +107,26 @@ public class ObjImporterTests : IDisposable
     }
 
     [Fact]
+    public void ImportObj_FacesWithoutNormalsBesideFacesWithThem_StillGetNormals()
+    {
+        var path = WriteObj("""
+            v 0 0 0
+            v 1 0 0
+            v 0 1 0
+            v 0 0 1
+            v 1 0 1
+            v 0 1 1
+            vn 0 0 1
+            f 1//1 2//1 3//1
+            f 4 5 6
+            """);
+
+        var mesh = Assert.Single(ObjImporter.Import(path));
+
+        Assert.All(mesh.NormVertices, n => Assert.True(n.Length() > 0.99f));
+    }
+
+    [Fact]
     public void ImportObj_MissingNormals_AreComputed()
     {
         var path = WriteObj("""
@@ -121,7 +142,6 @@ public class ObjImporterTests : IDisposable
         Assert.All(meshes[0].NormVertices, n => Assert.True(n.Length() > 0.99f));
     }
 
-    /// <summary>Writes a material library next to the model and returns an OBJ that uses it.</summary>
     private string WriteMaterialModel(string materialLibrary)
     {
         File.WriteAllText(Path.Combine(_directory, "model.mtl"), materialLibrary);
@@ -226,7 +246,6 @@ public class ObjImporterTests : IDisposable
         Assert.NotNull(mesh.Material.NormalMap);
         Assert.NotNull(mesh.Material.SpecularMap);
 
-        // Texture and Material.DiffuseMap are the same slot under two names.
         Assert.Same(mesh.Material.DiffuseMap, mesh.Texture);
     }
 

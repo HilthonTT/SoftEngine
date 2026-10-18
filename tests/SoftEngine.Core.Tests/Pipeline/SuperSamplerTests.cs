@@ -48,8 +48,6 @@ public class SuperSamplerTests
     [Fact]
     public void Resolve_HalfCoveredPixel_AveragesInLinearLight()
     {
-        // A 2×2 block: two white samples, two black. Averaged as bytes this would be 128;
-        // averaged as light it is the sRGB encoding of 0.5, which is appreciably brighter.
         var surface = new FrameBuffer(2, 2);
         var white = new ColorRGB(255, 255, 255).Color;
         var black = new ColorRGB(0, 0, 0).Color;
@@ -71,8 +69,6 @@ public class SuperSamplerTests
     [Fact]
     public void Resolve_EdgeOverClearedBackground_ComesOutPremultiplied()
     {
-        // Half the samples are the cleared background (fully transparent black), so the
-        // resolved pixel is half-covered: half alpha, and a colour already scaled by it.
         var surface = new FrameBuffer(2, 2);
         var white = new ColorRGB(255, 255, 255).Color;
 
@@ -96,7 +92,6 @@ public class SuperSamplerTests
         var surface = new FrameBuffer(4, 4);
         var red = ColorRGB.Red.Color;
 
-        // Only the top-left 2×2 block is written.
         surface.Screen[0] = red;
         surface.Screen[1] = red;
         surface.Screen[4] = red;

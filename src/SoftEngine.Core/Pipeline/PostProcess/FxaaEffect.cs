@@ -1,32 +1,15 @@
 namespace SoftEngine.Core.Pipeline.PostProcess;
 
-/// <summary>
-/// Fast approximate anti-aliasing: find the pixels that sit on a luminance edge, work out
-/// which way that edge runs, and blur across it — never along it. Nothing about it knows
-/// where the triangles were, which is exactly the point: the rasterizer keeps sampling one
-/// point per pixel, and the stair-stepping is smoothed afterwards, for a fixed
-/// screen-sized cost instead of a multiple of the whole render.
-///
-/// This is FXAA's edge detection and directional blend without its edge-walking refinement
-/// pass, which trades a good deal of complexity for sharper near-horizontal lines.
-/// </summary>
 public sealed class FxaaEffect : IPostEffect
 {
     public string Name => "FXAA";
 
     public bool Enabled { get; set; }
 
-    /// <summary>
-    /// Local contrast, as a fraction of the neighbourhood's brightest pixel, below which a
-    /// pixel is left alone. Too low and flat gradients get smeared; too high and shallow
-    /// edges keep their steps.
-    /// </summary>
     public float EdgeThreshold { get; set; } = 0.125f;
 
-    /// <summary>Absolute contrast floor, so near-black areas aren't filtered on sensor-level differences.</summary>
     public float EdgeThresholdMin { get; set; } = 0.0312f;
 
-    /// <summary>Caps how far a pixel may be pulled toward its neighbours; 1 allows a full blend.</summary>
     public float Strength { get; set; } = 0.75f;
 
     public void Apply(PostProcessTarget target)
@@ -39,8 +22,6 @@ public sealed class FxaaEffect : IPostEffect
             return;
         }
 
-        // Every pixel reads its 3×3 neighbourhood, so the source has to be a copy — filtered
-        // neighbours would feed back into the pixels after them.
         target.SnapshotToScratch();
 
         var source = target.Scratch;
@@ -81,9 +62,6 @@ public sealed class FxaaEffect : IPostEffect
                 var lumaSW = Luma(source, (south + west) * 3);
                 var lumaSE = Luma(source, (south + east) * 3);
 
-                // Second derivatives measured along each axis. A vertical edge changes fast
-                // as you walk across it in X and not at all in Y, so the axis with the
-                // larger sum is the one to blur along — across the edge, never along it.
                 var contrastAlongX =
                     MathF.Abs(lumaNW + lumaNE - 2f * lumaN) +
                     MathF.Abs(lumaW + lumaE - 2f * lumaM) * 2f +
@@ -94,8 +72,6 @@ public sealed class FxaaEffect : IPostEffect
                     MathF.Abs(lumaN + lumaS - 2f * lumaM) * 2f +
                     MathF.Abs(lumaNE + lumaSE - 2f * lumaE);
 
-                // How far this pixel sits from its neighbourhood's mean — a lone pixel on a
-                // step blends fully, one on a smooth ramp barely moves.
                 var average = (2f * (lumaN + lumaS + lumaW + lumaE) + lumaNW + lumaNE + lumaSW + lumaSE) / 12f;
                 var subPixel = System.Math.Clamp(MathF.Abs(average - lumaM) / range, 0f, 1f);
                 var blend = subPixel * subPixel * strength;
@@ -120,10 +96,6 @@ public sealed class FxaaEffect : IPostEffect
         });
     }
 
-    /// <summary>
-    /// Perceptual luminance. The buffer is linear, and edge detection has to match what the
-    /// eye calls a step, so the square root stands in for the sRGB encode curve.
-    /// </summary>
     private static float Luma(float[] color, int index) =>
         MathF.Sqrt(MathF.Max(0f, 0.2126f * color[index] + 0.7152f * color[index + 1] + 0.0722f * color[index + 2]));
 }

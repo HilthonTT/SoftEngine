@@ -2,23 +2,8 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Geometry;
 
-/// <summary>
-/// Derives per-vertex tangent frames from a mesh's UV layout.
-///
-/// A tangent-space normal map stores directions relative to the surface's own UV axes, so
-/// using one means knowing, at every vertex, which way in world space the texture's U and V
-/// grow. That falls out of solving each triangle's two edges against its two UV deltas;
-/// accumulating the result over the triangles a vertex belongs to smooths the frame the
-/// same way vertex normals are smoothed.
-/// </summary>
 public static class TangentBuilder
 {
-    /// <summary>
-    /// Builds one tangent per vertex: XYZ is the U direction, made perpendicular to the
-    /// vertex normal, and W is ±1 — whether the bitangent is <c>cross(N, T)</c> or its
-    /// negation. Mirrored UV islands flip that handedness, which is why it cannot simply be
-    /// assumed and has to travel with the tangent.
-    /// </summary>
     public static Vector4[] Build(Vector3[] vertices, Vector3[] normals, Vector2[] texCoords, Triangle[] triangles)
     {
         ArgumentNullException.ThrowIfNull(vertices);
@@ -46,9 +31,6 @@ public static class TangentBuilder
             var deltaUv1 = texCoords[i1] - texCoords[i0];
             var deltaUv2 = texCoords[i2] - texCoords[i0];
 
-            // The 2×2 UV system is singular for a degenerate UV triangle — a seam collapsed
-            // to a point, or a face nobody bothered to unwrap. Those vertices keep whatever
-            // their other triangles contributed, and fall back below if they have none.
             var determinant = deltaUv1.X * deltaUv2.Y - deltaUv2.X * deltaUv1.Y;
             if (MathF.Abs(determinant) < 1e-12f)
             {
@@ -78,14 +60,10 @@ public static class TangentBuilder
 
             var tangent = tangents[i];
 
-            // Gram-Schmidt: the accumulated tangent is only approximately in the surface
-            // plane once several triangles have contributed to it.
             tangent -= normal * Vector3.Dot(normal, tangent);
 
             if (tangent.LengthSquared() < 1e-12f)
             {
-                // No usable UV gradient here: any tangent perpendicular to the normal will
-                // do, since the normal map's X and Y offsets are meaningless anyway.
                 tangent = MathF.Abs(normal.X) < 0.9f
                     ? Vector3.Cross(normal, Vector3.UnitX)
                     : Vector3.Cross(normal, Vector3.UnitY);

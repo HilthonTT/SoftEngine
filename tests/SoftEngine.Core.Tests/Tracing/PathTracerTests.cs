@@ -25,9 +25,6 @@ public class PathTracerTests
         public Matrix4x4 ViewMatrix => Matrix4x4.CreateLookAt(Position, target, Vector3.UnitY);
     }
 
-    /// <summary>
-    /// A flat quad in the y = 0 plane, wide enough to fill the frame, with a chosen albedo.
-    /// </summary>
     private static Mesh Floor(float size, ColorRGB color, float roughness = 1f)
     {
         var mesh = new Mesh(
@@ -47,7 +44,6 @@ public class PathTracerTests
         return mesh;
     }
 
-    /// <summary>A camera looking straight down at the floor from above.</summary>
     private static Scene LookingDown(IWorld world, int size = 24)
     {
         return new Scene
@@ -61,7 +57,6 @@ public class PathTracerTests
         };
     }
 
-    /// <summary>The mean linear colour of the frame, read back out of the HDR target.</summary>
     private static LinearColor Mean(FrameBuffer surface)
     {
         float r = 0f, g = 0f, b = 0f;
@@ -111,16 +106,12 @@ public class PathTracerTests
 
         Assert.True(single > 0.01f, $"a lit white floor should not be black, got {single}");
 
-        // Radiance is linear in the light's intensity, and nothing in the path changes that.
         Assert.Equal(2f, doubled / single, 2);
     }
 
     [Fact]
     public void Render_ADirectionalLightAgreesWithTheAnalyticAnswer()
     {
-        // A white Lambertian floor, lit straight down, seen straight down. Every term is known: the
-        // BRDF is albedo/π, the cosine is 1, and the tracer scales direct light by π to match the
-        // rasterizer's exposure — so the answer is the albedo times the intensity.
         var world = new SimpleWorld();
         world.Meshes.Add(Floor(40f, new ColorRGB(255, 255, 255)));
         world.Lights.Clear();
@@ -133,8 +124,6 @@ public class PathTracerTests
 
         var mean = Mean(scene.Surface);
 
-        // Fresnel takes a few percent off the diffuse and puts it into a specular lobe that points
-        // nowhere near the camera, so the answer is a little under the ideal 0.5.
         Assert.True(mean.R is > 0.42f and < 0.5f, $"expected ≈0.48, got {mean.R}");
     }
 
@@ -145,7 +134,6 @@ public class PathTracerTests
         world.Meshes.Add(Floor(20f, ColorRGB.White));
         world.Lights.Clear();
 
-        // Pointing up: the light travels away from the floor's front face.
         world.Lights.Add(new DirectionalLight { Direction = Vector3.UnitY, Intensity = 1f });
 
         var scene = LookingDown(world);
@@ -157,8 +145,6 @@ public class PathTracerTests
     [Fact]
     public void Render_CastsShadowsWithNoBiasToTune()
     {
-        // The same frame with and without something between the floor and the light. A shadow map
-        // would need a bias chosen for this scene's scale; a shadow ray needs nothing.
         static float Brightness(bool occluded)
         {
             var world = new SimpleWorld();
@@ -166,16 +152,12 @@ public class PathTracerTests
 
             if (occluded)
             {
-                // A lid over the whole floor, so every pixel of it is shadowed rather than a patch
-                // whose size the assertion would have to know.
                 world.Meshes.Add(new Cube { Position = new Vector3(0, 3f, 0), Scale = new Vector3(60f, 0.5f, 60f) });
             }
 
             world.Lights.Clear();
             world.Lights.Add(new DirectionalLight { Direction = -Vector3.UnitY, Intensity = 1f });
 
-            // From the side and low down, so the frame is mostly floor rather than the lid of the
-            // slab that is doing the occluding.
             var scene = new Scene
             {
                 World = world,
@@ -201,9 +183,6 @@ public class PathTracerTests
     [Fact]
     public void Render_TakesLightFromTheEnvironment()
     {
-        // The sky as the only light: what the rasterizer approximates with an ambient cube and this
-        // integrates properly. The light is present but switched off, because a world with no lights
-        // at all gets the painters' default one — and that would be lighting the floor instead.
         var world = new SimpleWorld();
         world.Meshes.Add(Floor(40f, ColorRGB.White));
         world.Lights.Clear();
@@ -212,15 +191,11 @@ public class PathTracerTests
         var scene = LookingDown(world);
         scene.Environment = SkyBox.Uniform(new ColorRGB(128, 128, 128));
 
-        // One bounce, which is what it takes for a surface to see the sky at all.
         Tracer(samples: 64, bounces: 1).Render(scene, null);
 
         LinearColor sky = new ColorRGB(128, 128, 128);
         var mean = Mean(scene.Surface).R;
 
-        // A white Lambertian surface under a uniform sky of radiance L reflects L, less the few
-        // percent Fresnel keeps. The camera sees some sky directly too, at exactly L, so the whole
-        // frame lands there.
         Assert.True(MathF.Abs(mean - sky.R) < 0.15f * sky.R, $"expected ≈{sky.R}, got {mean}");
     }
 
@@ -261,23 +236,18 @@ public class PathTracerTests
             return [.. scene.Surface.Screen];
         }
 
-        // A stochastic renderer whose output depends on thread scheduling cannot be regression
-        // tested at all, so the sampler is seeded per pixel rather than shared.
         Assert.Equal(Frame(), Frame());
     }
 
     [Fact]
     public void Render_IndirectLightReachesWhatDirectLightCannot()
     {
-        // A white box open on one side, lit through the opening. The wall opposite the light gets
-        // nothing directly; with a bounce it gets light reflected off the floor.
         static float Corner(int bounces)
         {
             var world = new SimpleWorld();
 
             world.Meshes.Add(Floor(6f, ColorRGB.White));
 
-            // A vertical wall behind the floor's far edge, facing the camera.
             var wall = new Mesh(
                 [
                     new Vector3(-6f, 0, -6f),
@@ -293,7 +263,6 @@ public class PathTracerTests
             world.Meshes.Add(wall);
             world.Lights.Clear();
 
-            // Straight down: the floor is lit, the wall's own face is edge-on to it and gets none.
             world.Lights.Add(new DirectionalLight { Direction = -Vector3.UnitY, Intensity = 1f });
 
             var scene = new Scene
@@ -338,7 +307,6 @@ public class PathTracerTests
         tracer.Render(scene, null);
         Assert.Equal(8, tracer.AccumulatedSamples);
 
-        // Moving something invalidates what was accumulated against where it used to be.
         world.Meshes[0].Position = new Vector3(0, 0.5f, 0);
         tracer.Render(scene, null);
         Assert.Equal(4, tracer.AccumulatedSamples);
@@ -366,8 +334,6 @@ public class PathTracerTests
 
         Tracer(samples: 2).Render(scene, null);
 
-        // The cube is nearer than the background, so the depth view and the depth-reading post
-        // effects have something to work with even though no triangle was ever projected.
         Assert.False(scene.Surface.IsBackground(16, 16));
         Assert.True(scene.Surface.IsBackground(0, 0));
     }
@@ -375,9 +341,6 @@ public class PathTracerTests
     [Fact]
     public void Render_AgreesWithTheRasterizerOnDirectLight()
     {
-        // The comparison the whole renderer exists for: one bounce of nothing, no environment, a
-        // single directional light — the case the rasterizer computes exactly rather than
-        // approximating. The two should land on the same brightness.
         static LinearColor Frame(IRenderer renderer, IPainter? painter)
         {
             var world = new SimpleWorld();
@@ -395,8 +358,6 @@ public class PathTracerTests
 
         var traced = Frame(Tracer(samples: 4), null);
 
-        // The PBR painter with no environment and no ambient is the closest thing the rasterizer
-        // has to "direct light only".
         var rasterized = Frame(new Renderer(), new PbrPainter(ambient: 0f));
 
         Assert.True(MathF.Abs(traced.R - rasterized.R) < 0.1f * rasterized.R,

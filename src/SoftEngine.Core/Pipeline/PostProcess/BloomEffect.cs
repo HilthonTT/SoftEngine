@@ -1,14 +1,5 @@
 namespace SoftEngine.Core.Pipeline.PostProcess;
 
-/// <summary>
-/// Bleeds light out of the brightest parts of the image. The bright pass runs at a
-/// fraction of the resolution — a wide blur is what sells the effect, and a wide blur on a
-/// quarter-size buffer costs a sixteenth of the samples for a result nobody can tell apart
-/// once it is added back over the full-resolution image.
-///
-/// Both the threshold and the blur are in linear light, which is the only space where
-/// summing light is meaningful.
-/// </summary>
 public sealed class BloomEffect : IPostEffect
 {
     private float[] _bright = [];
@@ -22,24 +13,14 @@ public sealed class BloomEffect : IPostEffect
 
     public bool Enabled { get; set; }
 
-    /// <summary>
-    /// Linear luminance a pixel must exceed to bloom. An 8-bit render target tops out at 1,
-    /// so a threshold near it leaves only the few pixels that clipped; an
-    /// <see cref="Buffers.FrameBuffer.IsHighDynamicRange">HDR</see> one carries the real
-    /// values, and the threshold then means what it says.
-    /// </summary>
     public float Threshold { get; set; } = 0.65f;
 
-    /// <summary>How much of the blurred result is added back over the image.</summary>
     public float Intensity { get; set; } = 0.55f;
 
-    /// <summary>Size reduction of the bright buffer; 4 means a quarter of the width and height.</summary>
     public int Downsample { get; set; } = 4;
 
-    /// <summary>Half-width of the blur kernel, in bright-buffer pixels.</summary>
     public int Radius { get; set; } = 5;
 
-    /// <summary>Repeats of the separable blur. Two passes widen the tail without a wider kernel.</summary>
     public int Passes { get; set; } = 2;
 
     public void Apply(PostProcessTarget target)
@@ -85,8 +66,6 @@ public sealed class BloomEffect : IPostEffect
             return;
         }
 
-        // sigma = radius / 2 puts the kernel's useful support just inside its width, so
-        // the truncated tail is small enough not to show as a hard edge.
         var sigma = radius * 0.5f;
         var weights = new float[radius + 1];
         var sum = 0f;
@@ -106,11 +85,6 @@ public sealed class BloomEffect : IPostEffect
         _kernelRadius = radius;
     }
 
-    /// <summary>
-    /// Box-averages each <c>Downsample × Downsample</c> block of the source and keeps only
-    /// the light above the threshold. The colour is scaled rather than shifted, so a bright
-    /// red stays red instead of drifting toward white as the threshold is subtracted.
-    /// </summary>
     private void BrightPass(PostProcessTarget target, int downsample)
     {
         var source = target.Color;
@@ -161,7 +135,6 @@ public sealed class BloomEffect : IPostEffect
         });
     }
 
-    /// <summary>One axis of the separable gaussian, from <see cref="_bright"/> back into itself via <see cref="_blurred"/>.</summary>
     private void Blur(bool horizontal)
     {
         var source = _bright;
@@ -186,8 +159,6 @@ public sealed class BloomEffect : IPostEffect
                 {
                     var weight = kernel[k];
 
-                    // Clamp addressing: the frame has no wrap-around, and clamping keeps the
-                    // border from darkening the way a zero-padded kernel would.
                     var lowIndex = horizontal
                         ? (y * width + System.Math.Max(x - k, 0)) * 3
                         : (System.Math.Max(y - k, 0) * width + x) * 3;
@@ -210,7 +181,6 @@ public sealed class BloomEffect : IPostEffect
         (_bright, _blurred) = (_blurred, _bright);
     }
 
-    /// <summary>Adds the blurred highlights back, bilinearly upsampled to the full resolution.</summary>
     private void Composite(PostProcessTarget target, int downsample)
     {
         var color = target.Color;
@@ -224,7 +194,6 @@ public sealed class BloomEffect : IPostEffect
 
         Parallel.For(0, target.Height, y =>
         {
-            // Bright-buffer texel centres sit at (i + 0.5) * downsample in source pixels.
             var fy = (y + 0.5f) * inverse - 0.5f;
             var y0 = (int)MathF.Floor(fy);
             var ty = fy - y0;

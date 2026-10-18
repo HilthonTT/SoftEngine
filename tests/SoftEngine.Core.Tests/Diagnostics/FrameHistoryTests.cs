@@ -39,10 +39,6 @@ public class FrameHistoryTests
         return (renderer, scene);
     }
 
-    /// <summary>
-    /// Off by default. Keeping frames is the one piece of instrumentation here that genuinely
-    /// allocates — a copy of the event buffer per frame — so nobody pays for it unasked.
-    /// </summary>
     [Fact]
     public void History_IsOffUntilACapacityIsSet()
     {
@@ -69,17 +65,11 @@ public class FrameHistoryTests
 
         Assert.Equal(3, frames.Count);
 
-        // Oldest first, and the three that survived are the last three rendered.
         Assert.Equal(5, frames[0].FrameNumber);
         Assert.Equal(6, frames[1].FrameNumber);
         Assert.Equal(7, frames[2].FrameNumber);
     }
 
-    /// <summary>
-    /// The event log is a single growable array reused frame after frame. A capture holding a
-    /// reference to it would describe whichever frame happened to be rendering when it was read,
-    /// which is exactly the failure a history exists to prevent.
-    /// </summary>
     [Fact]
     public void Capture_CopiesTheEventsRatherThanReferencingTheLiveLog()
     {
@@ -94,7 +84,6 @@ public class FrameHistoryTests
 
         Assert.NotEmpty(recorded);
 
-        // Two more frames, which overwrite the live buffer several times over.
         renderer.Render(scene, new GouraudPainter());
         renderer.Render(scene, new GouraudPainter());
 
@@ -102,10 +91,6 @@ public class FrameHistoryTests
         Assert.Equal(1, renderer.Diagnostics.Frames[0].FrameNumber);
     }
 
-    /// <summary>
-    /// <see cref="RenderStats"/> is cleared and refilled every frame, so a capture that held the
-    /// object would report the newest numbers under an old frame's name.
-    /// </summary>
     [Fact]
     public void Capture_FreezesTheFramesOwnCounts()
     {
@@ -118,8 +103,6 @@ public class FrameHistoryTests
 
         Assert.True(triangles > 0);
 
-        // A second frame with nothing in it: the live stats drop to zero, and the kept frame
-        // must not follow them down.
         ((SimpleWorld)scene.World).Meshes.Clear();
         renderer.Render(scene, new GouraudPainter());
 
@@ -171,7 +154,6 @@ public class FrameHistoryTests
         Assert.Equal(2, fired);
     }
 
-    /// <summary>A frame rendered with no pixel selected carries no history, and says so.</summary>
     [Fact]
     public void Capture_WithNoProbedPixel_HasNoPixelHistory()
     {

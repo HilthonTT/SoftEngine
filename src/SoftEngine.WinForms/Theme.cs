@@ -2,7 +2,6 @@ using System.Drawing.Drawing2D;
 
 namespace SoftEngine.WinForms;
 
-/// <summary>Shared color palette and paint helpers for the dark UI.</summary>
 internal static class Theme
 {
     public static readonly Color Background = Color.FromArgb(30, 30, 34);
@@ -12,6 +11,10 @@ internal static class Theme
     public static readonly Color TextSecondary = Color.FromArgb(150, 150, 160);
     public static readonly Color Accent = Color.FromArgb(138, 124, 245);
     public static readonly Color Selection = Color.FromArgb(56, 52, 84);
+
+    // The logo is the executable's own icon (ApplicationIcon in the .csproj), so there is
+    // one copy of it and every window shows the same thing the taskbar and Explorer do.
+    public static readonly Icon? AppIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 
     public static GraphicsPath RoundedRect(Rectangle bounds, int radius)
     {

@@ -5,19 +5,6 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Rasterization.Shaders;
 
-/// <summary>
-/// Per-pixel Blinn-Phong over a <see cref="Geometry.Material"/>, summed over every light in
-/// the scene: albedo from a diffuse map, the shading normal perturbed by a tangent-space
-/// normal map, and the highlight's strength masked by a specular map. Shadows, when the
-/// scene casts them, are sampled here too, for the one light the map was rendered from.
-///
-/// The interesting part is the normal map. It replaces the one thing interpolation cannot
-/// give you — surface detail finer than a vertex — without adding a single triangle: the
-/// map stores a normal per texel relative to the surface's own UV frame, and the frame
-/// carried by <see cref="MaterialVarying"/> rotates it into world space at every pixel.
-/// Every map is optional; with none of them this shades exactly like
-/// <see cref="BlinnPhongShader"/>.
-/// </summary>
 public readonly struct MaterialShader : IPixelShader<MaterialVarying>
 {
     private readonly TextureSampler _albedo;
@@ -34,8 +21,6 @@ public readonly struct MaterialShader : IPixelShader<MaterialVarying>
     private readonly ShadowMap? _shadows;
     private readonly bool _gammaCorrect;
 
-    // Same trick as BlinnPhongShader: a whole-number exponent is a few multiplies rather
-    // than a MathF.Pow at every lit pixel.
     private readonly int _shininessInt;
 
     public MaterialShader(
@@ -79,13 +64,9 @@ public readonly struct MaterialShader : IPixelShader<MaterialVarying>
         var specularStrength = _specularStrength;
         if (_specularMap.HasTexture)
         {
-            // A specular map is a mask, not a colour: the red channel is the convention.
             specularStrength *= _specularMap.Sample(v.UV).R * (1f / 255f);
         }
 
-        // Evaluated with the shading normal, so a normal map shapes the ambient the same
-        // way it shapes the lights — which is most of what makes it read as detail rather
-        // than as a pattern printed on a flat surface.
         var diffuse = _ambient.Evaluate(v.World, n);
         var specular = LinearColor.Black;
 
@@ -128,8 +109,6 @@ public readonly struct MaterialShader : IPixelShader<MaterialVarying>
 
         if (_gammaCorrect)
         {
-            // Unclamped, as in BlinnPhongShader: the highlight is allowed above white so an
-            // HDR target can keep it and the tone-map can shape it.
             LinearColor linear = albedo;
 
             return new LinearColor(
@@ -144,16 +123,10 @@ public readonly struct MaterialShader : IPixelShader<MaterialVarying>
             Saturate(albedo.B * diffuse.B + specular.B * 255f));
     }
 
-    /// <summary>
-    /// The interpolated vertex normal, tilted by the normal map when there is one and the
-    /// mesh brought a usable tangent. The map's X and Y are scaled rather than the whole
-    /// vector, so strength flattens or exaggerates the detail without changing its sign.
-    /// </summary>
     private Vector3 ShadingNormal(in MaterialVarying v)
     {
         var n = Normalize(v.Normal, Vector3.UnitY);
 
-        // A zero tangent means the mesh has no UV frame here — nothing to rotate the map into.
         if (!_normalMap.HasTexture || v.Tangent.LengthSquared() < 1e-12f)
         {
             return n;
@@ -161,8 +134,6 @@ public readonly struct MaterialShader : IPixelShader<MaterialVarying>
 
         var tangent = new Vector3(v.Tangent.X, v.Tangent.Y, v.Tangent.Z);
 
-        // Re-orthogonalize: interpolating a frame across a triangle does not preserve the
-        // right angle between the tangent and the normal.
         tangent -= n * Vector3.Dot(n, tangent);
 
         if (tangent.LengthSquared() < 1e-12f)
@@ -176,7 +147,6 @@ public readonly struct MaterialShader : IPixelShader<MaterialVarying>
 
         var texel = _normalMap.Sample(v.UV);
 
-        // Decode (v + 1) / 2 back to a direction. No gamma decode: this is geometry.
         var x = (texel.R * (2f / 255f) - 1f) * _normalStrength;
         var y = (texel.G * (2f / 255f) - 1f) * _normalStrength;
         var z = texel.B * (2f / 255f) - 1f;

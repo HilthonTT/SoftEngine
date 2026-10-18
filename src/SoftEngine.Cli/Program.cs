@@ -1,9 +1,6 @@
 using SoftEngine.Cli.Options;
 using SoftEngine.Cli.Rendering;
-
-// The entry point does the four things that decide whether a render happens at all — read the
-// arguments, answer --help and --gpu-info, report anything unreadable, and turn the exceptions a
-// user can actually cause into a message. The render itself is RenderCommand.
+using SoftEngine.Gpu;
 
 var options = RenderOptionsParser.Parse(args);
 
@@ -11,6 +8,12 @@ if (options.ShowHelp || args.Length == 0)
 {
     UsageText.Print();
     return options.ShowHelp ? 0 : 1;
+}
+
+if (options.GpuPreference is { } preference && !GpuPreferences.TryApply(preference, out var preferenceError))
+{
+    Console.Error.WriteLine($"softengine: {preferenceError}");
+    return 1;
 }
 
 if (options.ShowGpuInfo)
@@ -34,10 +37,9 @@ try
     return RenderCommand.Execute(options);
 }
 catch (Exception exception) when (
-    exception is IOException or NotSupportedException or InvalidDataException or UnauthorizedAccessException)
+    exception is IOException or NotSupportedException or InvalidDataException or UnauthorizedAccessException
+        or System.Text.Json.JsonException or System.Xml.XmlException)
 {
-    // The failures a user can actually cause — a missing file, a format nothing here reads, a
-    // directory that cannot be written. Anything else is a bug and deserves its stack trace.
     Console.Error.WriteLine($"softengine: {exception.Message}");
     return 1;
 }

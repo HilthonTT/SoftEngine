@@ -11,14 +11,6 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Tests.Geometry;
 
-/// <summary>
-/// The generated primitives. Three things can go wrong in a parametric surface and only three:
-/// the winding can come out inside-out (invisible under back-face culling, lit from behind
-/// without it), the sheet can fail to close (a hairline crack that a shadow map or a path tracer
-/// leaks light through), and the normals can disagree with the geometry they belong to. Each has
-/// a test below that covers every primitive at once, because each is a property of the surface
-/// rather than of any one shape's arithmetic.
-/// </summary>
 public class PrimitiveTests
 {
     private const float Radius = 1.5f;
@@ -34,7 +26,6 @@ public class PrimitiveTests
         _ => throw new ArgumentOutOfRangeException(nameof(primitive), primitive, "Unknown primitive."),
     };
 
-    /// <summary>The analytic volume of each closed primitive, which its triangles should nearly enclose.</summary>
     private static double ExactVolume(string primitive) => primitive switch
     {
         "box" => 2d * 3d * 4d,
@@ -99,18 +90,10 @@ public class PrimitiveTests
                 Assert.InRange(index, 0, mesh.Vertices.Length - 1);
             }
 
-            // A pole or an apex is one point shared by a whole fan of triangles, and the easy
-            // way to build one leaves a degenerate triangle behind on the seam of every quad.
             Assert.True(FaceNormal(mesh, triangle).Length() > 1e-6f, "Degenerate triangle.");
         });
     }
 
-    /// <summary>
-    /// Every edge of a closed surface is shared by exactly two triangles, and traversed once in
-    /// each direction — which fails both when the sheet does not meet itself and when one patch
-    /// of it is wound against its neighbours. Edges are matched by position, not by vertex
-    /// index: the UV seam duplicates a whole column of vertices that stand in the same place.
-    /// </summary>
     [Theory]
     [InlineData("box")]
     [InlineData("sphere")]
@@ -139,12 +122,6 @@ public class PrimitiveTests
         }
     }
 
-    /// <summary>
-    /// The divergence theorem read as a test: summing each triangle's contribution gives a
-    /// positive volume only when the surface is wound outward, and one close to the analytic
-    /// volume only when it is the shape it claims to be. A flat tessellation always cuts a
-    /// corner or two off a curve, hence the tolerance.
-    /// </summary>
     [Theory]
     [InlineData("box")]
     [InlineData("sphere")]
@@ -221,10 +198,6 @@ public class PrimitiveTests
         Assert.Equal(8f, tiled.TexCoords!.Max(uv => uv.X));
     }
 
-    /// <summary>
-    /// An uncapped cylinder is the one primitive here that is meant to be open, and its two rims
-    /// are exactly the edges belonging to a single triangle.
-    /// </summary>
     [Fact]
     public void Cylinder_Uncapped_IsOpenAtBothEnds()
     {
@@ -250,11 +223,6 @@ public class PrimitiveTests
         Assert.NotNull(new UvSphere().TexCoords);
     }
 
-    /// <summary>
-    /// The reason a box cannot be eight vertices: a corner belongs to three faces at right angles,
-    /// and one vertex holds one normal. Six separate quads is what buys the hard edge — and the
-    /// per-face UV square that goes with it.
-    /// </summary>
     [Fact]
     public void Box_GivesEveryFaceItsOwnCornersAndOneFlatNormal()
     {
@@ -263,15 +231,10 @@ public class PrimitiveTests
         Assert.Equal(24, box.Vertices.Length);
         Assert.Equal(12, box.Triangles.Length);
 
-        // Six normals, one per face, each a signed unit axis — nothing averaged across an edge.
         Assert.Equal(6, box.NormVertices.Distinct().Count());
         Assert.All(box.NormVertices, normal => Assert.Equal(1f, MathF.Abs(normal.X) + MathF.Abs(normal.Y) + MathF.Abs(normal.Z), 4));
     }
 
-    /// <summary>
-    /// <see cref="Cube"/>'s colours live in a static array every instance shares, so filling one
-    /// cube's recolours the lot. A box added to somebody's scene has to be its own object.
-    /// </summary>
     [Fact]
     public void Box_OwnsItsTriangleColours()
     {
@@ -283,11 +246,6 @@ public class PrimitiveTests
         Assert.All(second.TriangleColors, color => Assert.Equal(ColorRGB.Gray, color));
     }
 
-    /// <summary>
-    /// The size convention the factory exists to impose: whatever the shape, it reaches the size
-    /// asked for along its widest axis and no further — which is what lets a menu offer all of
-    /// them without one arriving twice the size of the next.
-    /// </summary>
     [Theory]
     [InlineData(PrimitiveShape.Plane)]
     [InlineData(PrimitiveShape.Box)]
@@ -303,7 +261,6 @@ public class PrimitiveTests
         var mesh = PrimitiveFactory.Create(shape, Size);
         var widest = mesh.Vertices.Max(vertex => MathF.Max(MathF.Abs(vertex.X), MathF.Max(MathF.Abs(vertex.Y), MathF.Abs(vertex.Z))));
 
-        // The flat-sided shapes hit it exactly; a tessellated curve falls a chord's depth short.
         Assert.InRange(widest, Size * 0.99f, Size * 1.0001f);
     }
 
@@ -311,12 +268,6 @@ public class PrimitiveTests
     public void PrimitiveFactory_SizeOfZero_StillBuildsSomething() =>
         Assert.NotEmpty(PrimitiveFactory.Create(PrimitiveShape.Cone, 0f).Triangles);
 
-    /// <summary>
-    /// The radius <see cref="IcoSphere"/> gained for the factory's sake multiplies the generated
-    /// unit-sphere points, and multiplying a float by one is exact — so every caller that predates
-    /// it gets back the same geometry it always did, down to the bit. The committed golden images
-    /// are the reason that has to be exact rather than merely close.
-    /// </summary>
     [Fact]
     public void IcoSphere_DefaultRadius_LeavesTheUnitSphereBitIdentical()
     {
@@ -342,11 +293,6 @@ public class PrimitiveTests
     public void ClosedPrimitives_ReportTheirBoundingRadius(string primitive, float expected) =>
         Assert.Equal(expected, Make(primitive).BoundingRadius, 3);
 
-    /// <summary>
-    /// The winding convention as the renderer actually applies it. Reversing every triangle of a
-    /// closed solid does not make it disappear under back-face culling — it makes the far side
-    /// of the solid the visible one, so the surface that survives is measurably further away.
-    /// </summary>
     [Theory]
     [InlineData("box")]
     [InlineData("sphere")]
@@ -390,7 +336,6 @@ public class PrimitiveTests
         return (renderer.Stats.DrawnPixelCount, surface.GetDepth(64, 64));
     }
 
-    /// <summary>The same geometry wound inside out, which is what these tests are guarding against.</summary>
     private static Mesh Reversed(Mesh mesh) => new(
         mesh.Vertices,
         [.. mesh.Triangles.Select(t => new Triangle(t.I0, t.I2, t.I1))],
@@ -400,11 +345,6 @@ public class PrimitiveTests
         mesh.Vertices[triangle.I1] - mesh.Vertices[triangle.I0],
         mesh.Vertices[triangle.I2] - mesh.Vertices[triangle.I0]);
 
-    /// <summary>
-    /// Maps each vertex to an index shared by every vertex standing in the same place, so that a
-    /// seam — where one point of the surface is two vertices with different UVs — reads as the
-    /// single point it is.
-    /// </summary>
     private static int[] WeldByPosition(Vector3[] vertices)
     {
         var welded = new int[vertices.Length];

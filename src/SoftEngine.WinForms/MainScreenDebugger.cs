@@ -1,6 +1,5 @@
-﻿using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Gizmos;
-using SoftEngine.Gpu;
 using SoftEngine.WinForms.Cameras;
 using SoftEngine.WinForms.Debugging;
 using System.Numerics;
@@ -9,177 +8,10 @@ namespace SoftEngine.WinForms;
 
 public sealed partial class MainScreen
 {
-    /// <summary>Set by every rendered frame, cleared when the debugger panels have caught up.</summary>
     private bool _frameDirty;
 
     private SceneObjectCatalog _catalog = SceneObjectCatalog.Empty;
 
-    /// <summary>
-    /// The switches that outlive the session. Read once, here, because a field initializer runs
-    /// before the constructor body — and the backend has to be restored while the menu is being
-    /// wired, not after somebody has already seen the wrong item ticked.
-    /// </summary>
-    private readonly ViewerSettings _settings = ViewerSettings.Load();
-
-    #region Render backend
-
-    /// <summary>
-    /// Wires View → Rendered by, and the status readout that says which one won.
-    ///
-    /// <para>
-    /// The GPU item is offered whether or not there is a GPU, and reports what happened
-    /// afterwards rather than being greyed out beforehand. Finding out costs an OpenGL
-    /// context, and a menu item that is simply missing on a machine with a graphics card in
-    /// it — because a driver is out of date, say — tells you nothing about why.
-    /// </para>
-    /// </summary>
-    private void InitializeBackendMenu()
-    {
-        mnuRenderCpu.Click += (s, e) => SelectBackend(RenderBackend.Cpu);
-        mnuRenderGpu.Click += (s, e) => SelectBackend(RenderBackend.Gpu);
-        mnuRenderTrace.Click += (s, e) => SelectBackend(RenderBackend.Trace);
-
-        panel3D1.BackendChanged += (s, e) => UpdateBackendMenu();
-
-        // The tracer's sample count climbs frame by frame while it refines, and the status bar is
-        // where anyone would look to see whether it is still working.
-        panel3D1.FrameRendered += (s, e) =>
-        {
-            if (panel3D1.Backend == RenderBackend.Trace)
-            {
-                lblBackendStatus.Text = panel3D1.BackendDescription;
-            }
-        };
-
-        RestoreBackend();
-
-        UpdateBackendMenu();
-    }
-
-    private void SelectBackend(RenderBackend backend)
-    {
-        if (panel3D1.Backend == backend && panel3D1.BackendFallback is null)
-        {
-            return;
-        }
-
-        using (new WaitCursorScope(this))
-        {
-            panel3D1.Backend = backend;
-        }
-
-        RememberBackend();
-
-        if (panel3D1.BackendFallback is { } fallback)
-        {
-            MessageBox.Show(
-                this,
-                $"{fallback}\n\nThe viewport is still being rendered on the CPU.",
-                "No graphics adapter",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
-        }
-    }
-
-    /// <summary>
-    /// Puts the viewport back on the backend it was left on.
-    ///
-    /// <para>
-    /// A request that falls back says so through the status bar rather than through a dialog. A
-    /// modal box in front of a window that has not appeared yet is a poor way to find out that a
-    /// driver is missing, and unlike a menu click nobody has just asked a question that is waiting
-    /// for an answer.
-    /// </para>
-    /// </summary>
-    private void RestoreBackend()
-    {
-        // The panel is already on the CPU, and building the renderer it is already using would cost
-        // a rebuild to arrive back where it started.
-        if (_settings.Backend == RenderBackend.Cpu)
-        {
-            return;
-        }
-
-        using (new WaitCursorScope(this))
-        {
-            panel3D1.Backend = _settings.Backend;
-        }
-
-        RememberBackend();
-    }
-
-    /// <summary>
-    /// Records the backend that <em>settled</em>, which is not always the one that was asked for.
-    ///
-    /// Saving the request instead would leave a machine whose graphics driver has gone missing
-    /// probing for an OpenGL context on every launch, and the file claiming a backend the menu is
-    /// not showing as ticked. What is remembered is what is on screen.
-    /// </summary>
-    private void RememberBackend()
-    {
-        if (_settings.Backend == panel3D1.Backend)
-        {
-            return;
-        }
-
-        _settings.Backend = panel3D1.Backend;
-        _settings.Save();
-    }
-
-    private void UpdateBackendMenu()
-    {
-        var backend = panel3D1.Backend;
-
-        mnuRenderCpu.Checked = backend == RenderBackend.Cpu;
-        mnuRenderGpu.Checked = backend == RenderBackend.Gpu;
-        mnuRenderTrace.Checked = backend == RenderBackend.Trace;
-
-        lblBackendStatus.Text = panel3D1.BackendDescription;
-
-        // The adapter's own name, which is the only way to tell an integrated part from the
-        // discrete one a laptop may also have.
-        lblBackendStatus.ToolTipText = backend switch
-        {
-            RenderBackend.Gpu when panel3D1.Adapter is { } adapter =>
-                $"{adapter.Vendor} · {adapter.Renderer}\nOpenGL {adapter.Version}",
-            RenderBackend.Trace =>
-                "Light traced through the scene on the CPU, refining for as long as nothing moves.",
-            _ => "Every triangle rasterized on the CPU by this engine's own scanline filler.",
-        };
-
-        // A request that fell back explains itself here. It is the only account a restored choice
-        // gets — nobody clicked anything at startup, so there is no dialog to have answered.
-        if (panel3D1.BackendFallback is { } fallback)
-        {
-            lblBackendStatus.ToolTipText = $"{fallback}\n\n{lblBackendStatus.ToolTipText}";
-        }
-    }
-
-    /// <summary>An hourglass for as long as it is held. Building a GL context is not instant.</summary>
-    private readonly struct WaitCursorScope : IDisposable
-    {
-        private readonly Control _control;
-        private readonly Cursor _previous;
-
-        public WaitCursorScope(Control control)
-        {
-            _control = control;
-            _previous = control.Cursor;
-            control.Cursor = Cursors.WaitCursor;
-        }
-
-        public void Dispose() => _control.Cursor = _previous;
-    }
-
-    #endregion
-
-    #region Graphics debugger
-
-    /// <summary>
-    /// Wires the debugger panels to the viewport. The renderer records its event list every
-    /// frame, but the panels only pull from it on a timer: a drag repaints far faster than a
-    /// list view can usefully be rebuilt.
-    /// </summary>
     private void InitializeDebugger()
     {
         panel3D1.Diagnostics.CaptureEvents = mnuRecordEvents.Checked;
@@ -189,9 +21,6 @@ public sealed partial class MainScreen
         panel3D1.ZoomChanged += (s, e) => UpdateStatus();
         panel3D1.SelectedPixelChanged += (s, e) => UpdateStatus();
 
-        // A click asks two questions of the same pixel: the probe records what the renderer
-        // did there, and the ray says which mesh is actually under it. The second is what
-        // selects the row in the object table — the same obj:N the event list would name.
         panel3D1.PickedChanged += (s, e) =>
         {
             if (panel3D1.Picked is { } hit && panel3D1.Scene?.World is { } world)
@@ -207,7 +36,6 @@ public sealed partial class MainScreen
 
         objectTablePanel.ActiveChanged += (s, e) => panel3D1.Invalidate();
 
-        // Clicking a write in the pixel history reveals the event and the object behind it.
         pixelHistoryPanel.WriteSelected += (s, write) =>
         {
             eventListPanel.SelectEvent(write.EventIndex);
@@ -274,12 +102,8 @@ public sealed partial class MainScreen
         UpdateStatus();
     }
 
-    /// <summary>Pulls the last frame's capture into the three panels — at most once per timer tick.</summary>
     private void RefreshDebugPanels()
     {
-        // A pinned frame is not going to change, so there is nothing to pull until the pin moves
-        // — but the panels still have to be filled the first time it is set, which is what the
-        // dirty flag is raised for there too.
         if (!_frameDirty)
         {
             return;
@@ -315,8 +139,6 @@ public sealed partial class MainScreen
             pixelHistoryPanel.SetHistory(pinned?.PixelHistory ?? panel3D1.Diagnostics.PixelHistory, _catalog);
         }
 
-        // The kept-frame count climbs as frames arrive, and the step items become reachable the
-        // moment there is a first one — both belong on the timer rather than on every frame.
         UpdateFrameHistoryMenu();
 
         UpdateStatus();
@@ -324,12 +146,41 @@ public sealed partial class MainScreen
 
     #region Frame history
 
-    /// <summary>How many finished frames are kept when the history is switched on.</summary>
     private const int FrameHistoryDepth = 60;
 
-    private readonly FrameHistoryCursor _frameHistory = new();
+    private long _pinnedFrameNumber = -1;
 
-    private FrameCapture? PinnedFrame() => _frameHistory.PinnedIn(panel3D1.Diagnostics.Frames);
+    private int PinnedIndex()
+    {
+        if (_pinnedFrameNumber < 0)
+        {
+            return -1;
+        }
+
+        var frames = panel3D1.Diagnostics.Frames;
+
+        if (frames.Count == 0)
+        {
+            return -1;
+        }
+
+        for (var i = frames.Count - 1; i >= 0; i--)
+        {
+            if (frames[i].FrameNumber == _pinnedFrameNumber)
+            {
+                return i;
+            }
+        }
+
+        return 0;
+    }
+
+    private FrameCapture? PinnedFrame()
+    {
+        var index = PinnedIndex();
+
+        return index >= 0 ? panel3D1.Diagnostics.Frames[index] : null;
+    }
 
     private void InitializeFrameHistory()
     {
@@ -355,24 +206,54 @@ public sealed partial class MainScreen
 
     private void StepFrame(int direction)
     {
-        if (_frameHistory.Step(panel3D1.Diagnostics.Frames, direction))
+        var frames = panel3D1.Diagnostics.Frames;
+
+        if (frames.Count == 0)
         {
-            ShowPinnedFrame();
+            return;
         }
+
+        var index = PinnedIndex();
+
+        if (index < 0)
+        {
+            if (direction < 0)
+            {
+                PinFrame(frames[^1].FrameNumber);
+            }
+
+            return;
+        }
+
+        var next = index + direction;
+
+        if (next >= frames.Count)
+        {
+            GoLive();
+            return;
+        }
+
+        PinFrame(frames[Math.Max(next, 0)].FrameNumber);
+    }
+
+    private void PinFrame(long frameNumber)
+    {
+        _pinnedFrameNumber = frameNumber;
+
+        _frameDirty = true;
+
+        UpdateFrameHistoryMenu();
+        RefreshDebugPanels();
     }
 
     private void GoLive()
     {
-        if (_frameHistory.Release())
+        if (_pinnedFrameNumber < 0)
         {
-            ShowPinnedFrame();
+            return;
         }
-    }
 
-    private void ShowPinnedFrame()
-    {
-        // The panels read the pin on their next tick, and there may not be another rendered
-        // frame to raise the flag — a still camera repaints nothing.
+        _pinnedFrameNumber = -1;
         _frameDirty = true;
 
         UpdateFrameHistoryMenu();
@@ -382,14 +263,15 @@ public sealed partial class MainScreen
     private void UpdateFrameHistoryMenu()
     {
         var keeping = mnuKeepFrames.Checked;
-        var frames = panel3D1.Diagnostics.Frames;
+        var frames = panel3D1.Diagnostics.Frames.Count;
+        var index = PinnedIndex();
 
-        mnuPreviousFrame.Enabled = keeping && _frameHistory.CanStepBack(frames);
-        mnuNextFrame.Enabled = keeping && _frameHistory.CanStepForward(frames);
-        mnuLatestFrame.Enabled = _frameHistory.IsPinned;
+        mnuPreviousFrame.Enabled = keeping && frames > 0 && index != 0;
+        mnuNextFrame.Enabled = keeping && index >= 0;
+        mnuLatestFrame.Enabled = _pinnedFrameNumber >= 0;
 
         mnuKeepFrames.Text = keeping
-            ? $"&Keep recent frames ({frames.Count}/{FrameHistoryDepth})"
+            ? $"&Keep recent frames ({frames}/{FrameHistoryDepth})"
             : "&Keep recent frames";
     }
 
@@ -397,23 +279,17 @@ public sealed partial class MainScreen
 
     private void UpdateStatus()
     {
-        // 100% is the framing the world loaded with; the wheel and W/S move away from it.
         var buffer = panel3D1.BufferSize;
         lblZoomStatus.Text = $"Zoom: {panel3D1.Zoom * 100f:0}%  ·  {buffer.Width} × {buffer.Height}";
 
         if (panel3D1.SelectedPixel is { } pixel && panel3D1.SelectedPixelNormalized is { } normalized)
         {
-            // What the ray found under the same pixel, when it found anything — the mesh's
-            // own identifier, so it can be looked up in the object table and the event list.
             var picked = string.Empty;
 
             if (panel3D1.Picked is { } hit && panel3D1.Scene?.World is { } world)
             {
                 var objectId = SceneObjectIds.Mesh(world.Lights.Count, hit.MeshIndex);
 
-                // A selection made without a ray — adding a primitive, or an undo putting one
-                // back — names no triangle, and reporting "tri:-1 at 0" would read as a pick that
-                // went wrong rather than as one that was never cast.
                 var where = hit.TriangleIndex >= 0 ? $" tri:{hit.TriangleIndex} at {hit.Distance:0.##}" : string.Empty;
 
                 picked = $"  ·  picked obj:{objectId} ({hit.Mesh.GetType().Name}){where}";
@@ -427,20 +303,14 @@ public sealed partial class MainScreen
             lblPixelStatus.Text = "Selected pixel: none — click the viewport to probe and pick one";
         }
 
-        // Only ever offered for something that is there to delete.
         mnuDelete.Enabled = panel3D1.Picked is not null;
 
-        // A modal gesture has no handle on screen to show what it is doing, so the status bar is
-        // the whole of its feedback — what it is, which axis it is pressed against, and the two
-        // keys that end it. Ahead of the gizmo's own line because only one of them ever runs.
         if (_transform is { IsActive: true })
         {
             lblPixelStatus.Text =
                 $"{_transform.Describe()}  ·  X / Y / Z to constrain  ·  click or Enter to confirm, Esc to cancel";
         }
 
-        // A drag has to say what it did in numbers as well as in pixels: eyeballing a mesh
-        // into place is exactly the case where you then want to know where "place" was.
         else if (_gizmo is { IsActive: true, Target: { } target })
         {
             var what = _gizmo.Mode switch
@@ -452,8 +322,6 @@ public sealed partial class MainScreen
 
             lblPixelStatus.Text += $"  ·  {what}";
 
-            // The increment has to be visible, or a drag that lands on a round number reads as
-            // the renderer having quietly rounded it.
             if (_gizmo.Snap.Enabled)
             {
                 var step = _gizmo.Mode switch
@@ -471,17 +339,11 @@ public sealed partial class MainScreen
         {
             var position = camera.Position;
 
-            // The named view, when the camera is lined up with one: worth saying, because
-            // that is the difference between a view you can reason about and one that is
-            // merely close to it.
             var view = camera is ArcBallCamera { CurrentAxisView: { } axisView } ? $" · {axisView}" : string.Empty;
 
             lblCameraStatus.Text = $"Camera: ({position.X:0.##}, {position.Y:0.##}, {position.Z:0.##}){view}";
         }
 
-        // A pinned frame reports its own numbers. Showing the live ones beside a pinned event
-        // list would put two different frames on the same status bar, which is the one thing a
-        // history must not do.
         if (PinnedFrame() is { } pinned)
         {
             lblFrameStatus.Text =
@@ -494,8 +356,5 @@ public sealed partial class MainScreen
         }
     }
 
-    /// <summary>A mesh's Euler angles are stored in radians; nobody reads a pose in radians.</summary>
     private static string Degrees(float radians) => $"{radians * 180f / MathF.PI:0.#}°";
-
-    #endregion
 }

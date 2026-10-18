@@ -1,13 +1,5 @@
 namespace SoftEngine.Cli.Options;
 
-/// <summary>
-/// What the flags are called, in prose.
-///
-/// A file of its own because it is documentation that happens to be compiled: it is edited when
-/// the wording is wrong, which is a different occasion from the parser being edited because the
-/// behaviour is. Grouped and ordered the way somebody reading it for the first time would want,
-/// not the way <see cref="RenderOptionsParser"/> happens to switch on them.
-/// </summary>
 internal static class UsageText
 {
     public static void Print()
@@ -34,6 +26,8 @@ internal static class UsageText
                   --backend <name>  auto, cpu, gpu or trace (default auto)
                   --gpu             shorthand for --backend gpu
                   --cpu             shorthand for --backend cpu
+                  --adapter <which> which GPU to render on where there is more than one:
+                                    "high" (discrete), "low" (integrated) or "auto"
                   --gpu-info        print the graphics adapter, if any, and exit
 
               auto uses a graphics adapter when one is there and the software rasterizer when
@@ -51,6 +45,9 @@ internal static class UsageText
                                     lighting only); implies --trace
                   --physical        put direct and bounced light on the same scale, instead
                                     of matching the rasterizer's exposure for direct light
+                  --denoise         filter the traced frame against its own normals, depth
+                                    and albedo, so a low --samples count is usable;
+                                    implies --trace
 
             Baked indirect light
                   --bake            measure the scene's bounce light into a grid of probes
@@ -65,9 +62,17 @@ internal static class UsageText
             Shading
               -p, --painter <name>  none, classic, flat, gouraud, phong, textured, material, pbr
                                     (default gouraud)
-                  --filter <mode>   texture filtering: nearest, bilinear (default), or
+                  --filter <mode>   texture filtering: nearest, bilinear (default),
                                     trilinear, which blends the two mip levels a surface
-                                    falls between instead of stepping between them
+                                    falls between instead of stepping between them, or
+                                    anisotropic, which measures the two axes of a pixel's
+                                    texture footprint apart and spreads several taps
+                                    across the longer one — a floor seen edge-on stays
+                                    sharp into the distance instead of blurring
+                  --fill <mode>     how triangles are filled: scanline (default), which
+                                    walks the two edges of each and fills between them, or
+                                    half-space, which classifies blocks of pixels against
+                                    the three edge functions. Both draw the same pixels
                   --post <list>     comma-separated: ssr, ssao, bloom, tonemap, fxaa,
                                     vignette. ssr reflects the scene in the surfaces that
                                     reflect it, and needs the cpu backend to record what

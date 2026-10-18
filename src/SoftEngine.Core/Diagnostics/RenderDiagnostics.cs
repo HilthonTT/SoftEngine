@@ -1,15 +1,9 @@
 namespace SoftEngine.Core.Diagnostics;
 
-/// <summary>
-/// The debugger-facing side of the renderer: the event list for the frame just rendered,
-/// and an optional single-pixel probe that records every write attempt at one pixel.
-/// Both are off until a front-end turns them on.
-/// </summary>
 public sealed class RenderDiagnostics
 {
     public GraphicsEventLog Events { get; } = new();
 
-    /// <summary>Records the graphics event list each frame. Off by default.</summary>
     public bool CaptureEvents
     {
         get => Events.IsEnabled;
@@ -22,10 +16,8 @@ public sealed class RenderDiagnostics
 
     public bool IsProbing => ProbeX >= 0 && ProbeY >= 0;
 
-    /// <summary>The history captured for the probed pixel on the last rendered frame.</summary>
     public PixelHistory? PixelHistory { get; internal set; }
 
-    /// <summary>Frames rendered since this renderer was created; the event list's frame number.</summary>
     public long FrameNumber { get; internal set; }
 
     public void SetProbe(int x, int y)
@@ -45,17 +37,6 @@ public sealed class RenderDiagnostics
 
     private readonly List<FrameCapture> _frames = [];
 
-    /// <summary>
-    /// How many finished frames to keep, newest last, or 0 to keep none.
-    ///
-    /// <para>
-    /// Off by default and separately from <see cref="CaptureEvents"/>, because it is the one
-    /// piece of instrumentation here that genuinely allocates. Recording the event list is a
-    /// write into a buffer that is reused for ever; keeping a frame means copying that buffer,
-    /// and a busy scene emits thousands of events per frame. So the cost is opt-in and bounded
-    /// by a number the caller chose, rather than being paid quietly by everyone.
-    /// </para>
-    /// </summary>
     public int HistoryCapacity
     {
         get => _historyCapacity;
@@ -69,10 +50,8 @@ public sealed class RenderDiagnostics
 
     private int _historyCapacity;
 
-    /// <summary>The frames kept so far, oldest first. Empty unless <see cref="HistoryCapacity"/> is set.</summary>
     public IReadOnlyList<FrameCapture> Frames => _frames;
 
-    /// <summary>Raised after a frame is added to the history, so a front-end can follow it.</summary>
     public event EventHandler? FrameCaptured;
 
     public void ClearHistory()
@@ -87,11 +66,6 @@ public sealed class RenderDiagnostics
         FrameCaptured?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>
-    /// Files the frame that has just finished. Called by the renderer once the event list is
-    /// complete and the stats have stopped moving — anything earlier would capture a frame that
-    /// is still being written.
-    /// </summary>
     internal void CaptureFrame(RenderStats stats)
     {
         if (_historyCapacity <= 0)

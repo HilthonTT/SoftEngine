@@ -5,10 +5,6 @@ using SoftEngine.Gpu;
 
 namespace SoftEngine.Cli.Rendering;
 
-/// <summary>
-/// What the program says once the pixels are written: where they went, and — with
-/// <c>--stats</c> — what they cost.
-/// </summary>
 internal static class RenderReport
 {
     public static void Print(
@@ -58,8 +54,6 @@ internal static class RenderReport
         Console.WriteLine($"  tris    {stats.TotalTriangleCount} total, {stats.DrawnTriangleCount} drawn");
         Console.WriteLine($"  pixels  {stats.DrawnPixelCount} drawn");
 
-        // Only when the frame actually stored fragments. The overflow count goes with them
-        // because it is the one number that says the resolve was approximate.
         if (stats.TransparentFragmentCount > 0)
         {
             Console.WriteLine(
@@ -70,9 +64,10 @@ internal static class RenderReport
         }
     }
 
-    /// <summary>What <c>--gpu-info</c> prints: the adapter, if there is one worth rendering on.</summary>
     public static int PrintGpuInfo()
     {
+        PrintAdapterChoice();
+
         if (GpuAvailability.Probe(out var adapter, out var error))
         {
             Console.WriteLine($"  adapter   {adapter!.Renderer}");
@@ -87,7 +82,31 @@ internal static class RenderReport
         Console.WriteLine("  no graphics adapter is available for rendering.");
         Console.WriteLine($"  {error}");
 
-        // Not an error: "there is no GPU here" is a true answer to the question that was asked.
         return 0;
+    }
+
+    private static void PrintAdapterChoice()
+    {
+        if (!GpuDevices.HasChoice)
+        {
+            return;
+        }
+
+        Console.WriteLine("  installed");
+
+        foreach (var device in GpuDevices.Installed)
+        {
+            var flag = device.Kind switch
+            {
+                GpuAdapterKind.Discrete => "--adapter high",
+                GpuAdapterKind.Integrated => "--adapter low",
+                _ => string.Empty,
+            };
+
+            Console.WriteLine($"      {device.Name,-44}{flag}");
+        }
+
+        Console.WriteLine($"  preference {GpuPreferences.Describe(GpuPreferences.Current)}");
+        Console.WriteLine();
     }
 }

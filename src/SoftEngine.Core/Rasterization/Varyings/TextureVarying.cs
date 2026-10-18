@@ -1,16 +1,14 @@
-﻿using SoftEngine.Core.Shading;
+using SoftEngine.Core.Shading;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
 namespace SoftEngine.Core.Rasterization.Varyings;
 
-/// <summary>UV coordinates plus the Gouraud light at the vertex, interpolated per pixel.</summary>
 public readonly struct TextureVarying : IVarying<TextureVarying>, ITexturedVarying
 {
     public readonly Vector2 UV;
     public readonly LinearColor Light;
 
-    /// <inheritdoc/>
     public Vector2 TexCoord => UV;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -20,7 +18,6 @@ public readonly struct TextureVarying : IVarying<TextureVarying>, ITexturedVaryi
         Light = light;
     }
 
-    /// <summary>White light of the given intensity.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public TextureVarying(Vector2 uv, float intensity)
         : this(uv, new LinearColor(intensity, intensity, intensity))
@@ -34,4 +31,14 @@ public readonly struct TextureVarying : IVarying<TextureVarying>, ITexturedVaryi
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static TextureVarying Scale(in TextureVarying a, float f) =>
         new(a.UV * f, a.Light * f);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static TextureVarying Add(in TextureVarying a, in TextureVarying b) =>
+        new(a.UV + b.UV, a.Light + b.Light);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static TextureVarying Combine(
+        in TextureVarying a, in TextureVarying b, in TextureVarying c, float w0, float w1, float w2) =>
+        new(a.UV * w0 + b.UV * w1 + c.UV * w2,
+            a.Light * w0 + b.Light * w1 + c.Light * w2);
 }

@@ -24,12 +24,6 @@ public class SsrTests
         public Matrix4x4 ViewMatrix => Matrix4x4.CreateLookAt(Position, target, Vector3.UnitY);
     }
 
-    /// <summary>
-    /// A red block standing on a floor, seen from a low angle — the one arrangement where a
-    /// screen-space reflection is guaranteed to have something on screen to find. The floor
-    /// in front of the block reflects rays up and away into it, and every one of those rays
-    /// crosses pixels the frame has drawn.
-    /// </summary>
     private static Scene Room(bool mirrorFloor, int size = 128)
     {
         var world = new SimpleWorld();
@@ -42,8 +36,6 @@ public class SsrTests
 
         var block = new Cube { Position = new Vector3(0f, 0.2f, 1.5f), Scale = new Vector3(2f, 2f, 2f) };
 
-        // Saturated, so a reflection of it is unmistakable against a neutral floor, and bright
-        // enough that the reflection survives the floor's own shading.
         block.Material.Diffuse = new ColorRGB(255, 20, 20);
         block.Material.Metallic = 0f;
         block.Material.Roughness = 0.6f;
@@ -80,10 +72,6 @@ public class SsrTests
             Thickness = 1.2f,
         });
 
-        // Both renders have to take the same path through the stack, or they differ by the
-        // resolve rather than by the reflection: a stack with nothing enabled is skipped whole
-        // and never encodes. A vignette of zero intensity is the neutral effect that keeps it
-        // running — the same trick the occlusion tests use next door.
         renderer.PostProcess.Effects.Add(new VignetteEffect { Enabled = true, Intensity = 0f });
 
         renderer.Render(scene, new PbrPainter());
@@ -109,8 +97,6 @@ public class SsrTests
 
             changed++;
 
-            // How far each pixel moved toward red, measured against its own blue so a change
-            // in overall brightness does not read as a change in hue.
             var before = ((a[i] >> 16) & 0xFF) - (a[i] & 0xFF);
             var after = ((b[i] >> 16) & 0xFF) - (b[i] & 0xFF);
 
@@ -149,7 +135,6 @@ public class SsrTests
         renderer.PostProcess.Effects.Add(effect);
         renderer.Render(scene, new PbrPainter());
 
-        // Disabled: nothing is going to read the channel, so the fill must not pay for it.
         Assert.False(scene.Surface.IsRecordingReflectance);
 
         effect.Enabled = true;
@@ -170,15 +155,12 @@ public class SsrTests
         var reflectance = scene.Surface.Reflectance;
         var width = scene.Surface.Width;
 
-        // The bottom of the frame is floor: a metal, so its F0 is its albedo rather than the
-        // dielectric four percent.
         var floor = SurfaceReflectance.FromPacked(reflectance[width / 2 + (scene.Surface.Height - 4) * width]);
 
         Assert.True(floor.IsReflective);
         Assert.True(floor.Reflectivity.R > 0.4f, $"floor F0 was {floor.Reflectivity.R}");
         Assert.InRange(floor.Roughness, 0f, 0.2f);
 
-        // The top corners are background, which nothing drew and so reflects nothing.
         Assert.False(SurfaceReflectance.FromPacked(reflectance[0]).IsReflective);
     }
 
@@ -192,7 +174,6 @@ public class SsrTests
 
         Assert.True(changed > 200, $"only {changed} pixels changed");
 
-        // The only thing above the floor is red, so whatever the floor picked up must be too.
         Assert.True(redder > bluer * 4, $"{redder} pixels went redder, {bluer} went bluer");
     }
 
@@ -202,8 +183,6 @@ public class SsrTests
         var without = Render(enabled: false, mirrorFloor: false);
         var with = Render(enabled: true, mirrorFloor: false);
 
-        // Roughness 0.95 is past MaxRoughness: the prefiltered environment already answers a
-        // reflection that wide, and one ray per pixel could only answer it as noise.
         Assert.Equal(without.Surface.Screen, with.Surface.Screen);
     }
 
@@ -228,13 +207,6 @@ public class SsrTests
     [Fact]
     public void Ssr_WithoutReflectance_DoesNothing()
     {
-        // What a frame filled by the GPU backend looks like to the stack: depth is there,
-        // because the backend transfers it back, and the surface channel is not, because its
-        // fragment shaders write one target.
-        //
-        // Both frames go through a stack, and neither through a renderer that records
-        // reflectance — comparing against a frame that never met the stack would compare the
-        // resolves, which differ in the alpha byte alone.
         Assert.Equal(WithoutReflectance(reflect: false), WithoutReflectance(reflect: true));
 
         static int[] WithoutReflectance(bool reflect)
@@ -266,8 +238,6 @@ public class SsrTests
         var stack = new PostProcessStack();
         stack.Effects.Add(new SsrEffect { Enabled = true, Strength = 1f });
 
-        // No projection: the depth buffer cannot be turned back into positions, so there is
-        // no scene to march through.
         stack.Apply(scene.Surface);
 
         Assert.Equal(before, scene.Surface.Screen);
@@ -286,8 +256,6 @@ public class SsrTests
         surface.SetDepthRange(0.5f, 100f);
         surface.Clear();
 
-        // One lit, mirror-like pixel hard against an edge, so every neighbour the march or the
-        // blur reaches for is off the frame.
         surface.PutPixel(x, y, FrameBuffer.DepthResolution / 2, LinearColor.White);
         surface.RecordReflectance(x, y, SurfaceReflectance.FromMetallic(ColorRGB.White, 1f, 0.05f).Packed);
 
@@ -305,9 +273,6 @@ public class SsrTests
 
         var projection = new PerspectiveProjection(MathF.PI / 4f, 0.5f, 100f);
 
-        // The effect's buffers are grown and never shrunk, so a small frame after a large one
-        // is where an index computed from the wrong width would land inside the array and read
-        // a stale pixel instead of throwing.
         foreach (var size in (int[])[32, 5])
         {
             var surface = new FrameBuffer(size, size);
@@ -346,15 +311,12 @@ public class SsrTests
     {
         var plastic = SurfaceReflectance.FromMetallic(new ColorRGB(220, 30, 30), 0f, 0.4f);
 
-        // A dielectric's reflection is colourless however coloured the surface is: the albedo
-        // belongs to its diffuse term, not to what it mirrors.
         Assert.Equal(0.04f, plastic.Reflectivity.R, 0.01f);
         Assert.Equal(plastic.Reflectivity.R, plastic.Reflectivity.G, 0.01f);
         Assert.Equal(plastic.Reflectivity.R, plastic.Reflectivity.B, 0.01f);
 
         var gold = SurfaceReflectance.FromMetallic(new ColorRGB(255, 200, 80), 1f, 0.2f);
 
-        // A metal's is its albedo, in linear light — which is what tints its reflections.
         Assert.True(gold.Reflectivity.R > gold.Reflectivity.G);
         Assert.True(gold.Reflectivity.G > gold.Reflectivity.B);
         Assert.True(gold.Reflectivity.R > 0.9f);
@@ -367,8 +329,6 @@ public class SsrTests
         Assert.False(SurfaceReflectance.FromSpecular(0f, 32f).IsReflective);
         Assert.False(default(SurfaceReflectance).IsReflective);
 
-        // The default material is a plausible dielectric rather than a 35% mirror: Blinn-Phong's
-        // specular strength is a highlight's brightness, not a reflectance.
         var standard = SurfaceReflectance.FromMaterial(new Material());
 
         Assert.True(standard.IsReflective);
@@ -389,7 +349,6 @@ public class SsrTests
         Assert.Equal(3, state.MipLevel);
         Assert.Equal(0.5f, state.Alpha);
 
-        // A state nobody tagged reflects nothing, so a painter that says nothing costs nothing.
         Assert.False(default(RasterState).Reflectance.IsReflective);
     }
 }

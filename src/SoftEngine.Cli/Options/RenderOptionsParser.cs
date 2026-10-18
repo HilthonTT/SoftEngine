@@ -4,16 +4,6 @@ using System.Numerics;
 
 namespace SoftEngine.Cli.Options;
 
-/// <summary>
-/// Reads an argument list into a <see cref="RenderOptions"/>.
-///
-/// <para>
-/// Nothing here throws. A flag that cannot be read adds to <see cref="RenderOptions.Errors"/> and
-/// leaves the value at its default, so the whole command line is read before anything is reported
-/// — one run of the program tells you everything wrong with the line you typed, instead of one
-/// thing per attempt.
-/// </para>
-/// </summary>
 internal static class RenderOptionsParser
 {
     public static RenderOptions Parse(string[] args)
@@ -46,6 +36,27 @@ internal static class RenderOptionsParser
                     options.Painter = Next(args, ref i, options, arg) ?? options.Painter;
                     break;
 
+                case "--fill" or "--rasterizer":
+                {
+                    var name = Next(args, ref i, options, arg);
+
+                    if (name is null)
+                    {
+                        break;
+                    }
+
+                    if (RasterizerModeNames.TryParse(name, out var fill))
+                    {
+                        options.Fill = fill;
+                    }
+                    else
+                    {
+                        options.Errors.Add($"unknown fill '{name}' — expected scanline or half-space");
+                    }
+                }
+
+                break;
+
                 case "--filter" or "--filtering":
                 {
                     var name = Next(args, ref i, options, arg);
@@ -61,7 +72,7 @@ internal static class RenderOptionsParser
                     }
                     else
                     {
-                        options.Errors.Add($"unknown texture filter '{name}' — expected nearest, bilinear or trilinear");
+                        options.Errors.Add($"unknown texture filter '{name}' — expected nearest, bilinear, trilinear or anisotropic");
                     }
                 }
 
@@ -158,8 +169,7 @@ internal static class RenderOptionsParser
                     break;
 
                 case "--turntable":
-                    // Degrees here rather than radians: this one is swept across a sequence and the
-                    // number people mean by it is 360.
+
                     options.Turntable = Float(args, ref i, options, arg, 360f);
                     break;
 
@@ -196,6 +206,29 @@ internal static class RenderOptionsParser
                     options.Backend = RenderBackend.Gpu;
                     break;
 
+                case "--adapter":
+                {
+                    var name = Next(args, ref i, options, arg);
+
+                    if (name is null)
+                    {
+                        break;
+                    }
+
+                    if (GpuPreferences.TryParse(name, out var preference))
+                    {
+                        options.GpuPreference = preference;
+
+                        options.Backend = RenderBackend.Gpu;
+                    }
+                    else
+                    {
+                        options.Errors.Add($"unknown adapter '{name}' — expected auto, high or low");
+                    }
+                }
+
+                break;
+
                 case "--cpu":
                     options.Backend = RenderBackend.Cpu;
                     break;
@@ -216,6 +249,11 @@ internal static class RenderOptionsParser
 
                 case "--physical":
                     options.PhysicalExposure = true;
+                    break;
+
+                case "--denoise":
+                    options.Denoise = true;
+                    options.Backend = RenderBackend.Trace;
                     break;
 
                 case "--bake":
@@ -317,7 +355,6 @@ internal static class RenderOptionsParser
         return value;
     }
 
-    /// <summary>An angle typed in degrees, which is the only unit anybody types one in.</summary>
     private static float Degrees(string[] args, ref int i, RenderOptions options, string flag, float fallback) =>
         Float(args, ref i, options, flag, fallback * 180f / MathF.PI) * MathF.PI / 180f;
 

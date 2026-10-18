@@ -9,11 +9,6 @@ using System.Runtime.CompilerServices;
 
 namespace SoftEngine.WinForms.Debugging;
 
-/// <summary>
-/// Every object a frame touches, numbered with the same <see cref="SceneObjectIds"/> scheme
-/// the renderer stamps onto its graphics events — so an event that says <c>obj:7</c> and the
-/// object table's <c>obj:7</c> are the same thing.
-/// </summary>
 internal sealed class SceneObjectCatalog
 {
     private static readonly SceneObjectRow[] _empty = [];
@@ -29,14 +24,12 @@ internal sealed class SceneObjectCatalog
 
     public IReadOnlyList<SceneObjectRow> Rows { get; }
 
-    /// <summary>Changes whenever the table's rows would differ; lets callers skip a rebuild.</summary>
     public string Signature { get; }
 
     public static SceneObjectCatalog Empty { get; } = new(_empty, "empty");
 
     public SceneObjectRow? Find(int id) => _byId.GetValueOrDefault(id);
 
-    /// <summary>Short label for an object identifier, e.g. <c>obj:7 (Cube)</c>.</summary>
     public string Describe(int id)
     {
         if (id < 0)
@@ -92,7 +85,6 @@ internal sealed class SceneObjectCatalog
             rows.Add(new SceneObjectRow(SceneObjectIds.Light(i), lights[i].GetType().Name, string.Empty, 0, 0, 0, 0, 0, null));
         }
 
-        // Textures are shared between meshes, so they are listed once, after the meshes.
         var textureIds = new Dictionary<Texture, int>();
         var nextTextureId = SceneObjectIds.AfterMeshes(lights.Count, meshes.Count);
 
@@ -131,14 +123,9 @@ internal sealed class SceneObjectCatalog
         return new SceneObjectCatalog(rows, SignatureOf(scene, painter, postProcess));
     }
 
-    /// <summary>The enabled effects, in the order the stack applies them.</summary>
     private static string DescribeEffects(PostProcessStack stack) =>
         string.Join(" → ", stack.Effects.Where(effect => effect.Enabled).Select(effect => effect.Name));
 
-    /// <summary>
-    /// Cheap fingerprint of what the table would contain, so a caller polling every frame
-    /// can skip rebuilding rows for a scene of a few thousand meshes that hasn't changed.
-    /// </summary>
     public static string SignatureOf(Scene? scene, IPainter? painter, PostProcessStack? postProcess = null)
     {
         if (scene?.World is null)
@@ -148,9 +135,6 @@ internal sealed class SceneObjectCatalog
 
         var meshes = scene.World.Meshes;
 
-        // Identity hashes of the world and its first/last meshes distinguish two worlds
-        // that happen to have the same shape (same counts and type names), so the table
-        // is rebuilt — and rewired to the live mesh instances — when the world is swapped.
         return $"{RuntimeHelpers.GetHashCode(scene.World)}|" +
                $"{(meshes.Count > 0 ? RuntimeHelpers.GetHashCode(meshes[0]) : 0)}|" +
                $"{(meshes.Count > 0 ? RuntimeHelpers.GetHashCode(meshes[^1]) : 0)}|" +
@@ -179,7 +163,6 @@ internal sealed class SceneObjectCatalog
         return bytes;
     }
 
-    /// <summary>Byte counts the way a resource viewer shows them.</summary>
     public static string FormatSize(long bytes) => bytes switch
     {
         0 => "—",

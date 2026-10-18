@@ -5,49 +5,17 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Pipeline.Temporal;
 
-/// <summary>
-/// Fills a <see cref="VelocityBuffer"/>: a second pass over the world that projects every vertex
-/// twice — once with this frame's transforms and once with the previous frame's — and writes the
-/// difference.
-///
-/// <para>
-/// A separate pass rather than a varying carried by the main one, and that is a deliberate trade. A
-/// varying would be free of a second traversal but would have to be threaded through every
-/// <see cref="Rasterization.IVarying{T}"/>, every painter and every shader, whether or not anything
-/// temporal is switched on — nine painters paying for a feature two of them can use. A pass costs a
-/// second transform and fill of the frame's geometry, and costs it only when something asks. The
-/// shadow pass makes the same trade for the same reason.
-/// </para>
-///
-/// <para>
-/// It has no near-plane clipping. A triangle straddling the eye is dropped rather than split, which
-/// leaves a hole in the buffer where it would have been — and holes are already handled, because
-/// every consumer has to cope with a pixel whose history is off screen anyway. Doing it properly
-/// would mean lifting <see cref="Clipping.NearPlaneClipper"/> into a pass that produces two clip
-/// positions per vertex instead of one, for a case where the surface is a hand's breadth from the
-/// lens.
-/// </para>
-/// </summary>
 public sealed class VelocityPass
 {
-    /// <summary>Rows a worker takes at a time, matching the way the shadow pass bands its fill.</summary>
     private const int BandRows = 32;
 
-    /// <summary>One mesh's projected vertices, indexed the way its triangles index them.</summary>
     private readonly record struct Entry(int Slot, Triangle[] Triangles);
 
     private readonly List<Entry> _entries = [];
 
-    // Kept across frames and grown as needed: a pass that allocates per mesh per frame is an
-    // allocation per mesh per frame, which at thousands of meshes is the whole cost of it.
     private readonly List<Vector4[]> _current = [];
     private readonly List<Vector4[]> _previous = [];
 
-    /// <summary>
-    /// Projects the world twice and writes the per-pixel motion between the two.
-    /// </summary>
-    /// <param name="viewProjection">This frame's camera and projection, composed and <em>unjittered</em>.</param>
-    /// <param name="state">Where everything was last frame; also what says whether there is a last frame.</param>
     public void Render(
         IWorld world,
         VelocityBuffer buffer,
@@ -62,22 +30,16 @@ public sealed class VelocityPass
 
         if (!state.HasHistory || buffer.Width <= 0 || buffer.Height <= 0)
         {
-            // Nothing to compare against. Every velocity stays zero and every pixel stays
-            // uncovered, which is what tells a consumer to fall back to this frame alone.
             return;
         }
 
         var previousViewProjection = state.PreviousViewProjection;
 
-        // NDC ±1 onto pixel 0 and pixel n − 1, exactly as FrameBuffer.ToScreen3 maps it. A velocity
-        // measured against a different mapping would be off by half a pixel at the frame's edges,
-        // which is precisely the scale everything here works at.
         var halfWidth = (buffer.Width - 1) * 0.5f;
         var halfHeight = (buffer.Height - 1) * 0.5f;
 
         _entries.Clear();
 
-        // Phase 1, sequential: every drawn mesh's vertices, in both frames' clip space.
         foreach (var mesh in world.Meshes)
         {
             if (!mesh.Visible || mesh.Opacity <= 0f || mesh.Triangles.Length == 0)
@@ -113,9 +75,6 @@ public sealed class VelocityPass
             return;
         }
 
-        // Phase 2, parallel: one worker per band of rows. Bands rather than tiles because a
-        // velocity is written by a depth compare against the pixel it lands on — so two workers must
-        // never own the same pixel, and rows are the cheapest partition that guarantees it.
         var bands = (buffer.Height + BandRows - 1) / BandRows;
 
         Parallel.For(0, bands, band =>
@@ -142,7 +101,6 @@ public sealed class VelocityPass
         buffer.IsFilled = true;
     }
 
-    /// <summary>Forgets the pooled arrays. For a caller that has finished with the pass for now.</summary>
     public void Reset()
     {
         _entries.Clear();
@@ -165,15 +123,6 @@ public sealed class VelocityPass
         return pool[slot];
     }
 
-    /// <summary>
-    /// Fills one triangle, interpolating where its surface was.
-    ///
-    /// The previous clip position is interpolated <em>perspective-correctly</em> — divided by this
-    /// frame's w before the blend and multiplied back after — because it is an attribute of the
-    /// surface being rasterized now, not a position in the frame being rasterized now. Interpolating
-    /// it linearly across the screen would bend the motion of any surface at an angle to the camera,
-    /// which is most of a floor.
-    /// </summary>
     private static void Fill(
         VelocityBuffer buffer,
         Vector4 c0, Vector4 c1, Vector4 c2,
@@ -181,7 +130,6 @@ public sealed class VelocityPass
         float halfWidth, float halfHeight,
         int rowFrom, int rowTo)
     {
-        // Behind the eye, or on it. No near clipping here — see the class summary.
         if (c0.W <= 1e-6f || c1.W <= 1e-6f || c2.W <= 1e-6f)
         {
             return;
@@ -214,8 +162,6 @@ public sealed class VelocityPass
             return;
         }
 
-        // Winding normalized away: a back face still moved, and this pass has no shading for which
-        // side it is to matter to.
         var invArea = 1f / area;
 
         var dw0 = (s1.Y - s2.Y) * invArea;
@@ -225,7 +171,6 @@ public sealed class VelocityPass
         var invW1 = 1f / c1.W;
         var invW2 = 1f / c2.W;
 
-        // The previous positions, premultiplied by this frame's reciprocal w.
         var q0 = p0 * invW0;
         var q1 = p1 * invW1;
         var q2 = p2 * invW2;
@@ -265,8 +210,6 @@ public sealed class VelocityPass
 
                 if (previousClip.W <= 1e-6f)
                 {
-                    // The surface was behind the eye last frame, so it has no previous pixel. Left
-                    // uncovered rather than written with a wild number.
                     continue;
                 }
 
@@ -278,7 +221,6 @@ public sealed class VelocityPass
         }
     }
 
-    /// <summary>Clip space to pixels, with normalized depth in z. The mapping <see cref="FrameBuffer.ToScreen3"/> uses.</summary>
     private static Vector3 Screen(Vector4 clip, float halfWidth, float halfHeight)
     {
         var invW = 1f / clip.W;
@@ -289,7 +231,6 @@ public sealed class VelocityPass
             clip.Z * invW);
     }
 
-    /// <summary>Twice the signed area of (a, b, point); its sign says which side the point is on.</summary>
     private static float Edge(in Vector3 a, in Vector3 b, float x, float y) =>
         (b.X - a.X) * (y - a.Y) - (b.Y - a.Y) * (x - a.X);
 }

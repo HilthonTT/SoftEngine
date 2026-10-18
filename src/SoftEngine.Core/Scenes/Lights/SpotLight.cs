@@ -3,13 +3,6 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Scenes.Lights;
 
-/// <summary>
-/// A point light restricted to a cone. Two angles rather than one: inside the inner cone
-/// the light is at full strength, outside the outer cone it is off, and between them it
-/// ramps — a single angle would give the beam an aliased edge that no amount of
-/// supersampling can fix, because the discontinuity is in the lighting rather than in the
-/// geometry.
-/// </summary>
 public sealed class SpotLight : ILight
 {
     private Vector3 _direction = -Vector3.UnitY;
@@ -18,14 +11,13 @@ public sealed class SpotLight : ILight
     private float _range = float.PositiveInfinity;
     private float _invRangeSquared;
 
-    private float _outerAngle = MathF.PI / 6f;   // 30°
-    private float _innerAngle = MathF.PI / 9f;   // 20°
+    private float _outerAngle = MathF.PI / 6f;
+    private float _innerAngle = MathF.PI / 9f;
     private float _cosOuter = MathF.Cos(MathF.PI / 6f);
     private float _invFalloff = 1f / MathF.Max(MathF.Cos(MathF.PI / 9f) - MathF.Cos(MathF.PI / 6f), 1e-4f);
 
     public Vector3 Position { get; set; }
 
-    /// <summary>The direction the beam points (it does not need to be normalized).</summary>
     public Vector3 Direction
     {
         get => _direction;
@@ -40,7 +32,6 @@ public sealed class SpotLight : ILight
 
     public ColorRGB Color { get; set; } = ColorRGB.White;
 
-    /// <summary>Half-angle of the beam's full-strength core, in radians.</summary>
     public float InnerAngle
     {
         get => _innerAngle;
@@ -51,7 +42,6 @@ public sealed class SpotLight : ILight
         }
     }
 
-    /// <summary>Half-angle at which the beam has fallen to nothing, in radians.</summary>
     public float OuterAngle
     {
         get => _outerAngle;
@@ -62,7 +52,6 @@ public sealed class SpotLight : ILight
         }
     }
 
-    /// <summary>Distance falloff, as on <see cref="PointLight.Range"/>; infinite means none.</summary>
     public float Range
     {
         get => _range;
@@ -99,11 +88,6 @@ public sealed class SpotLight : ILight
         return attenuation * Cone(Vector3.Dot(_axis, -toLight), _cosOuter, _invFalloff);
     }
 
-    /// <summary>
-    /// The cone term, given the cosine of the angle between the beam's axis and the
-    /// direction to the shaded point. Squared, so the ramp leaves the inner edge smoothly
-    /// rather than with a visible crease.
-    /// </summary>
     internal static float Cone(float cosAngle, float cosOuter, float invFalloff)
     {
         var t = System.Math.Clamp((cosAngle - cosOuter) * invFalloff, 0f, 1f);
@@ -112,8 +96,6 @@ public sealed class SpotLight : ILight
 
     private void RebuildCone()
     {
-        // An inner angle at or past the outer one would divide by zero; a hair of ramp is
-        // kept instead, which is also the sharpest edge worth rasterizing.
         var outer = System.Math.Clamp(_outerAngle, 0f, MathF.PI * 0.5f);
         var inner = System.Math.Clamp(_innerAngle, 0f, outer);
 

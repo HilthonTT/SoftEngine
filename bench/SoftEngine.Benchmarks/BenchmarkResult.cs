@@ -1,6 +1,5 @@
 namespace SoftEngine.Benchmarks;
 
-/// <summary>What one scene measured to.</summary>
 internal readonly record struct BenchmarkResult(
     string Scene,
     double MedianMs,

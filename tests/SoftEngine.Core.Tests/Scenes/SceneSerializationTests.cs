@@ -44,10 +44,6 @@ public class SceneSerializationTests
 
     private static PostProcessStack NewStack() => PostProcessStack.CreateDefault();
 
-    /// <summary>
-    /// The claim the format has to make: a scene set up, written out and read back is the same
-    /// scene. Anything this misses is a setting that silently reverts when a file is reopened.
-    /// </summary>
     [Fact]
     public void CaptureAndApply_ThroughJson_RoundTripsTheScene()
     {
@@ -175,10 +171,6 @@ public class SceneSerializationTests
         Assert.Equal(80f, projection.ZFar, 5);
     }
 
-    /// <summary>
-    /// An omitted section means "leave this alone". Without that rule a hand-written file would
-    /// have to restate the whole scene to change one number in it.
-    /// </summary>
     [Fact]
     public void Apply_OfADocumentWithOnlyACamera_ChangesNothingElse()
     {
@@ -202,11 +194,23 @@ public class SceneSerializationTests
         Assert.Equal(new Vector3(9f, 9f, 9f), scene.World.Meshes[0].Position);
     }
 
-    /// <summary>
-    /// A light with no falloff has an infinite range, which JSON cannot write. Recording it as a
-    /// very large number instead would turn "no falloff" into "an enormous falloff" — a different
-    /// thing that happens to look the same in the scene it was tested on.
-    /// </summary>
+    [Theory]
+    [InlineData("perspective")]
+    [InlineData("orthographic")]
+    public void Apply_OfAProjectionThatNamesOnlyItsKind_GivesAUsableMatrix(string kind)
+    {
+        var scene = NewScene();
+
+        SceneSerializer.Apply(SceneSerializer.FromJson($$"""
+            { "projection": { "kind": "{{kind}}" } }
+            """), scene);
+
+        var matrix = scene.Projection.ProjectionMatrix(64f, 64f);
+
+        Assert.True(float.IsFinite(matrix.M11) && matrix.M11 > 0f);
+        Assert.True(float.IsFinite(matrix.M22) && matrix.M22 > 0f);
+    }
+
     [Fact]
     public void CaptureAndApply_OfALightWithNoFalloff_KeepsItInfinite()
     {
@@ -215,7 +219,6 @@ public class SceneSerializationTests
 
         var json = SceneSerializer.ToJson(SceneSerializer.Capture(source));
 
-        // The property, not the substring — "highDynamicRange" contains the word.
         Assert.DoesNotContain("\"range\"", json, StringComparison.Ordinal);
 
         var target = NewScene();
@@ -224,10 +227,6 @@ public class SceneSerializationTests
         Assert.Equal(float.PositiveInfinity, Assert.IsType<PointLight>(target.World.Lights[0]).Range);
     }
 
-    /// <summary>
-    /// A document written against a model that has since been re-exported with fewer meshes is a
-    /// scene that has partly gone stale, not a file to refuse.
-    /// </summary>
     [Fact]
     public void Apply_WithMoreMeshesThanTheWorldHas_SkipsTheOnesThatFallOffTheEnd()
     {
@@ -258,11 +257,6 @@ public class SceneSerializationTests
         Assert.Equal(DebugView.Off, settings.DebugView);
     }
 
-    /// <summary>
-    /// Vectors are written as arrays, and on <em>one line</em> — an indented writer breaks an
-    /// array across a line per element, which would make the file less readable than the object
-    /// form the array is here to replace.
-    /// </summary>
     [Fact]
     public void Vectors_AreWrittenAsOneLineArraysAndReadFromEitherForm()
     {
@@ -305,7 +299,6 @@ public class SceneSerializationTests
         }
     }
 
-    /// <summary>The front-end's half of the document is data the engine stores and never reads.</summary>
     [Fact]
     public void WorldSource_RoundTripsUntouched()
     {

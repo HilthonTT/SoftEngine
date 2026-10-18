@@ -1,4 +1,4 @@
-﻿using SoftEngine.Core.Diagnostics;
+using SoftEngine.Core.Diagnostics;
 using System.Numerics;
 
 namespace SoftEngine.Core.Geometry.Primitives;
@@ -49,7 +49,7 @@ public sealed class Cube : Mesh
         ColorRGB.Blue,
     ];
 
-    public Cube() : base(_vertices, _indices.BuildTriangleIndices(), null, _triangleColors)
+    public Cube() : base(_vertices, _indices.BuildTriangleIndices(_vertices.Length), null, _triangleColors)
     {
     }
 }

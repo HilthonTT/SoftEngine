@@ -1,39 +1,29 @@
 ﻿using Silk.NET.OpenGL;
+using SoftEngine.Core.Geometry;
+using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Textures;
 using Texture = SoftEngine.Core.Textures.Texture;
 
 namespace SoftEngine.Gpu;
 
-/// <summary>
-/// The engine's CPU-side <see cref="Texture"/> objects, mirrored into OpenGL and kept there.
-///
-/// <para>
-/// Keyed by reference rather than by content: a texture is loaded once by an importer and
-/// handed to every mesh that uses it, so reference identity is what "the same texture" means
-/// here, and a table keyed on it uploads a shared albedo map once for a model that has fifty
-/// meshes wearing it.
-/// </para>
-///
-/// <para>
-/// Everything is uploaded as plain 8-bit RGBA — never as <c>GL_SRGB8_ALPHA8</c>, which would
-/// have the sampler decode colour textures for free. The decode has to stay in the shader
-/// because the engine has two shading paths and only one of them wants it: with
-/// <c>Scene.GammaCorrect</c> off the CPU painters multiply the encoded bytes directly, and a
-/// sampler that had already linearized them would make the two backends disagree about the
-/// one setting whose whole purpose is to show the difference.
-/// </para>
-/// </summary>
 public sealed class GpuTextureCache : IDisposable
 {
+    // Anisotropic filtering is an extension rather than core in the 3.3 context this engine asks
+    // for, so the constants are not in Silk's core enums: these are GL_TEXTURE_MAX_ANISOTROPY and
+    // GL_MAX_TEXTURE_MAX_ANISOTROPY from EXT_texture_filter_anisotropic (same values in GL 4.6).
+    private const int TextureMaxAnisotropy = 0x84FE;
+    private const int MaxTextureMaxAnisotropy = 0x84FF;
+
     private readonly GL _gl;
 
-    // Neither type overrides Equals, so the default comparer already is reference identity.
-    private readonly Dictionary<Texture, uint> _textures = [];
+    // Keyed by the sampler state too: the shadow pass reads a cutout's albedo unfiltered, and the
+    // viewer can change filtering at run time, so one texture may be needed under several states.
+    private readonly Dictionary<(Texture Texture, TextureFiltering Filtering, bool MipMaps), uint> _textures = [];
     private readonly Dictionary<CubeMap, uint> _cubes = [];
 
-    // Bound wherever a sampler in the program is not otherwise used: OpenGL is entitled to
-    // complain about an incomplete texture even on a sampler no branch of the shader reads,
-    // and one 1x1 white texel is cheaper than proving which those are.
+    /// <summary>The driver's anisotropy ceiling; 0 once queried on a driver without the extension, -1 until asked.</summary>
+    private float _maxAnisotropy = -1f;
+
     private uint _white;
 
     public GpuTextureCache(GL gl)
@@ -41,7 +31,6 @@ public sealed class GpuTextureCache : IDisposable
         _gl = gl ?? throw new ArgumentNullException(nameof(gl));
     }
 
-    /// <summary>A 1×1 opaque white texture, for samplers this frame has nothing to put in.</summary>
     public unsafe uint White
     {
         get
@@ -69,12 +58,6 @@ public sealed class GpuTextureCache : IDisposable
         }
     }
 
-    /// <summary>
-    /// A 1×1 white cube map, for the frames whose shading mode declares a <c>samplerCube</c>
-    /// it will not read. The unit still has to hold a cube map: two samplers of different
-    /// types on one unit is undefined behaviour even when no branch of the shader takes the
-    /// one that would read it.
-    /// </summary>
     public unsafe uint WhiteCube
     {
         get
@@ -107,16 +90,11 @@ public sealed class GpuTextureCache : IDisposable
 
     private uint _whiteCube;
 
-    /// <summary>
-    /// The GL name for a texture, uploading it on first use. <paramref name="filtering"/> and
-    /// <paramref name="mipMaps"/> follow the painter's own settings, so a scene rendered with
-    /// filtering off looks as blocky on the GPU as it does on the CPU.
-    /// </summary>
     public unsafe uint Get(Texture texture, TextureFiltering filtering, bool mipMaps)
     {
         ArgumentNullException.ThrowIfNull(texture, nameof(texture));
 
-        if (_textures.TryGetValue(texture, out var existing))
+        if (_textures.TryGetValue((texture, filtering, mipMaps), out var existing))
         {
             return existing;
         }
@@ -124,8 +102,6 @@ public sealed class GpuTextureCache : IDisposable
         var handle = _gl.GenTexture();
         _gl.BindTexture(TextureTarget.Texture2D, handle);
 
-        // The engine stores texels as packed ARGB ints, which on a little-endian machine is
-        // B, G, R, A in memory — GL_BGRA with the reversed-int packing, and no repacking pass.
         fixed (int* pixels = texture.Pixels)
         {
             _gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba8,
@@ -140,15 +116,11 @@ public sealed class GpuTextureCache : IDisposable
 
         var magnify = filtering == TextureFiltering.Nearest ? TextureMagFilter.Nearest : TextureMagFilter.Linear;
 
-        // Bilinear takes one level and trilinear blends two, on this backend as on the other —
-        // GL says which in the minification filter's second half. Mapping bilinear to
-        // LinearMipmapLinear would give the CPU's per-triangle level a smoothness the CPU
-        // cannot produce, and hide the difference the mode was added to make.
         var minify = (filtering, mipMaps) switch
         {
-            (TextureFiltering.Trilinear, true) => TextureMinFilter.LinearMipmapLinear,
-            (TextureFiltering.Bilinear or TextureFiltering.Trilinear, true) => TextureMinFilter.LinearMipmapNearest,
-            (TextureFiltering.Bilinear or TextureFiltering.Trilinear, false) => TextureMinFilter.Linear,
+            (TextureFiltering.Trilinear or TextureFiltering.Anisotropic, true) => TextureMinFilter.LinearMipmapLinear,
+            (TextureFiltering.Bilinear, true) => TextureMinFilter.LinearMipmapNearest,
+            (TextureFiltering.Bilinear or TextureFiltering.Trilinear or TextureFiltering.Anisotropic, false) => TextureMinFilter.Linear,
             (_, true) => TextureMinFilter.NearestMipmapNearest,
             _ => TextureMinFilter.Nearest,
         };
@@ -158,16 +130,41 @@ public sealed class GpuTextureCache : IDisposable
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
 
-        _textures[texture] = handle;
+        if (filtering == TextureFiltering.Anisotropic && mipMaps)
+        {
+            ApplyAnisotropy();
+        }
+
+        _textures[(texture, filtering, mipMaps)] = handle;
         return handle;
     }
 
     /// <summary>
-    /// The GL name for an environment cube map, uploading it and building its mip chain on
-    /// first use. The chain is what the physically-based path reflects out of: a rougher
-    /// surface reads a smaller level, which is a box-filtered stand-in for the CPU's
-    /// properly convolved <c>PrefilteredEnvironment</c>.
+    /// Asks the sampler for the same anisotropy the software path uses, capped at what the driver
+    /// offers. Without the extension the texture is left trilinear, which is what the min filter
+    /// above already selected.
     /// </summary>
+    private void ApplyAnisotropy()
+    {
+        if (_maxAnisotropy < 0f)
+        {
+            _maxAnisotropy =
+                _gl.IsExtensionPresent("GL_EXT_texture_filter_anisotropic") ||
+                _gl.IsExtensionPresent("GL_ARB_texture_filter_anisotropic")
+                    ? _gl.GetFloat((GetPName)MaxTextureMaxAnisotropy)
+                    : 0f;
+        }
+
+        if (_maxAnisotropy < 1f)
+        {
+            return;
+        }
+
+        var amount = System.Math.Clamp(MipSelector.MaxAnisotropy, 1f, _maxAnisotropy);
+
+        _gl.TexParameter(TextureTarget.Texture2D, (TextureParameterName)TextureMaxAnisotropy, amount);
+    }
+
     public unsafe uint GetCube(CubeMap environment)
     {
         ArgumentNullException.ThrowIfNull(environment, nameof(environment));
@@ -180,8 +177,6 @@ public sealed class GpuTextureCache : IDisposable
         var handle = _gl.GenTexture();
         _gl.BindTexture(TextureTarget.TextureCubeMap, handle);
 
-        // CubeMap stores its faces in OpenGL's own order and orientation, so each one goes
-        // straight to the matching target.
         for (var face = 0; face < 6; face++)
         {
             var texture = environment[(CubeFace)face];
@@ -203,15 +198,12 @@ public sealed class GpuTextureCache : IDisposable
         _gl.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
         _gl.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureWrapR, (int)TextureWrapMode.ClampToEdge);
 
-        // Sampling across a face boundary otherwise reads whatever the clamp gives, which
-        // leaves a visible seam down every edge of a low-resolution sky.
         _gl.Enable(EnableCap.TextureCubeMapSeamless);
 
         _cubes[environment] = handle;
         return handle;
     }
 
-    /// <summary>How many mip levels a cube map has, which is the top of the roughness ramp.</summary>
     public static float MaxLevelOf(CubeMap environment)
     {
         var size = environment[CubeFace.PositiveX].Width;

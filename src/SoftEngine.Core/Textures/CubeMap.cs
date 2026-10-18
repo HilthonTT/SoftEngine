@@ -4,34 +4,10 @@ using System.Numerics;
 
 namespace SoftEngine.Core.Textures;
 
-/// <summary>
-/// An environment sampled by direction rather than by UV: six square textures, one per
-/// face of a cube centred on the viewer, addressed by whichever axis a direction points
-/// most strongly along.
-///
-/// It is the cheapest thing that answers "what is out there, that way" — which is the
-/// question both a skybox and an ambient term are asking. A skybox asks it once per
-/// background pixel, along the ray through that pixel; ambient lighting asks it about the
-/// hemisphere around a surface normal, which is what <see cref="Shading.AmbientCube"/>
-/// precomputes from one of these.
-///
-/// The face layout is the usual one (the same as OpenGL's and Direct3D's), so an
-/// environment authored for a GPU renderer drops straight in.
-///
-/// A cube may additionally carry the same six faces in linear floats — see
-/// <see cref="SampleRadiance"/> — which is how an environment loaded from an
-/// <see cref="Imaging.HdrImage"/> keeps a sun that is thousands of times brighter than the sky
-/// around it. The byte faces stay either way, because a skybox drawn on screen, a texture
-/// handed to a graphics adapter and a picker's thumbnail all still want bytes.
-/// </summary>
 public sealed class CubeMap
 {
     private readonly Texture[] _faces;
 
-    /// <summary>
-    /// Optional linear-light faces, three floats per texel, parallel to <see cref="_faces"/> and
-    /// at the same resolutions. Null for an environment that only ever had bytes.
-    /// </summary>
     private readonly float[][]? _radiance;
 
     public CubeMap(Texture[] faces)
@@ -39,11 +15,6 @@ public sealed class CubeMap
     {
     }
 
-    /// <summary>
-    /// A cube map whose lighting is read from <paramref name="radiance"/> — six arrays of
-    /// linear RGB floats, one per face, each three floats per texel of the matching
-    /// <paramref name="faces"/> entry.
-    /// </summary>
     public CubeMap(Texture[] faces, float[][]? radiance)
     {
         ArgumentNullException.ThrowIfNull(faces, nameof(faces));
@@ -85,45 +56,22 @@ public sealed class CubeMap
         _radiance = radiance;
     }
 
-    /// <summary>The six faces, indexed by <see cref="CubeFace"/>.</summary>
     public Texture this[CubeFace face] => _faces[(int)face];
 
-    /// <summary>Bilinear rather than nearest sampling, which a low-resolution sky needs.</summary>
     public TextureFiltering Filtering { get; set; } = TextureFiltering.Bilinear;
 
-    /// <summary>
-    /// Whether this environment carries linear floats, and so has a range above white for
-    /// <see cref="SampleRadiance"/> to return and the prefilter to convolve.
-    /// </summary>
     public bool IsHighDynamicRange => _radiance is not null;
 
-    /// <summary>
-    /// The colour in a direction. The direction does not need to be normalized — only its
-    /// largest component and the ratios to the other two matter.
-    /// </summary>
     public ColorRGB Sample(Vector3 direction)
     {
         var (face, u, v) = Project(direction);
         var texture = _faces[(int)face];
 
-        // Cube-map V runs downward from the top of the face; the texture's rows are stored
-        // the same way, so v maps straight to a row here.
         return Filtering == TextureFiltering.Bilinear
             ? Bilinear(texture, u, v)
             : Nearest(texture, u, v);
     }
 
-    /// <summary>
-    /// The light arriving from a direction: the float faces when there are any, and otherwise
-    /// exactly what <see cref="Sample"/> returns, decoded.
-    ///
-    /// Every consumer that treats the environment as light rather than as a picture goes through
-    /// here — the skybox pass, <see cref="AmbientCube"/>, and the prefilter behind
-    /// <see cref="PrefilteredEnvironment"/>. The fallback filters the sRGB bytes and decodes the
-    /// blend, rather than decoding first and blending in linear light, because that is the order
-    /// those three consumers already used and the difference is a fraction of a byte on a
-    /// gradient — worth less than making every existing frame move.
-    /// </summary>
     public LinearColor SampleRadiance(Vector3 direction)
     {
         if (_radiance is null)
@@ -139,18 +87,8 @@ public sealed class CubeMap
             : NearestRadiance(_radiance[(int)face], texture.Width, texture.Height, u, v);
     }
 
-    /// <summary>
-    /// The linear floats of one face, three per texel, or null when this cube has none. Exposed
-    /// for a backend that has to upload the environment somewhere else — a float texture on a
-    /// graphics adapter — rather than resample it and disagree by a texel.
-    /// </summary>
     public float[]? Radiance(CubeFace face) => _radiance?[(int)face];
 
-    /// <summary>
-    /// Addressing clamps rather than wrapping, unlike an ordinary texture. A cube face's
-    /// neighbour along u is the next face round, not the far edge of this one — wrapping
-    /// would draw a stripe of the sky behind you along every seam.
-    /// </summary>
     private static ColorRGB Nearest(Texture texture, float u, float v)
     {
         var x = System.Math.Clamp((int)(u * texture.Width), 0, texture.Width - 1);
@@ -227,10 +165,6 @@ public sealed class CubeMap
         return new LinearColor(radiance[i], radiance[i + 1], radiance[i + 2]);
     }
 
-    /// <summary>
-    /// Which face a direction lands on, and where. The major axis picks the face; the
-    /// other two components, divided by it, give coordinates in [0, 1] across it.
-    /// </summary>
     public static (CubeFace Face, float U, float V) Project(Vector3 direction)
     {
         var absX = MathF.Abs(direction.X);
@@ -299,10 +233,6 @@ public sealed class CubeMap
         return (face, uc * inverse + 0.5f, vc * inverse + 0.5f);
     }
 
-    /// <summary>
-    /// The direction a point on a face looks along — the inverse of <see cref="Project"/>,
-    /// and what generating a cube map procedurally needs. Not normalized.
-    /// </summary>
     public static Vector3 Direction(CubeFace face, float u, float v)
     {
         var uc = 2f * u - 1f;
@@ -319,10 +249,6 @@ public sealed class CubeMap
         };
     }
 
-    /// <summary>
-    /// Builds a cube map by evaluating <paramref name="shade"/> along the direction through
-    /// the centre of every texel. The way to get an environment without an asset to load.
-    /// </summary>
     public static CubeMap Generate(int resolution, Func<Vector3, ColorRGB> shade)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(resolution);
@@ -353,15 +279,6 @@ public sealed class CubeMap
         return new CubeMap(faces);
     }
 
-    /// <summary>
-    /// The same as <see cref="Generate"/>, but keeping what <paramref name="shade"/> returns:
-    /// the floats become the cube's radiance and a clipped sRGB encoding of them becomes its
-    /// byte faces.
-    ///
-    /// This is the procedural counterpart to loading a panorama — the way to get a sky with a
-    /// sun in it, where "a sun" means a small disc some thousands of times brighter than
-    /// everything around it and not merely the whitest white available.
-    /// </summary>
     public static CubeMap GenerateRadiance(int resolution, Func<Vector3, LinearColor> shade)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(resolution);

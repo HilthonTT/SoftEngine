@@ -1,5 +1,6 @@
-﻿using SoftEngine.Core.Baking;
+using SoftEngine.Core.Baking;
 using SoftEngine.Core.Imaging;
+using SoftEngine.Core.Pipeline.PostProcess;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Textures;
@@ -10,24 +11,15 @@ namespace SoftEngine.WinForms;
 
 public sealed partial class MainScreen
 {
-    /// <summary>The generated sky, and the sun direction and range it was generated around.</summary>
     private CubeMap? _sky;
     private Vector3 _skySunDirection;
     private bool _skyIsHighDynamicRange;
 
-    /// <summary>A loaded panorama and where it came from, or null until one is opened.</summary>
     private CubeMap? _panorama;
     private string? _panoramaPath;
 
-    /// <summary>The last bake of the current world, or null when nothing has been measured yet.</summary>
     private Core.Shading.IrradianceVolume? _bakedLight;
 
-    /// <summary>
-    /// Gives the scene its environment: a loaded panorama when there is one and it is selected,
-    /// and otherwise a procedural sky with the sun placed where the world's first directional
-    /// light points — a sky whose sun is somewhere other than where the shadows come from is the
-    /// one thing that reads as obviously wrong.
-    /// </summary>
     private void ApplySky(IWorld? world)
     {
         if (panel3D1.Scene is not { } scene)
@@ -37,10 +29,6 @@ public sealed partial class MainScreen
 
         if (chkPanorama.Checked && _panorama is { } panorama)
         {
-            // A panorama stays the scene's environment whether or not it is drawn: the sky
-            // checkbox decides only whether it is *visible*, so unticking it leaves the scene lit
-            // from off screen, which is what a studio backdrop is for. The procedural path below
-            // drops the environment entirely instead, which is what it has always done.
             scene.Environment = panorama;
             scene.ShowSky = chkSky.Checked;
             return;
@@ -51,8 +39,6 @@ public sealed partial class MainScreen
         var sunDirection = world?.Lights.OfType<DirectionalLight>().FirstOrDefault()?.Direction
             ?? new Vector3(-0.35f, -0.6f, -1f);
 
-        // Generating the cube map walks six faces of texels, so it is kept until the sun it was
-        // built around moves or the range it was built in changes.
         if (_sky is null || _skySunDirection != sunDirection || _skyIsHighDynamicRange != chkHdrSky.Checked)
         {
             _sky = chkHdrSky.Checked
@@ -66,14 +52,6 @@ public sealed partial class MainScreen
         scene.Environment = chkSky.Checked ? _sky : null;
     }
 
-    /// <summary>
-    /// Opens a panorama and makes it the environment.
-    ///
-    /// Projecting an equirectangular image onto six cube faces walks every texel of all six and
-    /// supersamples each, and the PBR painter then convolves the result once per roughness — so
-    /// this is seconds of work on a large sky, and it runs off the UI thread with the progress bar
-    /// showing rather than freezing the window.
-    /// </summary>
     private async Task LoadPanoramaAsync()
     {
         using var dialog = new OpenFileDialog
@@ -123,8 +101,6 @@ public sealed partial class MainScreen
                 ? $"{path}\nLinear floats: the range above white survived the load"
                 : $"{path}\nEight-bit source: nothing above white to reflect");
 
-            // Ticking the box is what puts it on screen, and having just been asked for it is as
-            // clear a signal as there is that it should be.
             if (chkPanorama.Checked)
             {
                 ApplySky(panel3D1.Scene?.World);
@@ -142,13 +118,6 @@ public sealed partial class MainScreen
         }
     }
 
-    /// <summary>
-    /// Traces the world's bounce light into a grid of probes, off the UI thread.
-    ///
-    /// It is seconds of work — a few hundred probes at a hundred paths each — and unlike everything
-    /// else on this panel it is not a setting but a measurement, so it has a button rather than a
-    /// checkbox. The checkbox beside it decides whether the measurement is used.
-    /// </summary>
     private async Task BakeIndirectLightAsync()
     {
         if (panel3D1.Scene is not { } scene)
@@ -159,16 +128,23 @@ public sealed partial class MainScreen
         btnBake.Enabled = false;
         UseWaitCursor = true;
 
+        var world = scene.World;
+
         try
         {
-            // Resolution follows the viewport's own budget: this runs while somebody waits, and a
-            // 24³ grid is fourteen thousand probes.
             var volume = await Task.Run(() => IrradianceBaker.Bake(scene, new BakeSettings
             {
                 Resolution = 12,
                 Rays = 128,
                 Bounces = 2,
             }));
+
+            // Another world may have been loaded while this one baked. Its probes would light
+            // the new geometry with the old one's bounds and occlusion.
+            if (!ReferenceEquals(panel3D1.Scene?.World, world))
+            {
+                return;
+            }
 
             _bakedLight = volume;
 
@@ -197,13 +173,6 @@ public sealed partial class MainScreen
         }
     }
 
-    /// <summary>
-    /// Hands the scene its baked light, or takes it away again.
-    ///
-    /// Nothing here rebakes. A volume describes one arrangement of a world, and a drag or a new
-    /// model leaves it describing a room that is no longer there — which is why loading a world
-    /// throws it away outright rather than quietly lighting the next one with the last one's light.
-    /// </summary>
     private void ApplyBakedLight()
     {
         if (panel3D1.Scene is not { } scene)
@@ -214,7 +183,6 @@ public sealed partial class MainScreen
         scene.Irradiance = chkBakedLight.Checked ? _bakedLight : null;
     }
 
-    /// <summary>Forgets the bake, for when the world it measured is not the world any more.</summary>
     private void ClearBakedLight()
     {
         _bakedLight = null;
@@ -229,11 +197,6 @@ public sealed partial class MainScreen
         }
     }
 
-    /// <summary>
-    /// Decodes a panorama and projects it onto a cube. Radiance files go through the engine's own
-    /// codec because no platform image library has a type for what is in one; everything else goes
-    /// through GDI+, which reads every 8-bit format Windows knows and no HDR one.
-    /// </summary>
     private static CubeMap? LoadPanorama(string path)
     {
         var extension = Path.GetExtension(path);
@@ -254,5 +217,31 @@ public sealed partial class MainScreen
         {
             return null;
         }
+    }
+
+    private void ApplyAmbientOcclusion()
+    {
+        if (_applyingScene || panel3D1.PostProcess.Find<SsaoEffect>() is not { } ssao)
+        {
+            return;
+        }
+
+        var reference = panel3D1.ReferenceDistance;
+
+        ssao.Radius = reference > 0f ? reference * 0.02f : 0.5f;
+        ssao.Bias = ssao.Radius * 0.04f;
+    }
+
+    private void ApplyReflections()
+    {
+        if (_applyingScene || panel3D1.PostProcess.Find<SsrEffect>() is not { } ssr)
+        {
+            return;
+        }
+
+        var reference = panel3D1.ReferenceDistance;
+
+        ssr.MaxDistance = reference > 0f ? reference : 40f;
+        ssr.Thickness = ssr.MaxDistance * 0.04f;
     }
 }

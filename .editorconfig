@@ -1,4 +1,4 @@
-﻿# EditorConfig for SoftEngine — https://editorconfig.org
+# EditorConfig for SoftEngine — https://editorconfig.org
 #
 # This file describes the style the codebase is already written in rather than
 # proposing a new one. Rules that are matters of taste are `suggestion`, so an
@@ -63,7 +63,13 @@ dotnet_style_prefer_conditional_expression_over_return = true:suggestion
 dotnet_style_prefer_compound_assignment = true:suggestion
 dotnet_style_prefer_simplified_boolean_expressions = true:suggestion
 dotnet_style_prefer_simplified_interpolation = true:suggestion
-dotnet_style_namespace_match_folder = true:suggestion
+
+# A namespace that does not match its folder is invisible until somebody goes looking
+# for a type and the folder they expect it in is not the one it is declared in. It had
+# already drifted across most of the test project while this was a suggestion, which is
+# the argument for it being a warning: nothing about the mismatch shows up in a review
+# diff, so nobody was ever going to raise it by hand.
+dotnet_style_namespace_match_folder = true:warning
 
 # Fields that are not `const` are private and mutable state; making that visible
 # is worth a warning, because a `readonly` that should have been there is the

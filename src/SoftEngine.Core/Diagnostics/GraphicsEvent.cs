@@ -2,23 +2,14 @@
 
 namespace SoftEngine.Core.Diagnostics;
 
-/// <summary>
-/// One step of a frame's render pipeline, as shown in the graphics event list.
-///
-/// The payload is three floats rather than a formatted string: recording an event
-/// must stay allocation-free (a busy scene emits thousands per frame), so the text
-/// is built by <see cref="Describe"/> only for the rows the UI actually draws.
-/// </summary>
 public readonly record struct GraphicsEvent(GraphicsEventKind Kind, int ObjectId, float A, float B, float C)
 {
     private static readonly string[] _names = Enum.GetNames<GraphicsEventKind>();
 
     public string Name => _names[(int)Kind];
 
-    /// <summary>The scene object this event acts on, or an empty string when it acts on none.</summary>
     public string ObjectName => ObjectId < 0 ? string.Empty : $"obj:{ObjectId}";
 
-    /// <summary>Human-readable parameters for this event. Allocates — call it per displayed row only.</summary>
     public string Describe()
     {
         var c = CultureInfo.InvariantCulture;
