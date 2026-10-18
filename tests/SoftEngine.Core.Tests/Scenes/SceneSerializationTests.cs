@@ -1,6 +1,5 @@
 using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
-using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Math;
 using SoftEngine.Core.Pipeline;
@@ -14,7 +13,7 @@ using SoftEngine.Core.Scenes.Serialization;
 using System.Numerics;
 using System.Text.Json;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Scenes;
 
 public class SceneSerializationTests
 {

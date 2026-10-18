@@ -11,7 +11,7 @@ using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.Core.Textures;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Diagnostics;
 
 /// <summary>
 /// The mip-level buffer view: which level of a texture's chain each pixel was sampled from.

@@ -1,5 +1,4 @@
-﻿using SoftEngine.Core.Geometry;
-using SoftEngine.Core.Shading;
+﻿using SoftEngine.Core.Shading;
 using SoftEngine.Core.Textures;
 
 namespace SoftEngine.Core.Imaging;

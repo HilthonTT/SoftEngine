@@ -1,4 +1,3 @@
-using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Shading;
 

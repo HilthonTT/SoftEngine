@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Geometry;
 
 /// <summary>
 /// Assembles glTF documents for the importer tests: a binary blob built up from named typed

@@ -4,7 +4,7 @@ using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Math;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Editing;
 
 public class EditHistoryTests
 {

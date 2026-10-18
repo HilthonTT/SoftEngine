@@ -1,5 +1,4 @@
-﻿using SoftEngine.Core.Geometry;
-using SoftEngine.Core.Textures;
+﻿using SoftEngine.Core.Textures;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 

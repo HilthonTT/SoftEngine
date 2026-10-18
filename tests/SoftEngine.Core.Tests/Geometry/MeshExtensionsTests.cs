@@ -1,7 +1,7 @@
 using SoftEngine.Core.Geometry;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Geometry;
 
 /// <summary>
 /// The two flat-array readers every importer funnels its geometry through. Both used to run

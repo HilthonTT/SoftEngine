@@ -1,5 +1,4 @@
 ﻿using SoftEngine.Core.Buffers;
-using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Gizmos;
 using SoftEngine.Core.Pipeline;
@@ -12,7 +11,7 @@ using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.Core.Textures;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Diagnostics;
 
 /// <summary>
 /// The overdraw buffer view, checked against counts worked out by hand.

@@ -1,6 +1,4 @@
 using SoftEngine.Core.Buffers;
-using SoftEngine.Core.Editing;
-using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Gizmos;
 using SoftEngine.Core.Scenes;
@@ -8,7 +6,7 @@ using SoftEngine.Core.Scenes.Cameras;
 using SoftEngine.Core.Scenes.Projections;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Gizmos;
 
 /// <summary>
 /// The keyboard-driven move and scale. It has no handles, so there is nothing to hit-test and

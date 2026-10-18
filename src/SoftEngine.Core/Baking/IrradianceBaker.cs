@@ -1,5 +1,4 @@
 ﻿using SoftEngine.Core.Acceleration;
-using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Picking;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Shading;

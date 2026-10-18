@@ -53,6 +53,7 @@ a reference.
 dotnet build SoftEngine.slnx
 dotnet run --project src/SoftEngine.WinForms                  # interactive viewer
 dotnet test tests/SoftEngine.Core.Tests                       # 796 tests
+dotnet test tests/SoftEngine.WinForms.Tests                   # 88 viewer tests, Windows only
 dotnet run -c Release --project bench/SoftEngine.Benchmarks   # Release, or you measure the debugger
 ```
 
@@ -162,6 +163,7 @@ src/
 bench/SoftEngine.Benchmarks/   # headless frame-time harness
 tests/SoftEngine.Core.Tests/   # xUnit suite in folders mirroring the engine, and Golden/
                                #   image baselines — which stay put, see DESIGN.md § Testing
+tests/SoftEngine.WinForms.Tests/ # the viewer's window-free logic (net10.0-windows)
 ```
 
 ## Testing

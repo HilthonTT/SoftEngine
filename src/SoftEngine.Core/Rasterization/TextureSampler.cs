@@ -1,5 +1,4 @@
 ﻿using SoftEngine.Core.Diagnostics;
-using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Textures;
 using System.Numerics;
 

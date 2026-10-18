@@ -1,5 +1,4 @@
 using SoftEngine.Core.Buffers;
-using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Pipeline;
 using SoftEngine.Core.Pipeline.Shadows;
@@ -11,7 +10,7 @@ using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.Core.Shading;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Pipeline;
 
 public class CascadedShadowTests
 {

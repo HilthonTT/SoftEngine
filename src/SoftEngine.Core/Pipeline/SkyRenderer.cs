@@ -1,8 +1,6 @@
 ﻿using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
-using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Scenes;
-using SoftEngine.Core.Shading;
 using SoftEngine.Core.Textures;
 using System.Numerics;
 

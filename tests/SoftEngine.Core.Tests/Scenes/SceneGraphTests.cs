@@ -3,7 +3,7 @@ using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Scenes.Graph;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Scenes;
 
 public class SceneGraphTests
 {

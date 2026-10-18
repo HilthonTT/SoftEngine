@@ -6,7 +6,7 @@ using SoftEngine.Core.Scenes.Graph;
 using System.Numerics;
 using System.Xml.Linq;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Geometry;
 
 public class ColladaSceneTests
 {

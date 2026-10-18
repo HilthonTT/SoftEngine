@@ -11,7 +11,7 @@ using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Diagnostics;
 
 /// <summary>
 /// The occlusion pass is the one part of the pipeline whose working the finished frame cannot

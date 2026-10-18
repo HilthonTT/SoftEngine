@@ -3,7 +3,7 @@ using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Pipeline.Clipping;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Pipeline;
 
 public class NearPlaneClipperTests
 {

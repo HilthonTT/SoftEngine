@@ -5,7 +5,7 @@ using SoftEngine.Core.Rasterization.Shaders;
 using SoftEngine.Core.Rasterization.Varyings;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Rasterization;
 
 public class ScanlineRasterizerTests
 {

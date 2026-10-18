@@ -1,5 +1,4 @@
 ﻿using SoftEngine.Core.Buffers;
-using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Scenes.Cameras;
 using SoftEngine.Core.Scenes.Projections;
 using SoftEngine.Core.Shading;

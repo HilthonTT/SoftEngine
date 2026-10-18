@@ -1,12 +1,15 @@
 using SoftEngine.Core.Buffers;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry.Primitives;
+using SoftEngine.Core.Pipeline;
+using SoftEngine.Core.Rasterization.Painters;
 using SoftEngine.Core.Scenes;
+using SoftEngine.Core.Scenes.Cameras;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Scenes.Projections;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Buffers;
 
 public class FrameBufferTests
 {
@@ -145,20 +148,20 @@ public class FrameBufferTests
                 HighDynamicRange = true,
             };
 
-            var renderer = new Pipeline.Renderer();
+            var renderer = new Renderer();
 
             // Panel3D aims the probe at the sample nearest the centre of the clicked pixel.
             renderer.Diagnostics.SetProbe(
                 36 * superSampling + superSampling / 2,
                 22 * superSampling + superSampling / 2);
 
-            renderer.Render(scene, new Rasterization.Painters.PhongPainter());
+            renderer.Render(scene, new PhongPainter());
 
             Assert.NotNull(renderer.Diagnostics.PixelHistory);
         }
     }
 
-    private sealed class ProbeCamera(Vector3 position) : Scenes.Cameras.ICamera
+    private sealed class ProbeCamera(Vector3 position) : ICamera
     {
         public Vector3 Position { get; set; } = position;
 

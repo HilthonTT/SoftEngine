@@ -1,6 +1,6 @@
 using SoftEngine.Gpu;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Gpu;
 
 /// <summary>
 /// What the GPU backend concludes from the strings a driver reports about itself.

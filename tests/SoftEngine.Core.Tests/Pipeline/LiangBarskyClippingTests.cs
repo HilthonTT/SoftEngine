@@ -1,7 +1,7 @@
 using SoftEngine.Core.Pipeline.Clipping;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Pipeline;
 
 /// <summary>
 /// The line clipper the wireframe painter and the pick highlight draw through. It works in

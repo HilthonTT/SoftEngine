@@ -1,7 +1,7 @@
 using SoftEngine.Core.Shading;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Shading;
 
 public class IrradianceVolumeTests
 {

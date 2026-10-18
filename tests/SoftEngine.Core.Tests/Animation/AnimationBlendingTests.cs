@@ -2,7 +2,7 @@ using SoftEngine.Core.Animation;
 using SoftEngine.Core.Scenes.Graph;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Animation;
 
 /// <summary>
 /// Blending two clips over one rig: crossfading between them, and layering one over another.

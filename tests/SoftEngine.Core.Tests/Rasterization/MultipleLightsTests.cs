@@ -1,12 +1,11 @@
 ﻿using SoftEngine.Core.Diagnostics;
-using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Rasterization.Shaders;
 using SoftEngine.Core.Rasterization.Varyings;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Shading;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Rasterization;
 
 public class MultipleLightsTests
 {

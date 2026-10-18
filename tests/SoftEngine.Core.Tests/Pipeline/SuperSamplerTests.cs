@@ -3,7 +3,7 @@ using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Pipeline;
 using SoftEngine.Core.Shading;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Pipeline;
 
 public class SuperSamplerTests
 {

@@ -36,18 +36,21 @@ Windows is required for the viewer (WinForms) and the GPU backend's window creat
 | `src/SoftEngine.Gpu` | An OpenGL backend that fills the same frame, for comparison. |
 | `src/SoftEngine.WinForms` | The interactive viewer and the graphics debugger. |
 | `src/SoftEngine.Cli` | Headless model/scene → PNG rendering. |
-| `tests/SoftEngine.Core.Tests` | xUnit. The only test project. |
+| `tests/SoftEngine.Core.Tests` | xUnit, for the engine. Platform-neutral. |
+| `tests/SoftEngine.WinForms.Tests` | xUnit, for the viewer's window-free logic. Windows only. |
 | `bench/SoftEngine.Benchmarks` | Frame-time harness. |
 
-`SoftEngine.WinForms` and `SoftEngine.Cli` have no tests of their own — anything worth asserting
-about should be pushed down into `Core`, where it can be.
+`SoftEngine.Cli` has no tests of its own — anything worth asserting about should be pushed down
+into `Core`, where it can be. The viewer's tests cover what has been pulled out of its forms (world
+building, frame-history stepping, camera motion, painter names, world-scaled settings); none of them
+open a window.
 
 ## Before you open a pull request
 
 ```bash
 dotnet format SoftEngine.slnx --verify-no-changes   # CI runs exactly this
 dotnet build SoftEngine.slnx
-dotnet test tests/SoftEngine.Core.Tests
+dotnet test SoftEngine.slnx
 ```
 
 CI additionally builds with `TreatWarningsAsErrors`. The repository is at zero warnings and the

@@ -5,7 +5,7 @@ using SoftEngine.Core.Geometry.Import.Gltf;
 using SoftEngine.Core.Textures;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Geometry;
 
 public class GltfImporterTests
 {

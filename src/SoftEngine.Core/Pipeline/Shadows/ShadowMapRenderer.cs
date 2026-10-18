@@ -1,5 +1,4 @@
-﻿using SoftEngine.Core.Geometry;
-using SoftEngine.Core.Rasterization;
+﻿using SoftEngine.Core.Rasterization;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Lights;
 using SoftEngine.Core.Shading;

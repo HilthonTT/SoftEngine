@@ -2,7 +2,7 @@ using SoftEngine.Core.Animation;
 using SoftEngine.Core.Scenes.Graph;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Animation;
 
 public class AnimationTests
 {

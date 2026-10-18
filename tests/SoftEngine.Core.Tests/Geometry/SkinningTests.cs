@@ -5,7 +5,7 @@ using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Graph;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Geometry;
 
 public class SkinningTests
 {

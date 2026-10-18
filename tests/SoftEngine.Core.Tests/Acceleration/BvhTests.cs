@@ -5,7 +5,7 @@ using SoftEngine.Core.Picking;
 using SoftEngine.Core.Scenes;
 using System.Numerics;
 
-namespace SoftEngine.Core.Tests;
+namespace SoftEngine.Core.Tests.Acceleration;
 
 public class BvhTests
 {
