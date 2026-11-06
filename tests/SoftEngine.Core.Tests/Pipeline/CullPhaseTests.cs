@@ -134,7 +134,7 @@ public class CullPhaseTests
             {
                 meshes[i] = new IcoSphere(2)
                 {
-                    Position = new Vector3(i % 8 - 4f, i / 8 - 4f, 0f) * 0.6f,
+                    Position = new Vector3(i % 8 - 4f, MathF.Floor(i / 8f) - 4f, 0f) * 0.6f,
                     Scale = new Vector3(0.25f),
                 };
             }

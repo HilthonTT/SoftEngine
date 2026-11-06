@@ -48,9 +48,10 @@ public sealed partial class MainScreen
                 "integrated one unless it is told otherwise, which on this machine is not the fast one.",
         };
 
-        foreach (var preference in (GpuPreference[])[GpuPreference.Automatic, GpuPreference.HighPerformance, GpuPreference.PowerSaving])
+        GpuPreference[] preferences = [GpuPreference.Automatic, GpuPreference.HighPerformance, GpuPreference.PowerSaving];
+
+        foreach (var choice in preferences)
         {
-            var choice = preference;
 
             var item = new ToolStripMenuItem(GpuPreferences.Describe(choice))
             {

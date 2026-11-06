@@ -321,4 +321,28 @@ public class SkinningTests
 
         Assert.False(((IWorld)world).IsAnimated);
     }
+
+    [Fact]
+    public void ApplyPose_JointScaledToZero_KeepsTangentsFinite()
+    {
+        var (_, upper, mesh) = TwoJointQuad();
+
+        mesh.TexCoords = [new(0, 0), new(1, 0), new(0, 1), new(1, 1)];
+        mesh.EnsureTangents();
+
+        // A collapsed joint maps every tangent it carries to zero, which Vector3.Normalize
+        // turns into NaN; the shader then reads NaN out of the normal map at those pixels.
+        upper.Scale = Vector3.Zero;
+        mesh.UpdatePose();
+
+        Assert.NotNull(mesh.Tangents);
+
+        foreach (var tangent in mesh.Tangents)
+        {
+            Assert.True(
+                float.IsFinite(tangent.X) && float.IsFinite(tangent.Y) &&
+                float.IsFinite(tangent.Z) && float.IsFinite(tangent.W),
+                $"Tangent {tangent} is not finite.");
+        }
+    }
 }

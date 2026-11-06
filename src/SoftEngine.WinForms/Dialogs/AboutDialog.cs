@@ -154,6 +154,7 @@ internal sealed class AboutDialog : Form
                                               or InvalidOperationException
                                               or System.IO.FileNotFoundException)
         {
+            // No browser registered for the link; the URL is still shown in the dialog.
         }
     }
 }

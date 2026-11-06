@@ -281,7 +281,11 @@ public class ParserFuzzTests
 
     [Fact]
     public void RadianceHdr_RejectsMutatedFilesCleanly() =>
-        FuzzBytes("Radiance HDR", HdrSeed(), bytes => RadianceHdrCodec.Load(new MemoryStream(bytes)));
+        FuzzBytes("Radiance HDR", HdrSeed(), bytes =>
+        {
+            using var stream = new MemoryStream(bytes);
+            RadianceHdrCodec.Load(stream);
+        });
 
     [Fact]
     public void Obj_RejectsMutatedFilesCleanly() =>
@@ -325,8 +329,10 @@ public class ParserFuzzTests
         var bytes = Encoding.ASCII.GetBytes(
             "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 2000000000 +X 2000000000\n");
 
+        using var stream = new MemoryStream(bytes);
+
         var failure = Assert.Throws<InvalidDataException>(
-            () => RadianceHdrCodec.Load(new MemoryStream(bytes)));
+            () => RadianceHdrCodec.Load(stream));
 
         Assert.Contains("this reader allocates for", failure.Message, StringComparison.Ordinal);
     }

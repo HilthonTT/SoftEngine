@@ -43,7 +43,7 @@ public static class PngCodec
             }
         }
 
-        var png = new MemoryStream();
+        using var png = new MemoryStream();
         png.Write(Signature);
 
         var header = new byte[13];
@@ -71,18 +71,26 @@ public static class PngCodec
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path, nameof(path));
 
-        var bytes = File.ReadAllBytes(path);
+        return Decode(File.ReadAllBytes(path), path);
+    }
+
+    /// <summary>Decodes a PNG already in memory, such as one embedded in a model file.</summary>
+    /// <param name="bytes">The encoded file.</param>
+    /// <param name="source">What to call the image in error messages.</param>
+    public static (int[] Pixels, int Width, int Height) Decode(byte[] bytes, string source = "The PNG data")
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
 
         if (bytes.Length < Signature.Length || !bytes.AsSpan(0, Signature.Length).SequenceEqual(Signature))
         {
-            throw new InvalidDataException($"{path} is not a PNG.");
+            throw new InvalidDataException($"{source} is not a PNG.");
         }
 
         var width = 0;
         var height = 0;
         var channels = 4;
         var seenHeader = false;
-        var idat = new MemoryStream();
+        using var idat = new MemoryStream();
 
         var offset = Signature.Length;
 
@@ -94,7 +102,7 @@ public static class PngCodec
             if (offset + 8 + length > bytes.Length)
             {
                 throw new InvalidDataException(
-                    $"{path} has a {type} chunk claiming {length} bytes with {bytes.Length - offset - 8} left in the file.");
+                    $"{source} has a {type} chunk claiming {length} bytes with {bytes.Length - offset - 8} left in the file.");
             }
 
             var data = bytes.AsSpan(offset + 8, (int)length);
@@ -105,30 +113,30 @@ public static class PngCodec
 
                     if (data.Length < 13)
                     {
-                        throw new InvalidDataException($"{path} has a {data.Length}-byte IHDR; the format defines 13.");
+                        throw new InvalidDataException($"{source} has a {data.Length}-byte IHDR; the format defines 13.");
                     }
 
-                    width = ReadDimension(path, data, "width");
-                    height = ReadDimension(path, data[4..], "height");
+                    width = ReadDimension(source, data, "width");
+                    height = ReadDimension(source, data[4..], "height");
                     seenHeader = true;
 
                     if ((long)width * height > MaxPixels)
                     {
                         throw new InvalidDataException(
-                            $"{path} declares {width}x{height} pixels, past the {MaxPixels:N0} this decoder allocates for.");
+                            $"{source} declares {width}x{height} pixels, past the {MaxPixels:N0} this decoder allocates for.");
                     }
 
                     if (data[8] != 8 || data[9] is not (2 or 6))
                     {
                         throw new NotSupportedException(
-                            $"{path} is not 8-bit RGB or RGBA (depth {data[8]}, colour type {data[9]}).");
+                            $"{source} is not 8-bit RGB or RGBA (depth {data[8]}, colour type {data[9]}).");
                     }
 
                     channels = data[9] == 6 ? 4 : 3;
 
                     if (data[12] != 0)
                     {
-                        throw new NotSupportedException($"{path} is interlaced.");
+                        throw new NotSupportedException($"{source} is interlaced.");
                     }
 
                     break;
@@ -148,12 +156,12 @@ public static class PngCodec
 
         if (!seenHeader)
         {
-            throw new InvalidDataException($"{path} has no IHDR.");
+            throw new InvalidDataException($"{source} has no IHDR.");
         }
 
         if (width == 0 || height == 0)
         {
-            throw new InvalidDataException($"{path} declares an empty image ({width}x{height}).");
+            throw new InvalidDataException($"{source} declares an empty image ({width}x{height}).");
         }
 
         idat.Position = 0;
@@ -169,7 +177,7 @@ public static class PngCodec
         catch (Exception exception) when (exception is IOException or InvalidDataException)
         {
             throw new InvalidDataException(
-                $"{path} does not hold the {raw.Length:N0} bytes its {width}x{height} header declares.", exception);
+                $"{source} does not hold the {raw.Length:N0} bytes its {width}x{height} header declares.", exception);
         }
 
         var pixels = new int[width * height];

@@ -8,6 +8,8 @@ namespace SoftEngine.Core.Geometry;
 
 public class Mesh : IMesh
 {
+    private readonly float _boundingRadius;
+
     public Mesh(
         Vector3[] vertices,
         Triangle[] triangleIndices,
@@ -25,7 +27,7 @@ public class Mesh : IMesh
         {
             maxLengthSquared = MathF.Max(maxLengthSquared, vertex.LengthSquared());
         }
-        BoundingRadius = MathF.Sqrt(maxLengthSquared);
+        _boundingRadius = MathF.Sqrt(maxLengthSquared);
 
         Scale = Vector3.One;
 
@@ -64,7 +66,7 @@ public class Mesh : IMesh
 
     public Vector4[]? Tangents { get; set; }
 
-    public virtual float BoundingRadius { get; }
+    public virtual float BoundingRadius => _boundingRadius;
 
     public virtual void EnsureTangents()
     {

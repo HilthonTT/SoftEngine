@@ -9,5 +9,5 @@ internal static class DemoDefaults
     public static readonly Vector3 CameraPosition = new(0, 0, -60);
 
     public static string ModelPath(string fileName) =>
-        Path.Combine(AppContext.BaseDirectory, "Models", fileName);
+        Path.Join(AppContext.BaseDirectory, "Models", fileName);
 }

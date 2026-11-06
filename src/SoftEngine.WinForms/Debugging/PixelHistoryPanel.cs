@@ -278,7 +278,7 @@ internal sealed class PixelHistoryPanel : UserControl
             $"A: {Channel(actual.A)}",
         };
 
-        var font = new Font("Consolas", 8.25f);
+        using var font = new Font("Consolas", 8.25f);
         for (var i = 0; i < lines.Length; i++)
         {
             TextRenderer.DrawText(g, lines[i], font, new Point(78, 26 + i * 14), Theme.TextPrimary);
@@ -288,8 +288,6 @@ internal sealed class PixelHistoryPanel : UserControl
         TextRenderer.DrawText(g, $"Pixel:  {_history.X}, {_history.Y}", font, new Point(186, 40), Theme.TextSecondary);
         TextRenderer.DrawText(g, $"Depth:  {Depth(_history.FinalDepth)}", font, new Point(186, 54), Theme.TextSecondary);
         TextRenderer.DrawText(g, $"Writes: {_history.Writes.Count}", font, new Point(186, 68), Theme.TextSecondary);
-
-        font.Dispose();
     }
 
     private static Color Opaque(int argb) => Color.FromArgb(255, Color.FromArgb(argb));

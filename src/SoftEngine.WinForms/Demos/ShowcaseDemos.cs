@@ -187,9 +187,9 @@ internal static class ShowcaseDemos
                 };
 
                 sphere.Material.Diffuse = albedo;
-                sphere.Material.Metallic = rows == 1 ? 0f : row / (float)(rows - 1);
+                sphere.Material.Metallic = row / (float)(rows - 1);
 
-                sphere.Material.Roughness = 0.06f + 0.94f * column / (columns - 1);
+                sphere.Material.Roughness = 0.06f + 0.94f * column / (columns - 1f);
 
                 world.Meshes.Add(sphere);
             }

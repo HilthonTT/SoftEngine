@@ -64,7 +64,7 @@ internal static class GeometryDemos
                     Position = new Vector3(x, 0, z),
                 });
             }
-            progress?.Report((x + d) / (float)(2 * d));
+            progress?.Report((x + d) / (2f * d));
         }
 
         return new WorldSetup(world, DemoDefaults.CameraPosition, null);
@@ -89,7 +89,7 @@ internal static class GeometryDemos
                     });
                 }
             }
-            progress?.Report((x + d) / (float)(2 * d));
+            progress?.Report((x + d) / (2f * d));
         }
 
         return new WorldSetup(world, DemoDefaults.CameraPosition, null);
@@ -119,7 +119,7 @@ internal static class GeometryDemos
                     });
                 }
             }
-            progress?.Report((x + d) / (float)(2 * d));
+            progress?.Report((x + d) / (2f * d));
         }
 
         return new WorldSetup(world, DemoDefaults.CameraPosition, null);

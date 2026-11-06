@@ -86,6 +86,12 @@ public sealed class SkinnedMesh : Mesh
             {
                 positions[vertex] = _bindVertices[vertex];
                 normals[vertex] = _bindNormals[vertex];
+
+                if (tangents is not null)
+                {
+                    tangents[vertex] = _bindTangents![vertex];
+                }
+
                 maxLengthSquared = MathF.Max(maxLengthSquared, positions[vertex].LengthSquared());
                 continue;
             }
@@ -117,12 +123,17 @@ public sealed class SkinnedMesh : Mesh
             var lengthSquared = normal.LengthSquared();
             normals[vertex] = lengthSquared > 0f ? normal / MathF.Sqrt(lengthSquared) : _bindNormals[vertex];
 
-            if (tangents is not null && _bindTangents is not null)
+            if (tangents is not null)
             {
-                var bind = _bindTangents[vertex];
+                var bind = _bindTangents![vertex];
                 var tangent = Vector3.TransformNormal(new Vector3(bind.X, bind.Y, bind.Z), blended);
+                var tangentLengthSquared = tangent.LengthSquared();
 
-                tangents[vertex] = new Vector4(Vector3.Normalize(tangent), bind.W);
+                // A degenerate tangent would normalize to NaN and poison every pixel the
+                // normal map touches; keep the bind tangent instead, as normals do above.
+                tangents[vertex] = tangentLengthSquared > 0f
+                    ? new Vector4(tangent / MathF.Sqrt(tangentLengthSquared), bind.W)
+                    : bind;
             }
 
             maxLengthSquared = MathF.Max(maxLengthSquared, position.LengthSquared());

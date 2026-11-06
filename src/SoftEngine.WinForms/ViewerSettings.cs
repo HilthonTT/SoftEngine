@@ -97,6 +97,7 @@ internal sealed class ViewerSettings
         catch (Exception exception) when (exception is IOException or JsonException or
                                               UnauthorizedAccessException or NotSupportedException)
         {
+            // Settings are a convenience: failing to save them must not take the viewer down.
         }
     }
 
@@ -105,7 +106,7 @@ internal sealed class ViewerSettings
         var roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
 
         return roaming is { Length: > 0 }
-            ? System.IO.Path.Combine(roaming, FolderName, FileName)
+            ? System.IO.Path.Join(roaming, FolderName, FileName)
             : null;
     }
 }

@@ -292,7 +292,7 @@ public class TemporalTests
             total += MathF.Abs(a.R - b.R) + MathF.Abs(a.G - b.G) + MathF.Abs(a.B - b.B);
         }
 
-        return total / (reference.Length * 3);
+        return total / (reference.Length * 3f);
     }
 
     [Fact]

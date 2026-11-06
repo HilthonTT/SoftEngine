@@ -60,9 +60,9 @@ public readonly struct SurfaceReflectance
             return 0u;
         }
 
-        return ((uint)Quantize(r) << 24)
-            | ((uint)Quantize(g) << 16)
-            | ((uint)Quantize(b) << 8)
+        return (Quantize(r) << 24)
+            | (Quantize(g) << 16)
+            | (Quantize(b) << 8)
             | Quantize(roughness);
     }
 

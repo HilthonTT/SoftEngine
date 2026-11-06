@@ -82,6 +82,6 @@ internal static class FrameSequence
 
         var numbered = $"{name}.{frame:D4}{extension}";
 
-        return string.IsNullOrEmpty(directory) ? numbered : Path.Combine(directory, numbered);
+        return string.IsNullOrEmpty(directory) ? numbered : Path.Join(directory, numbered);
     }
 }

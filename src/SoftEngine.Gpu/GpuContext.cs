@@ -30,6 +30,7 @@ public sealed class GpuContext : IDisposable
         error = null;
 
         IWindow? window = null;
+        GL? gl = null;
 
         try
         {
@@ -54,7 +55,7 @@ public sealed class GpuContext : IDisposable
 
             _hasCreatedContext = true;
 
-            var gl = GL.GetApi(window);
+            gl = GL.GetApi(window);
 
             var adapter = new GpuAdapter(
                 gl.GetStringS(StringName.Vendor),
@@ -69,8 +70,6 @@ public sealed class GpuContext : IDisposable
                     "graphics adapter. Install a graphics driver, or render on the CPU — which on " +
                     "this machine will be the faster of the two.";
 
-                gl.Dispose();
-                window.Dispose();
                 return false;
             }
 
@@ -82,16 +81,30 @@ public sealed class GpuContext : IDisposable
             PlatformNotSupportedException or InvalidOperationException or NotSupportedException)
         {
             error = $"No OpenGL context could be created: {exception.Message}";
-
-            try
-            {
-                window?.Dispose();
-            }
-            catch (Exception disposeFailure) when (disposeFailure is InvalidOperationException or NotSupportedException)
-            {
-            }
-
             return false;
+        }
+        finally
+        {
+            // Anything short of handing both to a context — a software adapter, a failed
+            // query, an exception the filter above lets through — must release them here.
+            if (context is null)
+            {
+                Release(gl, window);
+            }
+        }
+    }
+
+    private static void Release(GL? gl, IWindow? window)
+    {
+        try
+        {
+            gl?.Dispose();
+            window?.Dispose();
+        }
+        catch (Exception failure) when (failure is InvalidOperationException or NotSupportedException)
+        {
+            // Tearing down a context that never fully came up can fail on some drivers;
+            // the caller is already reporting the original failure, which is the useful one.
         }
     }
 

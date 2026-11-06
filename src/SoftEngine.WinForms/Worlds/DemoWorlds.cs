@@ -81,7 +81,7 @@ internal static class DemoWorlds
     /// directory — the process working directory is whatever the app was launched from.
     /// </summary>
     private static string ModelPath(string fileName) =>
-        Path.Combine(AppContext.BaseDirectory, "Models", fileName);
+        Path.Join(AppContext.BaseDirectory, "Models", fileName);
 
     /// <summary>
     /// A sway for Juliet, built against the joint names her rig actually uses. Her file has a
@@ -343,7 +343,7 @@ internal static class DemoWorlds
                             // Scale = new Vector3(1, r.Next(1, 50), 1)
                         });
                     }
-                    progress?.Report((x + d) / (float)(2 * d));
+                    progress?.Report((x + d) / (2f * d));
                 }
                 break;
             }
@@ -363,7 +363,7 @@ internal static class DemoWorlds
                             // Scale = new Vector3(1, r.Next(1, 50), 1)
                         });
                     }
-                    progress?.Report((x + d) / (float)(2 * d));
+                    progress?.Report((x + d) / (2f * d));
                 }
                 break;
             }
@@ -383,7 +383,7 @@ internal static class DemoWorlds
                             // Scale = new Vector3(1, r.Next(1, 50), 1)
                         });
                     }
-                    progress?.Report((x + d) / (float)(2 * d));
+                    progress?.Report((x + d) / (2f * d));
                 }
                 break;
             }
@@ -601,12 +601,12 @@ internal static class DemoWorlds
                         };
 
                         sphere.Material.Diffuse = albedo;
-                        sphere.Material.Metallic = rows == 1 ? 0f : row / (float)(rows - 1);
+                        sphere.Material.Metallic = row / (float)(rows - 1);
 
                         // Away from 0 at the smooth end: a perfect mirror lit by point lights
                         // shows no highlight at all, which reads as a bug rather than as the
                         // consequence of a light with no area that it is.
-                        sphere.Material.Roughness = 0.06f + 0.94f * column / (columns - 1);
+                        sphere.Material.Roughness = 0.06f + 0.94f * column / (columns - 1f);
 
                         world.Meshes.Add(sphere);
                     }
@@ -646,7 +646,7 @@ internal static class DemoWorlds
                             });
                         }
                     }
-                    progress?.Report((x + d) / (float)(2 * d));
+                    progress?.Report((x + d) / (2f * d));
                 }
                 break;
             }
@@ -672,7 +672,7 @@ internal static class DemoWorlds
                             });
                         }
                     }
-                    progress?.Report((x + d) / (float)(2 * d));
+                    progress?.Report((x + d) / (2f * d));
                 }
                 break;
             }

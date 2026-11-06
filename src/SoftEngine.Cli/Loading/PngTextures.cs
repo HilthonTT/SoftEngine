@@ -35,29 +35,9 @@ internal sealed class PngTextures
             return null;
         }
 
-        var path = Path.Combine(Path.GetTempPath(), $"softengine-{Guid.NewGuid():N}.png");
-
-        try
-        {
-            File.WriteAllBytes(path, encoded.Span);
-
-            return Decode(() => PngCodec.Load(path));
-        }
-        catch (IOException)
-        {
-            Skipped++;
-            return null;
-        }
-        finally
-        {
-            try
-            {
-                File.Delete(path);
-            }
-            catch (IOException)
-            {
-            }
-        }
+        // Decoded in memory: a round trip through a temporary file could fail on a locked-down
+        // temp directory and leave the file behind when it did.
+        return Decode(() => PngCodec.Decode(encoded.ToArray(), "An embedded PNG"));
     }
 
     private Texture? Decode(Func<(int[] Pixels, int Width, int Height)> load)
@@ -69,7 +49,8 @@ internal sealed class PngTextures
             return new Texture(width, height, pixels);
         }
         catch (Exception exception) when (
-            exception is IOException or InvalidDataException or NotSupportedException or ArgumentException)
+            exception is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException or
+                ArgumentException)
         {
             Skipped++;
             return null;

@@ -189,7 +189,7 @@ public class TextureFilteringTests
         const float screenArea = 50f;
 
         var texelArea = screenArea * MathF.Pow(4f, exact);
-        var uvWidth = texelArea * 2f / (texture.Width * texture.Height);
+        var uvWidth = texelArea * 2f / ((float)texture.Width * texture.Height);
 
         return MipSelector.SelectBlended(
             texture,

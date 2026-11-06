@@ -36,7 +36,7 @@ public static class RadianceHdrCodec
 
     private static HdrImage Decode(Stream stream)
     {
-        var reader = new BinaryReader(stream, Encoding.ASCII, leaveOpen: true);
+        using var reader = new BinaryReader(stream, Encoding.ASCII, leaveOpen: true);
 
         ReadHeader(reader, out var exposure);
         var (width, height, flipVertically) = ReadResolution(reader);
@@ -225,13 +225,15 @@ public static class RadianceHdrCodec
                 shift += 8;
 
                 var previous = (x - 1) * 4;
+                var end = (int)System.Math.Min((long)x + run, width);
 
-                for (var i = 0; i < run && x < width; i++, x++)
+                for (var target = x; target < end; target++)
                 {
-                    Array.Copy(scanline, previous, scanline, x * 4, 4);
+                    Array.Copy(scanline, previous, scanline, target * 4, 4);
                 }
 
-                x--;
+                // The loop's own increment moves past the last repeated pixel.
+                x = end - 1;
                 continue;
             }
 

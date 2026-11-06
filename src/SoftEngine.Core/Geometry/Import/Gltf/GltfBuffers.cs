@@ -406,7 +406,16 @@ internal sealed class GltfBuffers
 
         try
         {
-            var path = Path.Combine(baseDirectory, Uri.UnescapeDataString(uri.Replace('/', Path.DirectorySeparatorChar)));
+            var relative = Uri.UnescapeDataString(uri).Replace('/', Path.DirectorySeparatorChar);
+
+            // glTF only allows relative references. A rooted one would replace baseDirectory
+            // outright and let a model read any file on the machine into a buffer.
+            if (Path.IsPathRooted(relative))
+            {
+                return null;
+            }
+
+            var path = Path.Join(baseDirectory, relative);
             return File.Exists(path) ? File.ReadAllBytes(path) : null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)

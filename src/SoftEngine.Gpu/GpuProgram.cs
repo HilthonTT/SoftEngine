@@ -36,7 +36,7 @@ public sealed class GpuProgram : IDisposable
             fixed (byte* pointer = buffer)
             {
                 _gl.GetActiveUniform(_handle, i, (uint)buffer.Length, out var length, out _, out type, pointer);
-                written = (uint)length;
+                written = length;
             }
 
             var name = System.Text.Encoding.UTF8.GetString(buffer, 0, (int)System.Math.Min(written, (uint)buffer.Length));

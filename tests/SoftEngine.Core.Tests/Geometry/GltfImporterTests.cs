@@ -799,4 +799,72 @@ public class GltfImporterTests
         Assert.True(GltfImporter.Handles("MODEL.GLB"));
         Assert.False(GltfImporter.Handles("model.dae"));
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Import_ImageUri_ResolvesOnlyRelativeToTheModel(bool rooted)
+    {
+        var root = Path.Join(Path.GetTempPath(), $"softengine-gltf-{Guid.NewGuid():N}");
+        var modelDirectory = Path.Join(root, "model");
+        Directory.CreateDirectory(Path.Join(modelDirectory, "textures"));
+
+        try
+        {
+            byte[] inside = [1, 2, 3];
+            byte[] outside = [4, 5, 6];
+            File.WriteAllBytes(Path.Join(modelDirectory, "textures", "inside.png"), inside);
+            File.WriteAllBytes(Path.Join(root, "outside.png"), outside);
+
+            // glTF only defines relative references; an absolute one must not reach outside.
+            var uri = rooted
+                ? Path.Join(root, "outside.png").Replace('\\', '/')
+                : "textures/inside.png";
+
+            var received = new List<byte[]>();
+
+            GltfImporter.Import(
+                Triangle().With("image", uri).Gltf("""
+                    {
+                      "asset": {"version": "2.0"},
+                      "scene": 0,
+                      "scenes": [{"nodes": [0]}],
+                      "nodes": [{"mesh": 0}],
+                      "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1, "material": 0}]}],
+                      "materials": [{"pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}}],
+                      "textures": [{"source": 0}],
+                      "images": [{"uri": "@image@"}],
+                      "accessors": [
+                        {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+                        {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"}
+                      ],
+                      "bufferViews": [
+                        {"buffer": 0, "byteOffset": @pos@, "byteLength": @posLength@},
+                        {"buffer": 0, "byteOffset": @idx@, "byteLength": @idxLength@}
+                      ],
+                      "buffers": [{"uri": "@BUFFER@", "byteLength": @LENGTH@}]
+                    }
+                    """),
+                modelDirectory,
+                null,
+                bytes =>
+                {
+                    received.Add(bytes.ToArray());
+                    return null;
+                });
+
+            if (rooted)
+            {
+                Assert.Empty(received);
+            }
+            else
+            {
+                Assert.Equal(inside, Assert.Single(received));
+            }
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
 }

@@ -19,9 +19,9 @@ internal static class PostChain
 
         foreach (var name in options.Post)
         {
-            var effect = name.ToLowerInvariant() switch
+            IPostEffect? effect = name.ToLowerInvariant() switch
             {
-                "ssr" => post.Find<SsrEffect>() as IPostEffect,
+                "ssr" => post.Find<SsrEffect>(),
                 "ssao" => post.Find<SsaoEffect>(),
                 "bloom" => post.Find<BloomEffect>(),
                 "tonemap" => post.Find<ToneMapEffect>(),

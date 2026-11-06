@@ -8,6 +8,36 @@ namespace SoftEngine.Core.Tests.Textures;
 public class PngCodecTests
 {
     [Fact]
+    public void DecodeReadsBytesWithoutTouchingDisk()
+    {
+        int[] pixels = [unchecked((int)0xFF102030), unchecked((int)0xFF405060)];
+
+        var path = TemporaryPath();
+
+        try
+        {
+            PngCodec.Save(path, pixels, 2, 1);
+
+            var (decoded, width, height) = PngCodec.Decode(File.ReadAllBytes(path));
+
+            Assert.Equal((2, 1), (width, height));
+            Assert.Equal(pixels, decoded);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void DecodeNamesTheSourceWhenRefusing()
+    {
+        var failure = Assert.Throws<InvalidDataException>(() => PngCodec.Decode([1, 2, 3], "An embedded PNG"));
+
+        Assert.StartsWith("An embedded PNG", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RgbaRoundTripsThroughSaveAndLoad()
     {
         int[] pixels = [unchecked((int)0x80102030), unchecked((int)0xFF405060), 0x00708090, unchecked((int)0xFFA0B0C0)];
@@ -135,7 +165,7 @@ public class PngCodecTests
 
     private static byte[] Encode(byte[] raw, int width, int height, byte colourType)
     {
-        var png = new MemoryStream();
+        using var png = new MemoryStream();
         png.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
 
         var header = new byte[13];

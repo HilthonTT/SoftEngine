@@ -92,7 +92,7 @@ public static class Equirectangular
         var radiance = keepRadiance ? new float[resolution * resolution * 3] : null;
 
         var perTexel = samplesPerAxis * samplesPerAxis;
-        var step = 1f / (resolution * samplesPerAxis);
+        var step = 1f / ((float)resolution * samplesPerAxis);
 
         Parallel.For(0, resolution, y =>
         {
@@ -102,11 +102,11 @@ public static class Equirectangular
 
                 for (var j = 0; j < samplesPerAxis; j++)
                 {
-                    var v = (y * samplesPerAxis + j + 0.5f) * step;
+                    var v = ((float)y * samplesPerAxis + j + 0.5f) * step;
 
                     for (var i = 0; i < samplesPerAxis; i++)
                     {
-                        var u = (x * samplesPerAxis + i + 0.5f) * step;
+                        var u = ((float)x * samplesPerAxis + i + 0.5f) * step;
 
                         var direction = Vector3.Normalize(CubeMap.Direction(face, u, v));
                         var (su, sv) = Project(direction);

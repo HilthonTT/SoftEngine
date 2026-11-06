@@ -150,7 +150,11 @@ public class HdrEnvironmentTests
             (byte)(e + 128));
     }
 
-    private static HdrImage Decode(byte[] bytes) => RadianceHdrCodec.Load(new MemoryStream(bytes));
+    private static HdrImage Decode(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        return RadianceHdrCodec.Load(stream);
+    }
 
     private static LinearColor[] Ramp(int width, int height)
     {

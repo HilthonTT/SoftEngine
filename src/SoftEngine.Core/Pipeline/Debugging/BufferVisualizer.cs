@@ -327,7 +327,7 @@ public sealed class BufferVisualizer
 
                 var cascade = System.Math.Min(column / side, cascades - 1);
 
-                var mapX = System.Math.Min((int)((column - cascade * side) * toTexel), resolution - 1);
+                var mapX = System.Math.Min((int)((column - (float)cascade * side) * toTexel), resolution - 1);
                 var mapY = System.Math.Min((int)((y - originY) * toTexel), resolution - 1);
 
                 var stored = texels[shadowMap.OffsetOf(cascade) + mapX + mapY * resolution];

@@ -273,7 +273,9 @@ public class SsrTests
 
         var projection = new PerspectiveProjection(MathF.PI / 4f, 0.5f, 100f);
 
-        foreach (var size in (int[])[32, 5])
+        int[] sizes = [32, 5];
+
+        foreach (var size in sizes)
         {
             var surface = new FrameBuffer(size, size);
 

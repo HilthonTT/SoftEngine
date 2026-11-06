@@ -141,7 +141,9 @@ public sealed partial class MainScreen
 
             // Another world may have been loaded while this one baked. Its probes would light
             // the new geometry with the old one's bounds and occlusion.
-            if (!ReferenceEquals(panel3D1.Scene?.World, world))
+            var current = panel3D1.Scene;
+
+            if (current is null || !ReferenceEquals(current.World, world))
             {
                 return;
             }

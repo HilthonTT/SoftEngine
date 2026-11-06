@@ -96,7 +96,7 @@ internal static class ImageDiff
             width,
             height,
             maxDelta,
-            count == 0 ? 0d : totalError / (double)(count * 3),
+            count == 0 ? 0d : totalError / (count * 3d),
             count == 0 ? 0d : differing / (double)count,
             differing,
             firstX,
