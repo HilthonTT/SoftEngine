@@ -99,6 +99,13 @@ public sealed class EnvironmentState
 {
     public bool ShowSky { get; set; } = true;
 
+    /// <summary>
+    /// Build the procedural sky in linear light, with a sun far brighter than white — the
+    /// viewer's "HDR sky" and the CLI's --hdr-sky. False in a file written before it existed,
+    /// which is what those files were rendered with.
+    /// </summary>
+    public bool HighDynamicRangeSky { get; set; }
+
     public string? Panorama { get; set; }
 
     public float SkyIntensity { get; set; } = 1f;

@@ -81,6 +81,7 @@ public sealed partial class MainScreen
 
         document.Environment ??= new EnvironmentState();
         document.Environment.ShowSky = chkSky.Checked;
+        document.Environment.HighDynamicRangeSky = chkHdrSky.Checked;
 
         document.Environment.Panorama = chkPanorama.Checked ? _panoramaPath : null;
     }
@@ -246,6 +247,7 @@ public sealed partial class MainScreen
         if (document.Environment is { } environment)
         {
             chkSky.Checked = environment.ShowSky;
+            chkHdrSky.Checked = environment.HighDynamicRangeSky;
 
             chkPanorama.Checked = environment.Panorama is { Length: > 0 } && _panorama is not null;
         }

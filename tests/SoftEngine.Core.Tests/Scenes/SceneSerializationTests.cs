@@ -172,6 +172,24 @@ public class SceneSerializationTests
     }
 
     [Fact]
+    public void HighDynamicRangeSky_RoundTripsThroughJson()
+    {
+        var document = new SceneDocument { Environment = new EnvironmentState { HighDynamicRangeSky = true } };
+
+        var back = SceneSerializer.FromJson(SceneSerializer.ToJson(document));
+
+        Assert.True(back.Environment!.HighDynamicRangeSky);
+    }
+
+    [Fact]
+    public void HighDynamicRangeSky_IsOffInAFileWrittenBeforeItExisted()
+    {
+        var back = SceneSerializer.FromJson("""{ "version": 1, "environment": { "showSky": true } }""");
+
+        Assert.False(back.Environment!.HighDynamicRangeSky);
+    }
+
+    [Fact]
     public void Apply_OfADocumentWithOnlyACamera_ChangesNothingElse()
     {
         var scene = NewScene();

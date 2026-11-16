@@ -823,6 +823,10 @@ Meshes are addressed by index, and an index past the end is skipped rather than 
 engine never interprets `world` — resolving a demo name is a question about the machine the file is
 opened on.
 
+`environment.highDynamicRangeSky` is the one field added since version 1, and it defaults to false:
+that is what every file written before it was rendered with, so an old file still opens to the sky
+it was saved under. Before it existed, the viewer's **HDR sky** checkbox was simply not saved.
+
 ## Rendering on the GPU
 
 The same scene, the same `IPainter`, the same settings and a finished frame in the same

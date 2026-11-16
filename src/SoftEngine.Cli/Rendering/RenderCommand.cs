@@ -42,6 +42,13 @@ internal static class RenderCommand
             renderer.Settings.DebugView = view;
         }
 
+        // The sky is built with the scene, before the document is applied over it, so a document
+        // that asks for the HDR sky has to say so first.
+        if (input.Document?.Environment is { HighDynamicRangeSky: true })
+        {
+            options.HighDynamicRangeSky = true;
+        }
+
         var framed = SceneBuilder.Build(options, loaded, renderer, factor);
         var post = PostChain.Build(options, loaded);
 
