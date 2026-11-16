@@ -163,6 +163,10 @@ public partial class Panel3D : UserControl
     [DefaultValue(true)]
     public bool ShowStatsOverlay { get; set; } = true;
 
+    /// <summary>How far from the left edge the statistics start — clear of a tool shelf docked there.</summary>
+    [DefaultValue(10)]
+    public int OverlayInset { get; set; } = 10;
+
     [DefaultValue(1)]
     public int SuperSampling
     {
@@ -629,6 +633,9 @@ public partial class Panel3D : UserControl
             Stats.OccluderMeshCount
         );
 
-        TextRenderer.DrawText(g, StatDisplay.ToString(), Font, new Point(10, 8), Theme.TextSecondary, TextFormatFlags.ExpandTabs);
+        // White over a one-pixel shadow, so the numbers read over a bright sky as well as a dark one.
+        var text = StatDisplay.ToString();
+        TextRenderer.DrawText(g, text, Font, new Point(OverlayInset + 1, 9), Color.FromArgb(20, 20, 20), TextFormatFlags.ExpandTabs);
+        TextRenderer.DrawText(g, text, Font, new Point(OverlayInset, 8), Color.FromArgb(235, 235, 235), TextFormatFlags.ExpandTabs);
     }
 }

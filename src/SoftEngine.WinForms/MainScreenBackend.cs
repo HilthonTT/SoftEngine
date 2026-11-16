@@ -10,6 +10,13 @@ public sealed partial class MainScreen
         mnuRenderGpu.Click += (s, e) => SelectBackend(RenderBackend.Gpu);
         mnuRenderTrace.Click += (s, e) => SelectBackend(RenderBackend.Trace);
 
+        cboEngine.SelectionChangeCommitted += (s, e) => SelectBackend(cboEngine.SelectedIndex switch
+        {
+            1 => RenderBackend.Gpu,
+            2 => RenderBackend.Trace,
+            _ => RenderBackend.Cpu,
+        });
+
         panel3D1.BackendChanged += (s, e) => UpdateBackendMenu();
 
         InitializeAdapterMenu();
@@ -127,7 +134,7 @@ public sealed partial class MainScreen
         }
     }
 
-    private void SelectBackend(RenderBackend backend)
+    private void SelectBackend(RenderBackend backend, bool remember = true)
     {
         if (panel3D1.Backend == backend && panel3D1.BackendFallback is null)
         {
@@ -139,7 +146,10 @@ public sealed partial class MainScreen
             panel3D1.Backend = backend;
         }
 
-        RememberBackend();
+        if (remember)
+        {
+            RememberBackend();
+        }
 
         if (panel3D1.BackendFallback is { } fallback)
         {
@@ -185,6 +195,13 @@ public sealed partial class MainScreen
         mnuRenderCpu.Checked = backend == RenderBackend.Cpu;
         mnuRenderGpu.Checked = backend == RenderBackend.Gpu;
         mnuRenderTrace.Checked = backend == RenderBackend.Trace;
+
+        cboEngine.SelectedIndex = backend switch
+        {
+            RenderBackend.Gpu => 1,
+            RenderBackend.Trace => 2,
+            _ => 0,
+        };
 
         lblBackendStatus.Text = panel3D1.BackendDescription;
 

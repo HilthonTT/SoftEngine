@@ -1,20 +1,21 @@
-using SoftEngine.WinForms.Controls;
+using SoftEngine.Gpu;
 using SoftEngine.WinForms.Dialogs;
 
 namespace SoftEngine.WinForms;
 
 public sealed partial class MainScreen
 {
-    private SidebarSection? _displaySection;
-    private SidebarSection? _shadingSection;
-    private SidebarSection? _postSection;
+    private (bool Sidebar, bool Timeline, bool PixelHistory, bool ObjectTable, bool EventList)? _beforeFocus;
 
-    private (bool Sidebar, bool PixelHistory, bool ObjectTable, bool EventList)? _beforeFocus;
+    private string _workspace = "Layout";
+
+    /// <summary>The engine the Rendering workspace switched away from, to hand back on leaving it.</summary>
+    private RenderBackend? _backendBeforeRendering;
 
     private void InitializeWorkspace()
     {
-        InitializeSidebarSections();
-        InitializeLayoutMenu();
+        InitializeWorkspaces();
+        InitializeAreaToggles();
         InitializeRecentFiles();
         InitializeFileDrop();
         InitializeHelpMenu();
@@ -22,72 +23,120 @@ public sealed partial class MainScreen
         RestoreWindowPlacement();
     }
 
-    #region Sidebar sections
+    #region Workspaces
 
-    private void InitializeSidebarSections()
+    private void InitializeWorkspaces()
     {
-        _displaySection = new SidebarSection(lblDisplayHeader, flpDisplay, mnuSectionDisplay);
-        _shadingSection = new SidebarSection(lblShadingHeader, flpShading, mnuSectionShading);
-        _postSection = new SidebarSection(lblPostHeader, flpPost, mnuSectionPost);
+        workspaceTabs.SelectedChanged += (s, e) => ApplyWorkspace(workspaceTabs.Selected);
+
+        mnuWindow.DropDownOpening += (s, e) =>
+        {
+            foreach (var item in mnuWindow.DropDownItems.OfType<ToolStripMenuItem>())
+            {
+                if (item.Tag is string name)
+                {
+                    item.Checked = name == _workspace;
+                }
+            }
+        };
     }
 
-    #endregion
-
-    #region Layout
-
-    private void InitializeLayoutMenu()
-    {
-        mnuLayoutViewer.Click += (s, e) => ApplyLayout(panels: false);
-        mnuLayoutDebugger.Click += (s, e) => ApplyLayout(panels: true);
-        mnuFocusViewport.CheckedChanged += (s, e) => ApplyFocusMode(mnuFocusViewport.Checked);
-
-        mnuView.DropDownOpening += (s, e) => UpdateLayoutMenu();
-    }
-
-    private void ApplyLayout(bool panels)
+    /// <summary>
+    /// A workspace is this one window arranged for a job. Layout is the plain editor; Shading
+    /// previews materials; Rendering hands the frame to the path tracer; Debugging opens the
+    /// graphics debugger's panels around the viewport.
+    /// </summary>
+    private void ApplyWorkspace(string name)
     {
         if (mnuFocusViewport.Checked)
         {
             mnuFocusViewport.Checked = false;
         }
 
-        mnuPixelHistory.Checked = panels;
-        mnuObjectTable.Checked = panels;
-        mnuEventList.Checked = panels;
+        var leaving = _workspace;
+        _workspace = name;
 
-        UpdateLayoutMenu();
+        if (leaving == "Rendering" && name != "Rendering" && _backendBeforeRendering is { } previous)
+        {
+            _backendBeforeRendering = null;
+            SelectBackend(previous, remember: false);
+        }
+
+        var debugging = name == "Debugging";
+        mnuPixelHistory.Checked = debugging;
+        mnuObjectTable.Checked = debugging;
+        mnuEventList.Checked = debugging;
+
+        switch (name)
+        {
+            case "Shading":
+                SetShadingMode(ShadingMode.MaterialPreview);
+                properties.Select("Material");
+                break;
+
+            case "Rendering":
+                if (panel3D1.Backend != RenderBackend.Trace)
+                {
+                    _backendBeforeRendering = panel3D1.Backend;
+                    SelectBackend(RenderBackend.Trace, remember: false);
+                }
+
+                properties.Select("Render");
+                break;
+
+            case "Debugging":
+                properties.Select("Debug");
+                break;
+
+            default:
+                properties.Select(panel3D1.Picked is not null ? "Object" : "Render");
+                break;
+        }
+
+        panel3D1.Focus();
     }
 
-    private void UpdateLayoutMenu()
+    #endregion
+
+    #region Area toggles
+
+    private void InitializeAreaToggles()
     {
-        var all = mnuPixelHistory.Checked && mnuObjectTable.Checked && mnuEventList.Checked;
-        var none = !mnuPixelHistory.Checked && !mnuObjectTable.Checked && !mnuEventList.Checked;
+        mnuFocusViewport.CheckedChanged += (s, e) => ApplyFocusMode(mnuFocusViewport.Checked);
 
-        mnuLayoutViewer.Checked = none && !mnuFocusViewport.Checked;
-        mnuLayoutDebugger.Checked = all && !mnuFocusViewport.Checked;
+        mnuToggleSidebar.CheckedChanged += (s, e) => splitMain.Panel2Collapsed = !mnuToggleSidebar.Checked;
+        mnuToggleToolShelf.CheckedChanged += (s, e) =>
+        {
+            toolShelf.Visible = mnuToggleToolShelf.Checked;
+            panel3D1.OverlayInset = toolShelf.Visible ? toolShelf.Right + 10 : 10;
+            panel3D1.Invalidate();
+        };
+
+        panel3D1.OverlayInset = toolShelf.Right + 10;
     }
 
+    /// <summary>Gives the whole window to the viewport, and puts every area back on the second press.</summary>
     private void ApplyFocusMode(bool focused)
     {
         if (focused)
         {
-            if (_beforeFocus is null)
-            {
-                _beforeFocus = (
-                    Sidebar: !splitMain.Panel1Collapsed,
-                    PixelHistory: mnuPixelHistory.Checked,
-                    ObjectTable: mnuObjectTable.Checked,
-                    EventList: mnuEventList.Checked);
-            }
+            _beforeFocus ??= (
+                Sidebar: !splitMain.Panel2Collapsed,
+                Timeline: !splitTimeline.Panel2Collapsed,
+                PixelHistory: mnuPixelHistory.Checked,
+                ObjectTable: mnuObjectTable.Checked,
+                EventList: mnuEventList.Checked);
 
-            splitMain.Panel1Collapsed = true;
+            splitMain.Panel2Collapsed = true;
+            splitTimeline.Panel2Collapsed = true;
             mnuPixelHistory.Checked = false;
             mnuObjectTable.Checked = false;
             mnuEventList.Checked = false;
         }
         else if (_beforeFocus is { } previous)
         {
-            splitMain.Panel1Collapsed = !previous.Sidebar;
+            splitMain.Panel2Collapsed = !previous.Sidebar;
+            splitTimeline.Panel2Collapsed = !previous.Timeline;
             mnuPixelHistory.Checked = previous.PixelHistory;
             mnuObjectTable.Checked = previous.ObjectTable;
             mnuEventList.Checked = previous.EventList;
@@ -95,7 +144,7 @@ public sealed partial class MainScreen
             _beforeFocus = null;
         }
 
-        UpdateLayoutMenu();
+        mnuToggleSidebar.Checked = !splitMain.Panel2Collapsed;
 
         panel3D1.Focus();
     }
@@ -309,6 +358,7 @@ public sealed partial class MainScreen
     {
         if (_settings.Window is not { Width: > 0, Height: > 0 } placement)
         {
+            StartPosition = FormStartPosition.CenterScreen;
             return;
         }
 
@@ -332,30 +382,35 @@ public sealed partial class MainScreen
     {
         base.OnLoad(e);
 
+        ApplyDefaultSplits();
+
         if (_settings.Workspace is not { } workspace)
         {
-            UpdateLayoutMenu();
             return;
         }
 
-        SetSplitterDistance(splitMain, workspace.SidebarWidth);
-        SetSplitterDistance(splitLeft, workspace.SidebarHeight);
-        SetSplitterDistance(splitRight, workspace.ViewportWidth);
-        SetSplitterDistance(splitCenter, workspace.ViewportHeight);
-
-        if (workspace.ShowPixelHistory is { } pixelHistory)
+        if (workspace.SidebarColumnWidth is { } column)
         {
-            mnuPixelHistory.Checked = pixelHistory;
+            SetSplitter(splitMain, splitMain.Width - column);
         }
 
-        if (workspace.ShowObjectTable is { } objectTable)
+        SetSplitter(splitSidebar, workspace.OutlinerHeight);
+
+        if (workspace.TimelineHeight is { } timelineHeight)
         {
-            mnuObjectTable.Checked = objectTable;
+            SetSplitter(splitTimeline, splitTimeline.Height - timelineHeight);
         }
 
-        if (workspace.ShowEventList is { } eventList)
+        SetSplitter(splitLeft, workspace.PixelHistoryWidth);
+
+        if (workspace.EventListWidth is { } eventList)
         {
-            mnuEventList.Checked = eventList;
+            SetSplitter(splitRight, splitRight.Width - eventList);
+        }
+
+        if (workspace.ObjectTableHeight is { } objectTable)
+        {
+            SetSplitter(splitCenter, splitCenter.Height - objectTable);
         }
 
         if (workspace.ShowStatsOverlay is { } stats)
@@ -363,41 +418,26 @@ public sealed partial class MainScreen
             mnuStatsOverlay.Checked = stats;
         }
 
-        if (workspace.DisplayExpanded is { } display && _displaySection is { } displaySection)
+        if (workspace.ShowSidebar is { } sidebar)
         {
-            displaySection.Expanded = display;
+            mnuToggleSidebar.Checked = sidebar;
         }
 
-        if (workspace.ShadingExpanded is { } shading && _shadingSection is { } shadingSection)
+        if (workspace.ShowToolShelf is { } shelf)
         {
-            shadingSection.Expanded = shading;
+            mnuToggleToolShelf.Checked = shelf;
         }
 
-        if (workspace.PostExpanded is { } post && _postSection is { } postSection)
+        // Rendering starts the path tracer, which is not what a window should do on opening.
+        if (workspace.ActiveWorkspace is { } active && active != "Rendering" && Workspaces.Contains(active))
         {
-            postSection.Expanded = post;
+            workspaceTabs.Select(active);
         }
 
-        UpdateLayoutMenu();
-    }
-
-    private static void SetSplitterDistance(SplitContainer split, int? distance)
-    {
-        if (distance is not { } value)
+        if (workspace.PropertiesTab is { } tab && properties.Tabs.Contains(tab))
         {
-            return;
+            properties.Select(tab);
         }
-
-        var total = split.Orientation == Orientation.Vertical ? split.Width : split.Height;
-        var lowest = split.Panel1MinSize;
-        var highest = total - split.Panel2MinSize - split.SplitterWidth;
-
-        if (value < lowest || value > highest)
-        {
-            return;
-        }
-
-        split.SplitterDistance = value;
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
@@ -418,27 +458,22 @@ public sealed partial class MainScreen
             };
         }
 
-        var panels = _beforeFocus ?? (
-            Sidebar: !splitMain.Panel1Collapsed,
-            PixelHistory: mnuPixelHistory.Checked,
-            ObjectTable: mnuObjectTable.Checked,
-            EventList: mnuEventList.Checked);
+        var sidebar = _beforeFocus?.Sidebar ?? !splitMain.Panel2Collapsed;
 
         _settings.Workspace = new WorkspaceLayout
         {
-            ShowPixelHistory = panels.PixelHistory,
-            ShowObjectTable = panels.ObjectTable,
-            ShowEventList = panels.EventList,
+            ActiveWorkspace = _workspace,
             ShowStatsOverlay = mnuStatsOverlay.Checked,
+            ShowSidebar = sidebar,
+            ShowToolShelf = mnuToggleToolShelf.Checked,
+            PropertiesTab = properties.SelectedTab,
 
-            SidebarWidth = splitMain.SplitterDistance,
-            SidebarHeight = splitLeft.SplitterDistance,
-            ViewportWidth = splitRight.SplitterDistance,
-            ViewportHeight = splitCenter.SplitterDistance,
-
-            DisplayExpanded = _displaySection?.Expanded,
-            ShadingExpanded = _shadingSection?.Expanded,
-            PostExpanded = _postSection?.Expanded,
+            SidebarColumnWidth = splitMain.Panel2Collapsed ? null : splitMain.Width - splitMain.SplitterDistance,
+            OutlinerHeight = splitSidebar.SplitterDistance,
+            TimelineHeight = splitTimeline.Panel2Collapsed ? null : splitTimeline.Height - splitTimeline.SplitterDistance,
+            PixelHistoryWidth = splitLeft.Panel1Collapsed ? null : splitLeft.SplitterDistance,
+            EventListWidth = splitRight.Panel2Collapsed ? null : splitRight.Width - splitRight.SplitterDistance,
+            ObjectTableHeight = splitCenter.Panel2Collapsed ? null : splitCenter.Height - splitCenter.SplitterDistance,
         };
 
         _settings.Save();

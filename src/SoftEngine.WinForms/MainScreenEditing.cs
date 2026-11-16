@@ -71,7 +71,7 @@ public sealed partial class MainScreen
 
     private void ApplySnapping(bool enabled)
     {
-        if (_gizmo.Snap.Enabled == enabled && chkSnap.Checked == enabled && mnuSnap.Checked == enabled)
+        if (_gizmo.Snap.Enabled == enabled && chkSnap.Checked == enabled && mnuSnap.Checked == enabled && btnSnap.Checked == enabled)
         {
             return;
         }
@@ -79,6 +79,7 @@ public sealed partial class MainScreen
         _gizmo.Snap.Enabled = enabled;
         chkSnap.Checked = enabled;
         mnuSnap.Checked = enabled;
+        btnSnap.Checked = enabled;
 
         UpdateStatus();
     }

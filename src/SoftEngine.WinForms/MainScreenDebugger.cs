@@ -62,7 +62,7 @@ public sealed partial class MainScreen
         lblScreenshotHint.Click += (s, e) => SaveScreenshot();
         mnuExit.Click += (s, e) => Close();
 
-        mnuPixelHistory.CheckedChanged += (s, e) => splitLeft.Panel2Collapsed = !mnuPixelHistory.Checked;
+        mnuPixelHistory.CheckedChanged += (s, e) => splitLeft.Panel1Collapsed = !mnuPixelHistory.Checked;
         mnuObjectTable.CheckedChanged += (s, e) => splitCenter.Panel2Collapsed = !mnuObjectTable.Checked;
         mnuEventList.CheckedChanged += (s, e) => splitRight.Panel2Collapsed = !mnuEventList.Checked;
 
@@ -134,7 +134,7 @@ public sealed partial class MainScreen
             }
         }
 
-        if (!splitLeft.Panel2Collapsed)
+        if (!splitLeft.Panel1Collapsed)
         {
             pixelHistoryPanel.SetHistory(pinned?.PixelHistory ?? panel3D1.Diagnostics.PixelHistory, _catalog);
         }
@@ -280,7 +280,7 @@ public sealed partial class MainScreen
     private void UpdateStatus()
     {
         var buffer = panel3D1.BufferSize;
-        lblZoomStatus.Text = $"Zoom: {panel3D1.Zoom * 100f:0}%  ·  {buffer.Width} × {buffer.Height}";
+        lblZoomStatus.Text = $"{panel3D1.Zoom * 100f:0}%  ·  {buffer.Width} × {buffer.Height}";
 
         if (panel3D1.SelectedPixel is { } pixel && panel3D1.SelectedPixelNormalized is { } normalized)
         {
@@ -292,26 +292,24 @@ public sealed partial class MainScreen
 
                 var where = hit.TriangleIndex >= 0 ? $" tri:{hit.TriangleIndex} at {hit.Distance:0.##}" : string.Empty;
 
-                picked = $"  ·  picked obj:{objectId} ({hit.Mesh.GetType().Name}){where}";
+                picked = $"  ·  obj:{objectId} {OutlinerName(hit.Mesh)}{where}";
             }
 
             lblPixelStatus.Text =
-                $"Selected pixel X: {pixel.X} ({normalized.X:0.000}) Y: {pixel.Y} ({normalized.Y:0.000}){picked}";
+                $"Pixel {pixel.X}, {pixel.Y} ({normalized.X:0.000}, {normalized.Y:0.000}){picked}";
         }
         else
         {
-            lblPixelStatus.Text = "Selected pixel: none — click the viewport to probe and pick one";
+            lblPixelStatus.Text = string.Empty;
         }
 
         mnuDelete.Enabled = panel3D1.Picked is not null;
 
-        if (_transform is { IsActive: true })
-        {
-            lblPixelStatus.Text =
-                $"{_transform.Describe()}  ·  X / Y / Z to constrain  ·  click or Enter to confirm, Esc to cancel";
-        }
+        lblHintStatus.Text = _transform is { IsActive: true }
+            ? $"{_transform.Describe()}     X Y Z  Constrain to axis     LMB · Enter  Confirm     RMB · Esc  Cancel"
+            : DefaultHints;
 
-        else if (_gizmo is { IsActive: true, Target: { } target })
+        if (_gizmo is { IsActive: true, Target: { } target })
         {
             var what = _gizmo.Mode switch
             {
@@ -341,7 +339,7 @@ public sealed partial class MainScreen
 
             var view = camera is ArcBallCamera { CurrentAxisView: { } axisView } ? $" · {axisView}" : string.Empty;
 
-            lblCameraStatus.Text = $"Camera: ({position.X:0.##}, {position.Y:0.##}, {position.Z:0.##}){view}";
+            lblCameraStatus.Text = $"Camera ({position.X:0.##}, {position.Y:0.##}, {position.Z:0.##}){view}";
         }
 
         if (PinnedFrame() is { } pinned)
@@ -354,6 +352,8 @@ public sealed partial class MainScreen
             var stats = panel3D1.Stats;
             lblFrameStatus.Text = $"Frame #{panel3D1.Diagnostics.FrameNumber} · {stats.CalculationTimeMs + stats.PainterTimeMs} ms";
         }
+
+        UpdateEditorStatus();
     }
 
     private static string Degrees(float radians) => $"{radians * 180f / MathF.PI:0.#}°";

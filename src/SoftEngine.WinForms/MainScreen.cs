@@ -31,7 +31,6 @@ public sealed partial class MainScreen : Form
     {
         InitializeComponent();
         Icon = Theme.AppIcon;
-        ApplyTheme();
 
         CenterToScreen();
 
@@ -267,6 +266,8 @@ public sealed partial class MainScreen : Form
 
         InitializeWorkspace();
 
+        InitializeEditor();
+
         _ = PrepareWorldAsync("skull");
     }
 
@@ -274,7 +275,6 @@ public sealed partial class MainScreen : Form
     {
         base.OnShown(e);
 
-        pnlSidebar.AutoScrollPosition = Point.Empty;
         panel3D1.Focus();
     }
 
@@ -519,67 +519,5 @@ public sealed partial class MainScreen : Form
         }
 
         panel3D1.Invalidate();
-    }
-
-    private void ApplyTheme()
-    {
-        BackColor = Theme.Background;
-        ForeColor = Theme.TextPrimary;
-
-        pnlSidebar.BackColor = Theme.Surface;
-        tlpSidebar.BackColor = Theme.Surface;
-        lblTitle.ForeColor = Theme.TextPrimary;
-        lblDisplayHeader.ForeColor = Theme.TextSecondary;
-        lblShadingHeader.ForeColor = Theme.TextSecondary;
-        lblPostHeader.ForeColor = Theme.TextSecondary;
-        lblBufferHeader.ForeColor = Theme.TextSecondary;
-        lblCascadeHeader.ForeColor = Theme.TextSecondary;
-        lblGizmoHeader.ForeColor = Theme.TextSecondary;
-
-        cboBufferView.BackColor = Theme.Selection;
-        cboBufferView.ForeColor = Theme.TextPrimary;
-
-        lblModelHeader.ForeColor = Theme.TextSecondary;
-        lblCurrentModel.ForeColor = Theme.TextPrimary;
-
-        foreach (var button in new[] { btnLoadModel, btnPanorama })
-        {
-            button.BackColor = Theme.Selection;
-            button.ForeColor = Theme.TextPrimary;
-            button.FlatAppearance.BorderColor = Theme.Accent;
-            button.FlatAppearance.MouseOverBackColor = Theme.Accent;
-        }
-
-        foreach (Control control in flpDisplay.Controls)
-        {
-            control.ForeColor = Theme.TextPrimary;
-        }
-
-        btnPanorama.ForeColor = Theme.TextPrimary;
-        btnBake.ForeColor = Theme.TextPrimary;
-        foreach (Control control in flpShading.Controls)
-        {
-            control.ForeColor = Theme.TextPrimary;
-        }
-        foreach (Control control in flpPost.Controls)
-        {
-            control.ForeColor = Theme.TextPrimary;
-        }
-
-        pnlViewport.BackColor = Theme.Background;
-        panel3D1.BackColor = Theme.Viewport;
-
-        menuStrip.BackColor = Theme.Surface;
-        menuStrip.ForeColor = Theme.TextPrimary;
-
-        statusStrip.BackColor = Theme.Surface;
-        statusStrip.ForeColor = Theme.TextSecondary;
-
-        foreach (SplitContainer split in new[] { splitMain, splitLeft, splitRight, splitCenter })
-        {
-            split.BackColor = Theme.Background;
-            split.Panel1.BackColor = Theme.Background;
-            split.Panel2.BackColor = Theme.Background;
-        }
     }
 }

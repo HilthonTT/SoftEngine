@@ -1,18 +1,31 @@
 namespace SoftEngine.WinForms;
 
+/// <summary>
+/// How the window was arranged when it closed. Every member is optional, so a settings file
+/// from an older layout — whose members no longer exist — loads as "use the defaults".
+/// </summary>
 internal sealed class WorkspaceLayout
 {
-    public bool? ShowPixelHistory { get; set; }
-    public bool? ShowObjectTable { get; set; }
-    public bool? ShowEventList { get; set; }
+    public string? ActiveWorkspace { get; set; }
+
     public bool? ShowStatsOverlay { get; set; }
 
-    public int? SidebarWidth { get; set; }
-    public int? SidebarHeight { get; set; }
-    public int? ViewportWidth { get; set; }
-    public int? ViewportHeight { get; set; }
+    public bool? ShowSidebar { get; set; }
 
-    public bool? DisplayExpanded { get; set; }
-    public bool? ShadingExpanded { get; set; }
-    public bool? PostExpanded { get; set; }
+    public bool? ShowToolShelf { get; set; }
+
+    public string? PropertiesTab { get; set; }
+
+    /// <summary>Distance from the window's right edge to the outliner and properties column.</summary>
+    public int? SidebarColumnWidth { get; set; }
+
+    public int? OutlinerHeight { get; set; }
+
+    public int? TimelineHeight { get; set; }
+
+    public int? PixelHistoryWidth { get; set; }
+
+    public int? EventListWidth { get; set; }
+
+    public int? ObjectTableHeight { get; set; }
 }

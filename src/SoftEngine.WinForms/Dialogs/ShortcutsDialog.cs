@@ -36,33 +36,46 @@ internal sealed class ShortcutsDialog : Form
         new("Picking and editing", [
             ("Left-click", "Probe the pixel and pick the mesh under it"),
             ("Esc", "Clear the selection — and hand S and X back to the camera"),
+            ("Tab / Shift+Tab", "Select the next / previous visible object"),
             ("Shift+A", "Add a primitive at the centre of the view — plane, cube, sphere…"),
             ("Drag a gizmo handle", "Move, turn or stretch the picked mesh"),
-            ("Ctrl+Z / Ctrl+Y", "Undo / redo an edit — the Edit menu names it"),
+            ("Ctrl+Z / Ctrl+Shift+Z", "Undo / redo an edit — the Edit menu names it (Ctrl+Y redoes too)"),
             ("Ctrl+G", "Snap edits to a grid: whole units, 15°, tenths of scale"),
         ]),
 
         new("With a mesh selected", [
             ("G", "Move it with the cursor — no handle to grab"),
+            ("R", "Turn it with the cursor, about the view axis"),
             ("S", "Scale it with the cursor (S flies the camera back when nothing is selected)"),
             ("X · Del", "Delete it (X turns the view when nothing is selected)"),
-            ("X / Y / Z", "During a G or S: press the gesture flat against that world axis"),
-            ("Click · Enter", "Confirm the move or scale"),
+            ("X / Y / Z", "During a G, R or S: hold the gesture to that world axis"),
+            ("Click · Enter", "Confirm the move, turn or scale"),
             ("Esc · right-click", "Put it back where it was"),
+            ("Alt+G / Alt+R / Alt+S", "Clear its location / rotation / scale — undoably"),
+            ("H / Alt+H", "Hide it / show everything hidden"),
         ]),
 
         new("Files", [
             ("Ctrl+M", "Load a bundled world"),
             ("Ctrl+O", "Open a model file (.obj, .dae, .gltf, .glb)"),
             ("Ctrl+S", "Save the scene as JSON"),
-            ("F12", "Save the view as a PNG"),
+            ("Ctrl+Q", "Quit"),
             ("Drop a file on the viewport", "Loads it — model, scene or panorama, by extension"),
         ]),
 
-        new("Debugger and workspace", [
+        new("Animation", [
+            ("Space", "Play / pause"),
+            ("Shift+← / Shift+→", "Jump to the first / last frame"),
+            ("Drag the timeline", "Scrub to a frame; playback resumes where it was"),
+        ]),
+
+        new("Window and debugger", [
+            ("Ctrl+1 … Ctrl+4", "Layout, Shading, Rendering, Debugging workspace"),
+            ("N / T", "Show or hide the sidebar (outliner and properties) / the toolbar"),
+            ("Ctrl+Space · F11", "Maximize the viewport — press again to put everything back"),
             ("Ctrl+← / Ctrl+→", "Step back and forward through kept frames"),
             ("Ctrl+End", "Follow the newest frame again"),
-            ("F11", "Focus the viewport — hide the sidebar and the debugger panels"),
+            ("F12", "Render the viewport to a PNG"),
             ("F1", "This list"),
         ]),
     ];
