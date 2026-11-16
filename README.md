@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/HilthonTT/SoftEngine/actions/workflows/ci.yml/badge.svg)](https://github.com/HilthonTT/SoftEngine/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/HilthonTT/SoftEngine/actions/workflows/codeql.yml/badge.svg)](https://github.com/HilthonTT/SoftEngine/actions/workflows/codeql.yml)
-[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/download)
+[![.NET 11](https://img.shields.io/badge/.NET-11.0-512BD4)](https://dotnet.microsoft.com/download)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A **software 3D rasterizer** in C#. The whole pipeline — transforms, culling, clipping, scanline
@@ -65,12 +65,12 @@ a reference.
 ```bash
 dotnet build SoftEngine.slnx
 dotnet run --project src/SoftEngine.WinForms                  # interactive viewer
-dotnet test tests/SoftEngine.Core.Tests                       # 949 tests
-dotnet test tests/SoftEngine.WinForms.Tests                   # 88 viewer tests, Windows only
+dotnet test --project tests/SoftEngine.Core.Tests             # 956 tests
+dotnet test --project tests/SoftEngine.WinForms.Tests         # 88 viewer tests, Windows only
 dotnet run -c Release --project bench/SoftEngine.Benchmarks   # Release, or you measure the debugger
 ```
 
-Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download). Windows for the viewer;
+Requires the [.NET 11 SDK](https://dotnet.microsoft.com/download). Windows for the viewer;
 `SoftEngine.Core` itself is platform-neutral. The GPU backend wants an OpenGL 3.3 driver and falls
 back with a reason when there isn't one.
 
@@ -158,7 +158,7 @@ the program says how many it skipped.
 
 ```
 src/
-├── SoftEngine.Core/        # engine, no UI dependency (net10.0)
+├── SoftEngine.Core/        # engine, no UI dependency (net11.0)
 │   ├── Acceleration/       # world triangles flattened, and the SAH BVH over them
 │   ├── Animation/          # tracks, interpolation, channels, clips, playback, blending
 │   ├── Baking/             # the irradiance bake and what it is allowed to spend
@@ -181,21 +181,21 @@ src/
 │   └── Tracing/            # path tracer, the integrator it shares with the bake, sampler,
 │                           #   denoiser
 ├── SoftEngine.Gpu/         # OpenGL backend via Silk.NET, and Shaders/
-├── SoftEngine.Cli/         # headless renderer (net10.0 console)
+├── SoftEngine.Cli/         # headless renderer (net11.0 console)
 │   ├── Options/            # the flags, their parser, their bounds, the usage text
 │   ├── Loading/            # model → world, panorama → cube map, PNG textures
 │   └── Rendering/          # backend choice, framing, post chain, frames, report
-└── SoftEngine.WinForms/    # interactive front-end (net10.0-windows)
+└── SoftEngine.WinForms/    # interactive front-end (net11.0-windows)
 
 bench/SoftEngine.Benchmarks/   # headless frame-time harness
 tests/SoftEngine.Core.Tests/   # xUnit suite in folders mirroring the engine, and Golden/
                                #   image baselines — which stay put, see DESIGN.md § Testing
-tests/SoftEngine.WinForms.Tests/ # the viewer's window-free logic (net10.0-windows)
+tests/SoftEngine.WinForms.Tests/ # the viewer's window-free logic (net11.0-windows)
 ```
 
 ## Testing
 
-`dotnet test tests/SoftEngine.Core.Tests` — **949 tests**. Alongside the unit tests, eighteen
+`dotnet test --project tests/SoftEngine.Core.Tests` — **956 tests**. Alongside the unit tests, eighteen
 generated scenes are rendered headless at 320×180 and compared against committed PNG baselines, so a
 change that alters the picture shows up in the diff as a picture. `SOFTENGINE_UPDATE_GOLDEN=1` is the
 only way to re-record one, and a failing run drops the actual frame and a diff image beside the

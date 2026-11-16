@@ -29,8 +29,7 @@ updates:
       test-stack:
         patterns:
           - "xunit*"
-          - "Microsoft.NET.Test.Sdk"
-          - "coverlet*"
+          - "Microsoft.Testing.*"
 
   # The workflows pin their actions by major version, so this is what keeps the pins
   # moving rather than quietly ageing.

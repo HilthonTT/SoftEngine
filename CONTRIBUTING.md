@@ -6,15 +6,15 @@ right. This file is mostly about how to get that evidence.
 
 ## Getting set up
 
-You need the [.NET 10 SDK](https://dotnet.microsoft.com/download). `global.json` pins the major
-version and rolls forward to whatever 10.x feature band you have installed.
+You need the [.NET 11 SDK](https://dotnet.microsoft.com/download). `global.json` pins the major
+version and rolls forward to whatever 11.x feature band you have installed.
 
 ```bash
 git clone https://github.com/HilthonTT/SoftEngine.git
 cd SoftEngine
 
 dotnet build SoftEngine.slnx
-dotnet test tests/SoftEngine.Core.Tests
+dotnet test --project tests/SoftEngine.Core.Tests
 dotnet run --project src/SoftEngine.WinForms
 ```
 
@@ -50,7 +50,7 @@ open a window.
 ```bash
 dotnet format SoftEngine.slnx --verify-no-changes   # CI runs exactly this
 dotnet build SoftEngine.slnx
-dotnet test SoftEngine.slnx
+dotnet test --solution SoftEngine.slnx
 ```
 
 CI additionally builds with `TreatWarningsAsErrors`. The repository is at zero warnings and the
@@ -73,7 +73,7 @@ PNGs in `Golden/References/`.
 - Re-recording is deliberate and explicit:
 
   ```bash
-  SOFTENGINE_UPDATE_GOLDEN=1 dotnet test tests/SoftEngine.Core.Tests
+  SOFTENGINE_UPDATE_GOLDEN=1 dotnet test --project tests/SoftEngine.Core.Tests
   ```
 
   A missing baseline is written *and* fails, so a new scene cannot pass on its first run.

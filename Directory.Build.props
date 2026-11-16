@@ -3,8 +3,8 @@
   <!--
     Imported by every project in the repository before its own .csproj is read, so
     the settings that should never differ between them live here once. Target
-    frameworks deliberately do *not*: the viewer is net10.0-windows and everything
-    else is net10.0, and that difference is the point of the split.
+    frameworks deliberately do *not*: the viewer is net11.0-windows and everything
+    else is net11.0, and that difference is the point of the split.
   -->
 
   <PropertyGroup>

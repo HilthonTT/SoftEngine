@@ -59,10 +59,10 @@ jobs:
 
       - name: Test
         run: >
-          dotnet test SoftEngine.slnx
+          dotnet test --solution SoftEngine.slnx
           --configuration ${{ matrix.configuration }}
           --no-build
-          --logger "trx;LogFileName=test-results.trx"
+          --report-xunit-trx
           --results-directory ${{ github.workspace }}/artifacts/test-results
 
       # Golden-image failures write .actual.png and .diff.png next to the baselines.
