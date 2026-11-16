@@ -14,6 +14,38 @@ public sealed class Rotation3D(float x, float y, float z)
 
     public Rotation3D ToRad() => this * PiDeg;
 
+    /// <summary>
+    /// The same turn as a quaternion — the form two rotations can be composed in. The angles are
+    /// radians, read the way <see cref="Matrix4x4.CreateFromYawPitchRoll"/> reads them.
+    /// </summary>
+    public Quaternion ToQuaternion() => Quaternion.CreateFromYawPitchRoll(YYaw, XPitch, ZRoll);
+
+    /// <summary>
+    /// Euler angles that turn a vector the way <paramref name="rotation"/> does. They are one
+    /// answer of several — pitch is kept within ±90° — so compare what two rotations do to a
+    /// vector, not their angles.
+    /// </summary>
+    public static Rotation3D FromQuaternion(Quaternion rotation)
+    {
+        // CreateFromYawPitchRoll rolls about Z, then pitches about X, then yaws about Y, so in
+        // System.Numerics' row-vector form the matrix is Rz · Rx · Ry. Its third row is
+        // (cos p · sin y, −sin p, cos p · cos y) and its second column (sin r · cos p, cos r · cos p, …),
+        // which is where each angle is read back from.
+        var m = Matrix4x4.CreateFromQuaternion(Quaternion.Normalize(rotation));
+
+        var sinPitch = System.Math.Clamp(-m.M32, -1f, 1f);
+        var pitch = MathF.Asin(sinPitch);
+
+        if (MathF.Abs(sinPitch) > 0.99999f)
+        {
+            // Gimbal lock: pitched straight up or down, roll and yaw turn about the same axis and
+            // only their sum is defined. Putting all of it in yaw is as good an answer as any.
+            return new Rotation3D(pitch, MathF.Atan2(-m.M13, m.M11), 0f);
+        }
+
+        return new Rotation3D(pitch, MathF.Atan2(m.M31, m.M33), MathF.Atan2(m.M12, m.M22));
+    }
+
     public static bool operator ==(Rotation3D? p, Rotation3D? other) =>
         p is null
             ? other is null

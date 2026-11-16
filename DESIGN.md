@@ -739,7 +739,8 @@ runs it away from the cursor; every step measured **from where the drag began**;
 **without a depth test**, because a manipulator must be visible where it is grabbable.
 
 [`ModalTransform`](src/SoftEngine.Core/Gizmos/ModalTransform.cs) is Blender's keyboard gesture: **G**
-moves, **S** scales, the bare cursor drives it, a click or Enter confirms and Escape puts it back.
+moves, **R** turns, **S** scales, the bare cursor drives it, a click or Enter confirms and Escape puts
+it back.
 **X**, **Y** or **Z** presses it flat against a world axis, and the same key again releases it. The
 two tools share their ray arithmetic through
 [`GizmoMath`](src/SoftEngine.Core/Gizmos/GizmoMath.cs) — different gestures, the same geometry, and a
@@ -760,6 +761,14 @@ Two decisions inside it:
   press S with the pointer on the mesh you are looking at and the initial distance is a pixel or two,
   so the next pixel of movement scales it by tens. A difference has no such point to avoid, and it is
   the same law the drag handles already use.
+- **A turn is composed, not added.** **R** turns about the view axis until **X**, **Y** or **Z** names a
+  world axis — and the view axis is almost never one of the three an Euler triple can add to. So the
+  turn is built as a quaternion about the axis the cursor swept around, composed after the rotation
+  the mesh started with, and read back into yaw, pitch and roll
+  ([`Rotation3D.FromQuaternion`](src/SoftEngine.Core/Math/Rotation3D.cs)). The angles that come back
+  are one answer of several, with pitch kept within ±90°, so the tests compare what two rotations *do*
+  to a vector rather than their numbers — and at gimbal lock, where only the sum of yaw and roll is
+  defined, all of it goes to yaw.
 
 **Snapping** ([`GizmoSnap`](src/SoftEngine.Core/Gizmos/GizmoSnap.cs)) quantizes the *resulting
 transform*, not the travel — rounding the travel preserves whatever offset the mesh started at, so
@@ -1240,8 +1249,10 @@ it flat again.
 
 ## Roadmap
 
-- Replace `Mesh`'s Euler `Rotation3D` with the quaternion `SceneNode` already uses — which is also
-  what would let the gizmo's rings, and a modal **R**, turn a mesh about an arbitrary axis.
+- Replace `Mesh`'s Euler `Rotation3D` with the quaternion `SceneNode` already uses. Modal **R** already
+  turns about any axis by composing a quaternion and reading Euler angles back; the gizmo's rings still
+  add to one Euler angle each, which is a turn about the mesh's own axes only while the other two are
+  zero.
 - Probes in a scene document, so a bake outlives the session that made it — which needs somewhere to
   put a few thousand cubes that is not the JSON a person is expected to edit by hand.
 - A per-texel bake, which needs a UV unwrapper before it needs anything else.

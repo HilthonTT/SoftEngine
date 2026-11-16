@@ -14,7 +14,7 @@ public partial class Panel3D
     {
         Keys.W or Keys.A or Keys.S or Keys.D or Keys.Q or Keys.E => true,
         Keys.Up or Keys.Down or Keys.Left or Keys.Right => true,
-        Keys.X or Keys.Y or Keys.Z or Keys.G or Keys.Delete => true,
+        Keys.X or Keys.Y or Keys.Z or Keys.G or Keys.R or Keys.Delete => true,
         Keys.NumPad0 or Keys.NumPad1 or Keys.NumPad2 or Keys.NumPad3 or Keys.NumPad4 => true,
         Keys.NumPad5 or Keys.NumPad6 or Keys.NumPad7 or Keys.NumPad8 or Keys.NumPad9 => true,
         Keys.Home => true,
@@ -86,6 +86,9 @@ public partial class Panel3D
         {
             case Keys.G:
                 return BeginTransform(mesh, GizmoMode.Translate);
+
+            case Keys.R:
+                return BeginTransform(mesh, GizmoMode.Rotate);
 
             case Keys.S:
                 return BeginTransform(mesh, GizmoMode.Scale);
