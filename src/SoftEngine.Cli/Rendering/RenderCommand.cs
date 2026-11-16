@@ -81,7 +81,7 @@ internal static class RenderCommand
 
     private static void Bake(RenderOptions options, SceneBuilder.Framed framed)
     {
-        framed.Scene.World.Update(MathF.Max(options.Time, 0f));
+        FrameSequence.PoseAt(framed.Scene.World, MathF.Max(options.Time, 0f));
 
         var bakeStart = Stopwatch.GetTimestamp();
 

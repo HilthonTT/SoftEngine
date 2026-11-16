@@ -26,7 +26,7 @@ internal static class FrameSequence
         {
             var progress = frames > 1 ? frame / (float)frames : 0f;
 
-            scene.World.Update(MathF.Max(options.Time, 0f) + frame * interval);
+            PoseAt(scene.World, MathF.Max(options.Time, 0f) + frame * interval);
 
             if (options.Turntable != 0f)
             {
@@ -48,6 +48,19 @@ internal static class FrameSequence
         }
 
         return renderTime;
+    }
+
+    // IWorld.Update takes the time since the last update, not a time into the clip: handing it
+    // each frame's absolute time adds them up, so a sequence plays faster with every frame and
+    // a baked scene starts at twice --time. Each player is put at the time instead.
+    public static void PoseAt(IWorld world, float seconds)
+    {
+        foreach (var player in world.Animations)
+        {
+            player.Time = seconds;
+        }
+
+        world.Update(0f);
     }
 
     private static void Save(Scene scene, RenderOptions options, int factor, string path)
