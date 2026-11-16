@@ -36,6 +36,7 @@ internal static class DemoCatalog
         new("cascades", "Cascaded shadows", ShowcaseDemos.CascadedShadows),
         new("normalmapping", "Normal mapping", ShowcaseDemos.NormalMapping),
         new("pbrspheres", "PBR spheres", ShowcaseDemos.PbrSpheres),
+        new("reflections", "Reflections", ShowcaseDemos.Reflections),
         new("empty", "Empty", Empty),
     ];
 

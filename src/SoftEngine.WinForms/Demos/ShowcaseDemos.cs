@@ -195,9 +195,11 @@ internal static class ShowcaseDemos
             }
         }
 
+        // Travelling away from the camera, so the sun is over the viewer's shoulder and every
+        // sphere shows its highlight: lit from behind, the grid is eighteen dark silhouettes.
         world.Lights.Add(new DirectionalLight
         {
-            Direction = new Vector3(-0.4f, -0.5f, 1f),
+            Direction = new Vector3(-0.4f, -0.5f, -1f),
             Color = new ColorRGB(255, 244, 224),
         });
         world.Lights.Add(new PointLight
@@ -208,6 +210,46 @@ internal static class ShowcaseDemos
         });
 
         return new WorldSetup(world, new Vector3(0, 0, -24f), null);
+    }
+
+    /// <summary>
+    /// Three coloured blocks on a polished floor — the scene screen-space reflections are for:
+    /// a glossy surface that reflects the local geometry, each block in its own colour, over the
+    /// sky the environment reflection already supplies.
+    /// </summary>
+    public static WorldSetup Reflections(IProgress<float>? progress)
+    {
+        var world = new SimpleWorld();
+
+        world.Lights.Add(new DirectionalLight
+        {
+            Direction = new Vector3(-0.45f, -0.8f, 0.5f),
+            Color = new ColorRGB(255, 246, 232),
+        });
+
+        var floor = ColoredBox(new Vector3(0, -2.5f, 0), new Vector3(30f, 0.5f, 30f), new ColorRGB(70, 82, 104));
+        floor.Material.Diffuse = new ColorRGB(70, 82, 104);
+        floor.Material.Roughness = 0.08f;
+        floor.Material.Metallic = 0.35f;
+        world.Meshes.Add(floor);
+
+        (Vector3 Position, float Size, float Turn, ColorRGB Color)[] blocks =
+        [
+            (new Vector3(-4.5f, -0.6f, 1.5f), 3.2f, 20f, new ColorRGB(200, 50, 50)),
+            (new Vector3(0.5f, -1.0f, 0f), 2.4f, -15f, new ColorRGB(50, 170, 80)),
+            (new Vector3(5f, -0.3f, 2.5f), 3.8f, 35f, new ColorRGB(50, 90, 210)),
+        ];
+
+        foreach (var (position, size, turn, color) in blocks)
+        {
+            var block = ColoredBox(position, new Vector3(size), color);
+            block.Rotation = new Rotation3D(0, turn, 0).ToRad();
+            block.Material.Diffuse = color;
+            block.Material.Roughness = 0.45f;
+            world.Meshes.Add(block);
+        }
+
+        return new WorldSetup(world, new Vector3(0, 1.5f, -20f), null);
     }
 
     private static Mesh ColoredBox(Vector3 position, Vector3 scale, ColorRGB color)

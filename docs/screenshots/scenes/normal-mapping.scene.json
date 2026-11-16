@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "world": {
+    "demo": "normalmapping"
+  },
+  "shadows": {
+    "enabled": false,
+    "resolution": 2048,
+    "cascadeCount": 1
+  },
+  "rendering": {
+    "painter": "material",
+    "gammaCorrect": true,
+    "highDynamicRange": true,
+    "backFaceCulling": true,
+    "showTriangles": false,
+    "showXZGrid": false,
+    "showAxes": false,
+    "showSkeleton": false,
+    "temporalAntiAliasing": false,
+    "debugView": "Off",
+    "textureFiltering": true,
+    "trilinearFiltering": true,
+    "animate": true
+  },
+  "post": {
+    "ssr": {
+      "enabled": false
+    },
+    "ssao": {
+      "enabled": false
+    },
+    "bloom": {
+      "enabled": false
+    },
+    "toneMap": {
+      "enabled": true
+    },
+    "fxaa": {
+      "enabled": true
+    },
+    "vignette": {
+      "enabled": false
+    }
+  }
+}

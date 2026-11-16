@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "world": {
+    "demo": "reflections"
+  },
+  "shadows": {
+    "enabled": true,
+    "resolution": 2048,
+    "cascadeCount": 1
+  },
+  "rendering": {
+    "painter": "pbr",
+    "gammaCorrect": true,
+    "highDynamicRange": true,
+    "backFaceCulling": true,
+    "showTriangles": false,
+    "showXZGrid": false,
+    "showAxes": false,
+    "showSkeleton": false,
+    "temporalAntiAliasing": false,
+    "debugView": "Off",
+    "textureFiltering": true,
+    "trilinearFiltering": true,
+    "animate": true
+  },
+  "post": {
+    "ssr": {
+      "enabled": true
+    },
+    "ssao": {
+      "enabled": false
+    },
+    "bloom": {
+      "enabled": false
+    },
+    "toneMap": {
+      "enabled": true
+    },
+    "fxaa": {
+      "enabled": true
+    },
+    "vignette": {
+      "enabled": false
+    }
+  },
+  "environment": {
+    "showSky": true,
+    "highDynamicRangeSky": true
+  }
+}

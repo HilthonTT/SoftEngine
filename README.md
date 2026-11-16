@@ -11,15 +11,18 @@
 
 A **software 3D rasterizer** in C#. The whole pipeline — transforms, culling, clipping, scanline
 rasterization, z-buffering and shading — runs on the CPU with no graphics-API dependency. A
-WinForms front-end renders live into a bitmap; a CLI renders headlessly to PNG; an OpenGL backend
-can fill the same frame on a graphics adapter for comparison, and a path tracer can render it as
-a reference.
+Windows editor laid out like a desktop 3D suite — viewport, outliner, properties, timeline and
+workspaces, with Blender's keys — renders live into a bitmap; a CLI renders headlessly to PNG; an
+OpenGL backend can fill the same frame on a graphics adapter for comparison, and a path tracer can
+render it as a reference.
 
-![Skull model (31k triangles) rendered with Gouraud shading](docs/screenshots/skull.png)
+![The editor with the skull model (31k triangles), Gouraud shading on the CPU](docs/screenshots/skull.png)
 
-| ![Elephant](docs/screenshots/elephant.png) | ![Parrot](docs/screenshots/parrot.png) |
+| ![Elephant, selected, with its transform in the Object tab](docs/screenshots/elephant.png) | ![Parrot in the Shading workspace](docs/screenshots/parrot.png) |
 | :--: | :--: |
-| Elephant — 26k triangles, 5 meshes | Parrot — 7k triangles |
+| Elephant — 26k triangles, selected: its transform in the **Object** tab | Parrot in the **Shading** workspace |
+| ![The Rendering workspace path-tracing the PBR spheres](docs/screenshots/workspace-rendering.png) | ![The Debugging workspace](docs/screenshots/workspace-debugging.png) |
+| **Rendering** — the path tracer refining in the viewport | **Debugging** — pixel history, object table and event list |
 
 > **[DESIGN.md](DESIGN.md)** is the companion to this file: why each part is built the way it is,
 > what the trade-offs were, and the traps already paid for.
@@ -46,7 +49,8 @@ a reference.
 - **Scene graph**, keyframed **animation** with clip **blending**, and linear-blend **skinning**.
 - Post-process stack: bloom, tone mapping, FXAA, vignette. Supersampling, **TAA** and **motion blur**.
 - Transparency sorted per triangle, or **order-independent** and resolved per pixel.
-- **Scene editing**: ray-cast picking, drag gizmos and Blender-style keyboard transforms, undoable.
+- **Scene editing**: ray-cast picking, drag gizmos and Blender-style keyboard transforms (G, R, S),
+  an outliner, typed or dragged transforms, undoable.
 - A **path-traced reference** with an a-trous **denoiser** guided by its own albedo, normals and
   depth, so a handful of paths per pixel is already an image you can read.
 - **JSON scene files**, a **headless CLI** (stills and sequences), and a **graphics debugger** with
@@ -65,8 +69,8 @@ a reference.
 ```bash
 dotnet build SoftEngine.slnx
 dotnet run --project src/SoftEngine.WinForms                  # interactive viewer
-dotnet test --project tests/SoftEngine.Core.Tests             # 956 tests
-dotnet test --project tests/SoftEngine.WinForms.Tests         # 88 viewer tests, Windows only
+dotnet test --project tests/SoftEngine.Core.Tests             # 973 tests
+dotnet test --project tests/SoftEngine.WinForms.Tests         # 109 viewer tests, Windows only
 dotnet run -c Release --project bench/SoftEngine.Benchmarks   # Release, or you measure the debugger
 ```
 
@@ -76,40 +80,73 @@ back with a reason when there isn't one.
 
 ## Interactive app
 
+The window is arranged like a desktop 3D suite, so it reads at a glance if you have used one:
+
+- **Top bar** — File, Edit, Render, View, Window and Help menus, and the **workspace** tabs.
+- **3D Viewport** — its header holds the mode, the View / Select / Add / Object menus, the overlay
+  and snap toggles, and the **shading switch**: wireframe, solid, material preview, rendered. The
+  **toolbar** down its left edge picks select, move, rotate or scale handles.
+- **Outliner** — the scene as a tree: camera, lights, every mesh, with an eye to hide each. Click a
+  row to select it; double-click to open its properties.
+- **Properties** — tabs for **Render** (engine, sampling, rasterizer, shadows, post-processing,
+  colour management), **Scene** (the loaded model, viewport overlays, animation), **World** (sky,
+  panorama, baked light, mist), **Object** (location, rotation and scale — drag a field to scrub it,
+  click to type — and visibility), **Material** (shading model, texture filtering) and **Debug**
+  (buffer views).
+- **Timeline** — play, pause, jump to either end, and scrub the loaded animation frame by frame.
+- **Status bar** — what the mouse and keys do right now (during a G/R/S, what the gesture is doing),
+  then the selection and the scene's object, vertex and triangle counts.
+
+**Workspaces** (Ctrl+1 … Ctrl+4) rearrange the same window for a job: **Layout** is the plain editor,
+**Shading** previews materials, **Rendering** hands the viewport to the path tracer (and gives it back
+on the way out), **Debugging** opens the graphics debugger's panels around the viewport.
+
 | Control | Action |
 | --- | --- |
 | **Left-drag / right-drag / wheel** | Orbit, pan (left+right dollies), move in and out |
 | **W A S D / Q E** | Fly; **Shift** faster, **Ctrl** finer. The step scales with camera distance |
 | **Numpad 1/3/7/9, 4/6/8/2** | Axis views and 15° turns, as close to Blender's as a Y-up world allows |
-| **Left-click** | Probe the pixel *and* pick what is under it (**Esc** clears) |
+| **Left-click** | Probe the pixel *and* pick what is under it (**Esc** clears, **Tab** cycles) |
 | **Shift+A** | Add a primitive — plane, cube, UV/ico sphere, cylinder, cone, torus |
-| **G / S** | Move / scale the selected mesh with the cursor; **X Y Z** constrain, click confirms, **Esc** cancels |
+| **G / R / S** | Move / turn / scale the selected mesh with the cursor; **X Y Z** constrain, click confirms, **Esc** cancels |
+| **Alt+G / Alt+R / Alt+S** | Clear the selection's location / rotation / scale |
+| **H / Alt+H** | Hide the selection / show everything hidden |
 | **X** or **Del** | Delete the selected mesh |
-| **Drag a gizmo handle** | Move, turn or stretch the picked mesh instead |
-| **Ctrl+Z / Ctrl+Y** | Undo / redo; the Edit menu names the edit |
+| **Space**, **Shift+← / →** | Play or pause the animation; jump to its first / last frame |
+| **N / T**, **Ctrl+Space** | Toggle the sidebar / the toolbar; maximize the viewport |
+| **Ctrl+Z / Ctrl+Shift+Z** | Undo / redo (**Ctrl+Y** too); the Edit menu names the edit |
 | **Ctrl+G** | Snap to a grid — whole units, 15°, tenths of scale |
-| **Ctrl+S** | Save the scene as JSON (**File ▸ Open scene…** brings it back) |
-| **F12 / F11 / F1** | Screenshot / focus the viewport / the full keyboard reference |
+| **Ctrl+S** | Save the scene as JSON (**File ▸ Open Scene…** brings it back) |
+| **F12 / F11 / F1** | Render the viewport to a PNG / maximize the viewport / the full keyboard reference |
 
-`G`, `S` and `X` act on the selection and only on it, so with nothing selected `S` still flies the
-camera and `X` still turns the view. **Esc** deselects and hands them back.
+`G`, `R`, `S` and `X` act on the selection and only on it, so with nothing selected `S` still flies
+the camera and `X` still turns the view. **Esc** deselects and hands them back.
 
-There are about thirty-five bindings and only a third are menu items, so
-**Help ▸ Keyboard and mouse** (**F1**) is the list — a control nobody can discover is a control
-nobody has. Plus **Load model…** (bundled demos or a file from disk), **Bake indirect light**,
-shading radios, buffer view, cascade count, gizmo mode, and display/post-processing checkboxes.
+There are about fifty bindings and only some are menu items, so **Help ▸ Keyboard and Mouse** (**F1**)
+is the list — a control nobody can discover is a control nobody has.
 
-**Dropping a file on the window** opens it by extension: `.obj`/`.dae`/`.gltf`/`.glb` as a model,
-`.json` as a scene, `.hdr`/`.pic` and ordinary images as a panorama. **File ▸ Open recent** keeps the
-last ten. Window placement, open panels, splitter positions, the recent list and the render backend
-live in `%APPDATA%\SoftEngine\viewer.json`; nothing in there may throw, so a corrupt file means
-"use the defaults" and never a viewer that will not start.
+**Dropping a file on the window** — or passing it on the command line, which is what Explorer's
+*Open with* does — opens it by extension: `.obj`/`.dae`/`.gltf`/`.glb` as a model, `.json` as a
+scene, `.hdr`/`.pic` and ordinary images as a panorama. **File ▸ Open Recent** keeps the last ten.
+Window placement, the workspace, splitter positions, the recent list and the render engine live in
+`%APPDATA%\SoftEngine\viewer.json` (or wherever `SOFTENGINE_VIEWER_SETTINGS` points); nothing in
+there may throw, so a corrupt file means "use the defaults" and never a viewer that will not start.
 
-**View ▸ Rendered by** picks CPU, GPU or path tracer. With nothing saved it opens on the CPU: the
+```
+SoftEngine.WinForms [file] [--workspace name] [--select n] [--time s] [--viewport WxH] [--screenshot out.png]
+```
+
+The options put the window into a known state from a script — a workspace, a selected mesh, a pose,
+an exact viewport size — and `--screenshot` renders the viewport to a PNG and quits. Every image in
+this README and in DESIGN.md is made that way, from the scene files in
+[`docs/screenshots/scenes`](docs/screenshots/scenes): `pwsh docs/screenshots/capture.ps1` regenerates
+them all.
+
+**Render ▸ Render Engine** (or the engine field on the **Render** tab) picks CPU, GPU or path tracer. With nothing saved it opens on the CPU: the
 viewer is a demonstration of a software rasterizer, and defaulting to the graphics card would quietly
 show you something else.
 
-On a laptop with two adapters, **View ▸ Rendered by ▸ Graphics adapter** names them and picks
+On a laptop with two adapters, **Render ▸ Render Engine ▸ Graphics adapter** names them and picks
 between them — the driver hands an application the integrated one unless it is told otherwise, which
 is rarely what "render on the GPU" was meant to mean. The submenu appears only where there is a
 choice, and the entries are the devices themselves rather than words about power:
@@ -185,17 +222,25 @@ src/
 │   ├── Options/            # the flags, their parser, their bounds, the usage text
 │   ├── Loading/            # model → world, panorama → cube map, PNG textures
 │   └── Rendering/          # backend choice, framing, post chain, frames, report
-└── SoftEngine.WinForms/    # interactive front-end (net11.0-windows)
+└── SoftEngine.WinForms/    # the editor (net11.0-windows)
+    ├── Controls/           # themed widgets, editor areas, outliner, properties, number
+    │                       #   fields, timeline, workspace tabs, the icon glyphs
+    ├── Demos/              # the bundled scenes and how a loaded world is framed
+    ├── Debugging/          # pixel history, object table, event list
+    ├── Dialogs/            # scene picker, keyboard reference, about
+    └── MainScreen*.cs      # the window: layout, then one partial per concern
 
 bench/SoftEngine.Benchmarks/   # headless frame-time harness
 tests/SoftEngine.Core.Tests/   # xUnit suite in folders mirroring the engine, and Golden/
                                #   image baselines — which stay put, see DESIGN.md § Testing
 tests/SoftEngine.WinForms.Tests/ # the viewer's window-free logic (net11.0-windows)
+docs/screenshots/              # every image the docs show, the scenes they are rendered from,
+                               #   and capture.ps1, which regenerates them
 ```
 
 ## Testing
 
-`dotnet test --project tests/SoftEngine.Core.Tests` — **956 tests**. Alongside the unit tests, eighteen
+`dotnet test --project tests/SoftEngine.Core.Tests` — **973 tests**. Alongside the unit tests, eighteen
 generated scenes are rendered headless at 320×180 and compared against committed PNG baselines, so a
 change that alters the picture shows up in the diff as a picture. `SOFTENGINE_UPDATE_GOLDEN=1` is the
 only way to re-record one, and a failing run drops the actual frame and a diff image beside the

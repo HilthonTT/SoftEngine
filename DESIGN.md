@@ -18,6 +18,7 @@ this is the reasoning, the trade-offs, and the traps already paid for.
 - [Importers and primitives](#importers-and-primitives)
 - [Editing: picking, gizmos and undo](#editing-picking-gizmos-and-undo)
 - [Scene files](#scene-files)
+- [The editor](#the-editor)
 - [Rendering on the GPU](#rendering-on-the-gpu)
 - [Path-traced reference](#path-traced-reference)
 - [Baked indirect light](#baked-indirect-light)
@@ -827,6 +828,89 @@ opened on.
 that is what every file written before it was rendered with, so an old file still opens to the sky
 it was saved under. Before it existed, the viewer's **HDR sky** checkbox was simply not saved.
 
+The documentation's screenshots are scene files too —
+[`docs/screenshots/scenes/`](docs/screenshots/scenes) — rendered by
+[`docs/screenshots/capture.ps1`](docs/screenshots/capture.ps1) through the viewer's own command line,
+so a picture in this file can be regenerated rather than recreated by hand.
+
+## The editor
+
+![The editor: viewport, outliner, properties and timeline](docs/screenshots/elephant.png)
+
+The viewer is laid out the way a desktop 3D suite is: a top bar of menus and **workspace** tabs; the
+3D viewport with its own header — mode, View/Select/Add/Object menus, overlay and snap toggles, and a
+four-way shading switch — and a tool shelf down its left edge; the **outliner** and the **properties
+editor** stacked down the right; a **timeline** along the bottom; and a status bar that shows what the
+mouse and keys will do before it shows the scene's counts. Anyone who has used Blender knows where
+everything is. None of its artwork or branding is reused: the icons are a few strokes each, drawn in
+[`Glyph.cs`](src/SoftEngine.WinForms/Controls/Glyph.cs), so they scale with the display and take the
+colour of whatever they sit on.
+
+| | |
+| :--: | :--: |
+| ![Shading workspace](docs/screenshots/parrot.png) | ![Rendering workspace](docs/screenshots/workspace-rendering.png) |
+| **Shading** — material preview, the Material tab open | **Rendering** — the path tracer refining the PBR spheres |
+
+A **workspace** is the same window arranged for one job, not another window: *Layout* is the plain
+editor; *Shading* switches to material preview; *Rendering* hands the frame to the path tracer and
+gives it back to whatever was rendering before on the way out — without recording that as the saved
+engine, since a window that opens straight into a path tracer is a slow first impression; *Debugging*
+folds the [graphics debugger](#graphics-debugger)'s three panels in around the viewport.
+
+Decisions worth knowing before changing it:
+
+- **The layout is built in code**
+  ([`MainScreenLayout.cs`](src/SoftEngine.WinForms/MainScreenLayout.cs)), not by the forms designer:
+  an editor of nested split areas, painted headers and per-tab pages is a few hundred lines to read
+  and a designer file nobody can review. Behaviour stays in the `MainScreen*.cs` partials by concern
+  — scenes, worlds, backend, environment, editing, debugger, workspace, editor — and none of them
+  knows where on screen its controls are.
+- **Every themed widget is the stock control underneath.** `ThemedCheckBox` *is* a `CheckBox` and
+  `ThemedRadioButton` a `RadioButton`, owner-drawn; so a hundred existing `Checked` bindings — and the
+  scene file's round trip through them — carried over unchanged when the look did not.
+- **Painted metrics go through `LogicalToDeviceUnits`.** WinForms scales a control's bounds for the
+  display; it cannot scale the pixel offsets inside an `OnPaint`. Every hard-coded size in the painted
+  controls was a check box drawn a third too small at 150% until it was converted.
+- **The outliner and the Object tab poll** — on the debugger's 120 ms tick, against a cheap signature
+  of the world (which list, how many meshes and lights, how many visible). The world is changed by
+  loads, undo, the gizmo, the modal transform, the object table's checkboxes and animation, and an
+  event for each is a list that is complete only until the next feature. A poll cannot miss one.
+- **A drag on a number field is one edit.**
+  [`NumberField`](src/SoftEngine.WinForms/Controls/NumberField.cs) reports the start, every change and
+  the commit apart, so the Object tab records the whole scrub as a single undoable `TransformEdit`;
+  Escape or a right-click mid-drag puts the value back.
+- **The timeline poses by time, not by delta.** `IWorld.Update` advances by a delta, which is the
+  wrong thing to hand a time read off a ruler; scrubbing sets each player's `Time` and updates by zero.
+  The CLI's frame sequences had exactly that bug — handing each frame's absolute time over as a delta,
+  so a sequence sped up quadratically — and were fixed the same way.
+- **The viewport does not render until it has a world.** The scene object exists from construction and
+  its world only once the first load finishes; a paint in between — the window shown, resized or
+  uncovered while loading — has nothing to draw, and the renderer reads the world unconditionally.
+
+### One catalog
+
+The viewer once had two demo catalogs: `Demos/DemoCatalog`, which it used, and `Worlds/DemoWorlds`, a
+767-line older copy that only the tests used. So the viewer's tests passed against code the viewer did
+not run. The copy had the scene-graph-aware far plane the live code lacked — a mesh placed by a parent
+node far from the origin was clipped — and lacked the three glTF demos the live code had. There is
+one catalog now, `DemoCatalog`, with the framing helpers on it and the tests pointed at it. The
+general rule: a test that does not exercise the shipped path is worse than none, because it is
+believed.
+
+### Command line
+
+```
+SoftEngine.WinForms [file] [--workspace name] [--select n] [--time s] [--viewport WxH] [--screenshot out.png]
+```
+
+A bare file is what Explorer's *Open with* passes, and opens like a dropped one. The rest put a window
+into a known state from a script: open on a workspace, select a mesh, pose the animation, size the
+window so the viewport is exactly `W×H`, and with `--screenshot`, render — enough frames for TAA or the
+path tracer to settle — save the viewport as a PNG and quit. Bad arguments are reported, never guessed
+at, and a viewport the display cannot give fails the run before anything loads: a picture of the
+wrong size is worse than none. `SOFTENGINE_VIEWER_SETTINGS` points the viewer at another settings file, so such a run starts from
+defaults and leaves the person's own recent files, layout and render engine alone.
+
 ## Rendering on the GPU
 
 The same scene, the same `IPainter`, the same settings and a finished frame in the same
@@ -926,7 +1010,7 @@ are comparable; `--physical` sets it to 1 for an internally consistent image abo
 wherever a light is doing the work. The environment lights the trace at `SkyIntensity` and
 `AmbientIntensity` is ignored — it scales a fudge the tracer does not make.
 
-**In the viewport,** *Rendered by → Path tracer* traces two paths per pixel per paint and averages
+**In the viewport,** *Render ▸ Render Engine ▸ Path Tracer* (or the **Rendering** workspace) traces two paths per pixel per paint and averages
 into what is there, up to 512 samples or until something moves. Seeded per pixel rather than from a
 shared generator, so two runs produce the same image down to the last bit.
 
@@ -1015,14 +1099,17 @@ the CPU, the panels show what the renderer actually did rather than what a drive
 | **Graphics Object Table** | Every object the frame touched, with sizes and counts. Meshes carry an **active** checkbox that drops them from the frame. |
 | **Pixel History** | For the selected pixel: the clear, then each triangle that tried to write it — *including the ones the depth test rejected* — then, where transparency is resolved per pixel, each stored fragment as the resolve blended it, ending with the post-process pass. |
 
-Identifiers are shared: `obj:7` in the event list is `obj:7` in the object table.
+Identifiers are shared: `obj:7` in the event list is `obj:7` in the object table. The **Debugging**
+workspace opens all three around the viewport; the **Window** menu toggles them one at a time.
+
+![The Debugging workspace](docs/screenshots/workspace-debugging.png)
 
 Recording is cheap by construction: events are a `readonly record struct` in a reused buffer,
 formatted only for the rows actually drawn; the pixel probe is a single int compare inside
 `PutPixel`, off (`-1`) unless a pixel is selected, with the "what is drawing" context thread-static
 because each worker owns disjoint rows; triangle vertices are snapshotted only on a hit.
 
-**Frame history** (`View ▸ Frame history`) files each finished frame into a
+**Frame history** (`Window ▸ Frame history`) files each finished frame into a
 [`FrameCapture`](src/SoftEngine.Core/Diagnostics/FrameCapture.cs). Off by default and separate from
 event recording — capturing events writes into a reused buffer, *keeping* a frame copies it. The pin
 is a frame **number**, not a list index, since the window slides. **The image is not kept**: a

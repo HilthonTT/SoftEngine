@@ -88,7 +88,30 @@ a reviewer needs. Silently updated baselines are the one thing that makes this s
 For anything that changes rendered output, load the relevant bundled world in the viewer and say in
 the pull request which one and which shading mode you checked. Before/after screenshots are worth
 more than any description. The demos exist to exercise specific paths — `transparency`, `shadows`,
-`cascades`, `normalmapping`, `pbrspheres`, `primitives` — so use the one that covers your change.
+`cascades`, `normalmapping`, `pbrspheres`, `reflections`, `primitives` — so use the one that covers
+your change.
+
+The viewer takes a scene file and `--screenshot` on its command line, which gives a reproducible
+before/after: save the scene once (**File ▸ Save Scene As…**), then render it from both builds.
+
+```powershell
+SoftEngine.WinForms.exe my-check.scene.json --viewport 1280x720 --screenshot before.png
+```
+
+### Documentation screenshots
+
+Every image in `README.md` and `DESIGN.md` is rendered from a scene file in
+[`docs/screenshots/scenes`](docs/screenshots/scenes). If a change alters how the editor or a render
+looks, regenerate them rather than editing a PNG by hand:
+
+```powershell
+pwsh docs/screenshots/capture.ps1                 # all of them
+pwsh docs/screenshots/capture.ps1 -Only skull     # just one
+```
+
+It builds the viewer in Release, runs it against a throwaway settings file so your own layout and
+recent files are untouched, and writes the PNGs in place. Window shots are taken from the screen, so
+leave the machine alone while it runs.
 
 ### Performance
 
