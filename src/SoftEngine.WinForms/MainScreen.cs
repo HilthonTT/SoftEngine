@@ -27,8 +27,17 @@ public sealed partial class MainScreen : Form
 
     private readonly ViewerSettings _settings = ViewerSettings.Load();
 
+    private readonly ViewerArguments _arguments;
+
     public MainScreen()
+        : this(new ViewerArguments())
     {
+    }
+
+    internal MainScreen(ViewerArguments arguments)
+    {
+        _arguments = arguments;
+
         InitializeComponent();
         Icon = Theme.AppIcon;
 
@@ -267,8 +276,6 @@ public sealed partial class MainScreen : Form
         InitializeWorkspace();
 
         InitializeEditor();
-
-        _ = PrepareWorldAsync("skull");
     }
 
     protected override void OnShown(EventArgs e)
@@ -276,6 +283,8 @@ public sealed partial class MainScreen : Form
         base.OnShown(e);
 
         panel3D1.Focus();
+
+        _ = StartAsync();
     }
 
     private async Task ShowModelPickerAsync()

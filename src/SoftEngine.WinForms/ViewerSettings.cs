@@ -101,8 +101,19 @@ internal sealed class ViewerSettings
         }
     }
 
+    /// <summary>
+    /// Points the viewer at another settings file — so a scripted run, such as the one that takes
+    /// the documentation's screenshots, starts from defaults and leaves the user's own alone.
+    /// </summary>
+    public const string PathVariable = "SOFTENGINE_VIEWER_SETTINGS";
+
     private static string? Path()
     {
+        if (Environment.GetEnvironmentVariable(PathVariable) is { Length: > 0 } overridden)
+        {
+            return overridden;
+        }
+
         var roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
 
         return roaming is { Length: > 0 }

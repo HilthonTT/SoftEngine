@@ -490,8 +490,12 @@ public partial class Panel3D : UserControl
 
     private void Panel3D_Paint(object? sender, PaintEventArgs e)
     {
-        if (Scene is null)
+        // The scene exists from construction, its world only once the first load finishes: a
+        // paint in between — the window shown, resized, or uncovered while loading — has
+        // nothing to render, and the renderer reads the world unconditionally.
+        if (Scene?.World is null)
         {
+            e.Graphics.Clear(BackColor);
             return;
         }
 

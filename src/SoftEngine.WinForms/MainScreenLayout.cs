@@ -204,7 +204,7 @@ public sealed partial class MainScreen
     private ToolStripMenuItem mnuProjectPage = null!;
     private ToolStripMenuItem mnuAbout = null!;
 
-    private static readonly string[] Workspaces = ["Layout", "Shading", "Rendering", "Debugging"];
+    private static readonly string[] Workspaces = ViewerArguments.WorkspaceNames;
 
     private void InitializeComponent()
     {
