@@ -228,6 +228,32 @@ public class BvhTests
     }
 
     [Fact]
+    public void Intersect_AnAxisAlignedRayAlongABoundingPlane_StillFindsTheEdgeItLandsOn()
+    {
+        // A ray straight down whose x is exactly one of the floor's edges: x has no direction, so
+        // the box test multiplies a zero offset by an infinite reciprocal. The picker's centre
+        // column under an axis-aligned camera lands here exactly.
+        var world = new SimpleWorld();
+
+        world.Meshes.Add(new Mesh(
+            [new Vector3(0, 0, -1), new Vector3(2, 0, -1), new Vector3(2, 0, 1), new Vector3(0, 0, 1)],
+            [new Triangle(0, 1, 2), new Triangle(0, 2, 3)]));
+
+        var bvh = Bvh.Build(SceneGeometry.Build(world));
+
+        foreach (var x in new[] { 0f, 2f })
+        {
+            var ray = new Ray(new Vector3(x, 5f, 0.3f), -Vector3.UnitY);
+
+            Assert.NotNull(ScenePicker.Pick(world, ray));
+
+            Assert.True(bvh.Intersect(ray, out var hit), $"missed the edge at x = {x}");
+            Assert.Equal(5f, hit.Distance, 4);
+            Assert.True(bvh.IsOccluded(ray, 10f));
+        }
+    }
+
+    [Fact]
     public void Build_HandlesAnEmptyWorld()
     {
         var bvh = Bvh.Build(SceneGeometry.Build(new SimpleWorld()));

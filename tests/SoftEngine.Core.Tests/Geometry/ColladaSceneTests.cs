@@ -384,4 +384,97 @@ public class ColladaSceneTests
         Assert.Same(scene.Root.Find("Holder"), mesh.Parent);
         Approx.Equal(new Vector3(0, 25, 0), mesh.WorldMatrix.Translation);
     }
+
+    // An exporter writes one <triangles> (or <polylist>) per material, all indexing the
+    // mesh's one <vertices>; reading only the first drops every other material's faces.
+    private const string TwoMaterialMesh = """
+        <COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+          <library_geometries>
+            <geometry id="Geo">
+              <mesh>
+                <source id="P">
+                  <float_array id="PA" count="12">-1 0 0  1 0 0  1 1 0  -1 1 0</float_array>
+                  <technique_common><accessor source="#PA" count="4" stride="3"/></technique_common>
+                </source>
+                <source id="N">
+                  <float_array id="NA" count="3">0 0 1</float_array>
+                  <technique_common><accessor source="#NA" count="1" stride="3"/></technique_common>
+                </source>
+                <vertices id="V"><input semantic="POSITION" source="#P"/></vertices>
+                <triangles material="Red" count="1">
+                  <input semantic="VERTEX" source="#V" offset="0"/>
+                  <input semantic="NORMAL" source="#N" offset="1"/>
+                  <p>0 0  1 0  2 0</p>
+                </triangles>
+                <triangles material="Blue" count="1">
+                  <input semantic="VERTEX" source="#V" offset="0"/>
+                  <input semantic="NORMAL" source="#N" offset="1"/>
+                  <p>0 0  2 0  3 0</p>
+                </triangles>
+              </mesh>
+            </geometry>
+          </library_geometries>
+        </COLLADA>
+        """;
+
+    [Fact]
+    public void Import_OneTrianglesElementPerMaterial_KeepsEveryElement()
+    {
+        var scene = ColladaImporter.ImportScene(XDocument.Parse(TwoMaterialMesh));
+        var mesh = Assert.Single(scene.Meshes);
+
+        Assert.Equal(2, mesh.Triangles.Length);
+        Assert.Equal(4, mesh.Vertices.Length);
+
+        Assert.Equal(3, mesh.Triangles[1].I2);
+        Approx.Equal(Vector3.UnitZ, mesh.NormVertices[3]);
+    }
+
+    [Fact]
+    public void HackyImportCollada_OneTrianglesElementPerMaterial_KeepsEveryElement()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"softengine-{Guid.NewGuid():N}.dae");
+        File.WriteAllText(path, TwoMaterialMesh);
+
+        try
+        {
+            var mesh = Assert.Single(ColladaImporter.HackyImportCollada(path));
+
+            Assert.Equal(2, mesh.Triangles.Length);
+            Assert.Equal(4, mesh.Vertices.Length);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Import_NegativePolylistVertexCount_StopsReadingRatherThanThrowing()
+    {
+        var document = XDocument.Parse("""
+            <COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+              <library_geometries>
+                <geometry id="Geo">
+                  <mesh>
+                    <source id="P">
+                      <float_array id="PA" count="9">0 0 0  1 0 0  0 1 0</float_array>
+                      <technique_common><accessor source="#PA" count="3" stride="3"/></technique_common>
+                    </source>
+                    <vertices id="V"><input semantic="POSITION" source="#P"/></vertices>
+                    <polylist count="2">
+                      <input semantic="VERTEX" source="#V" offset="0"/>
+                      <vcount>-1 3</vcount>
+                      <p>0 1 2</p>
+                    </polylist>
+                  </mesh>
+                </geometry>
+              </library_geometries>
+            </COLLADA>
+            """);
+
+        var scene = ColladaImporter.ImportScene(document);
+
+        Assert.Empty(Assert.Single(scene.Meshes).Triangles);
+    }
 }

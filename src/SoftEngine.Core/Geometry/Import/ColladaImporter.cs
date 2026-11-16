@@ -38,15 +38,15 @@ public static partial class ColladaImporter
 
             var buffers = new GeometryBuffers();
 
-            var polylist = mesh.Element(_collada + "polylist");
-            if (polylist is not null)
+            // An exporter writes one <polylist> or <triangles> per material, so every one of
+            // them is read; reading only the first drops all the other materials' faces.
+            foreach (var polylist in mesh.Elements(_collada + "polylist"))
             {
                 ReadPolylist(mesh, polylist, buffers);
             }
             progress?.Report(done + share * 0.4f);
 
-            var triangles = mesh.Element(_collada + "triangles");
-            if (triangles is not null)
+            foreach (var triangles in mesh.Elements(_collada + "triangles"))
             {
                 ReadTriangles(mesh, triangles, buffers);
             }
@@ -78,9 +78,14 @@ public static partial class ColladaImporter
         GetInput(vertices, "POSITION", out var positionSourceId, out _);
         GetInput(vertices, "NORMAL", out var normalSourceId, out _);
 
-        var baseVertex = buffers.Vertices.Count;
-        buffers.Vertices.AddRange(ReadVectors(mesh, positionSourceId));
-        if (normalSourceId is not null)
+        // Every primitive of a <mesh> indexes the mesh's one <vertices>, so the positions are
+        // read once and later primitives add only their faces. Copying them per primitive
+        // would put a skin's weights on the first copy alone.
+        if (buffers.Vertices.Count == 0)
+        {
+            buffers.Vertices.AddRange(ReadVectors(mesh, positionSourceId));
+        }
+        if (normalSourceId is not null && buffers.Normals.Count == 0)
         {
             buffers.Normals.AddRange(ReadVectors(mesh, normalSourceId));
         }
@@ -90,23 +95,23 @@ public static partial class ColladaImporter
 
         if (vcounts.Count == 0)
         {
-            buffers.Indices.AddRange(vertexIndices.Select(index => index + baseVertex));
+            buffers.Indices.AddRange(vertexIndices);
             return;
         }
 
         var cursor = 0;
         foreach (var vcount in vcounts)
         {
-            if (cursor + vcount > vertexIndices.Count)
+            if (vcount < 0 || cursor + vcount > vertexIndices.Count)
             {
                 break;
             }
 
             for (var corner = 1; corner + 1 < vcount; corner++)
             {
-                buffers.Indices.Add(vertexIndices[cursor] + baseVertex);
-                buffers.Indices.Add(vertexIndices[cursor + corner] + baseVertex);
-                buffers.Indices.Add(vertexIndices[cursor + corner + 1] + baseVertex);
+                buffers.Indices.Add(vertexIndices[cursor]);
+                buffers.Indices.Add(vertexIndices[cursor + corner]);
+                buffers.Indices.Add(vertexIndices[cursor + corner + 1]);
             }
 
             cursor += vcount;
@@ -124,28 +129,32 @@ public static partial class ColladaImporter
 
         GetInput(triangles, "NORMAL", out var normalSourceId, out var normalOffset);
 
-        var baseVertex = buffers.Vertices.Count;
-        var positions = ReadVectors(mesh, positionSourceId);
-        buffers.Vertices.AddRange(positions);
+        // The positions are shared with any earlier primitive of the mesh, as in ReadPolylist.
+        if (buffers.Vertices.Count == 0)
+        {
+            buffers.Vertices.AddRange(ReadVectors(mesh, positionSourceId));
+        }
 
         var vertexIndices = ExtractLane(interleavedIndices, vertexOffset, stride);
 
         if (normalSourceId is not null)
         {
             var cornerNormals = ReadVectors(mesh, normalSourceId, interleavedIndices, normalOffset, stride);
-            var vertexNormals = new Vector3[positions.Count];
+            while (buffers.Normals.Count < buffers.Vertices.Count)
+            {
+                buffers.Normals.Add(Vector3.Zero);
+            }
             for (var corner = 0; corner < vertexIndices.Count && corner < cornerNormals.Count; corner++)
             {
                 var vertexIndex = vertexIndices[corner];
-                if (vertexIndex >= 0 && vertexIndex < vertexNormals.Length)
+                if (vertexIndex >= 0 && vertexIndex < buffers.Vertices.Count)
                 {
-                    vertexNormals[vertexIndex] = cornerNormals[corner];
+                    buffers.Normals[vertexIndex] = cornerNormals[corner];
                 }
             }
-            buffers.Normals.AddRange(vertexNormals);
         }
 
-        buffers.Indices.AddRange(vertexIndices.Select(index => index + baseVertex));
+        buffers.Indices.AddRange(vertexIndices);
     }
 
     private static int Stride(XElement primitives) =>

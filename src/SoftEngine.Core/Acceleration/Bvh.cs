@@ -261,8 +261,11 @@ public sealed class Bvh
         var entry = Vector3.Min(first, second);
         var exit = Vector3.Max(first, second);
 
-        var near = MathF.Max(MathF.Max(entry.X, entry.Y), MathF.Max(entry.Z, 0f));
-        var far = MathF.Min(MathF.Min(exit.X, exit.Y), exit.Z);
+        // A ray with no direction along an axis, starting exactly on one of the box's planes in it,
+        // computes 0 × ∞ = NaN for that axis. It lies inside that slab, so the slab must not
+        // constrain it: MaxNumber and MinNumber skip the NaN where Max and Min would return it.
+        var near = float.MaxNumber(float.MaxNumber(entry.X, entry.Y), float.MaxNumber(entry.Z, 0f));
+        var far = float.MinNumber(float.MinNumber(exit.X, exit.Y), exit.Z);
 
         return near <= far ? near : float.PositiveInfinity;
     }

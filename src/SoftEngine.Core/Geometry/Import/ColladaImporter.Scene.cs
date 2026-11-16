@@ -220,14 +220,13 @@ public static partial class ColladaImporter
 
             var buffers = new GeometryBuffers();
 
-            var polylist = mesh.Element(_collada + "polylist");
-            if (polylist is not null)
+            // One primitive per material: all of them, as in HackyImportCollada.
+            foreach (var polylist in mesh.Elements(_collada + "polylist"))
             {
                 ReadPolylist(mesh, polylist, buffers);
             }
 
-            var triangles = mesh.Element(_collada + "triangles");
-            if (triangles is not null)
+            foreach (var triangles in mesh.Elements(_collada + "triangles"))
             {
                 ReadTriangles(mesh, triangles, buffers);
             }
