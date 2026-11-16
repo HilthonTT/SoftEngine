@@ -35,7 +35,7 @@ public sealed partial class MainScreen
 
     private Task PrepareWorldFromFileAsync(string path)
     {
-        return PrepareWorldCoreAsync(progress => BuildWorldFromFile(path, progress), Path.GetFileName(path), () =>
+        return PrepareWorldCoreAsync(progress => DemoCatalog.BuildWorldFromFile(path, progress), Path.GetFileName(path), () =>
         {
             _currentDemoId = string.Empty;
             _modelPath = path;
@@ -91,7 +91,7 @@ public sealed partial class MainScreen
 
             _history.Clear();
 
-            panel3D1.Scene?.Projection = setup.Projection ?? ProjectionFor(setup);
+            panel3D1.Scene?.Projection = setup.Projection ?? DemoCatalog.ProjectionFor(setup);
 
             panel3D1.ClearPick();
 
@@ -126,50 +126,5 @@ public sealed partial class MainScreen
             panel3D1.ClearSelectedPixel();
             panel3D1.Invalidate();
         }
-    }
-
-    private static PerspectiveProjection ProjectionFor(WorldSetup setup)
-    {
-        var worldRadius = 0f;
-        foreach (var mesh in setup.World.Meshes)
-        {
-            var scale = Math.Max(Math.Abs(mesh.Scale.X), Math.Max(Math.Abs(mesh.Scale.Y), Math.Abs(mesh.Scale.Z)));
-            var reach = mesh.Position.Length() + mesh.BoundingRadius * scale;
-
-            if (!float.IsNaN(reach) && !float.IsInfinity(reach))
-            {
-                worldRadius = Math.Max(worldRadius, reach);
-            }
-        }
-
-        var far = Math.Max(500f, (setup.CameraPosition.Length() + worldRadius) * 2f);
-
-        return new PerspectiveProjection(FieldOfView, .01f, far);
-    }
-
-    private static WorldSetup BuildWorldFromFile(string path, IProgress<float>? progress)
-    {
-        var world = ModelFileLoader.Load(path, progress, ImageTexture.Load, ImageTexture.Load);
-
-        var radius = 0f;
-        foreach (var mesh in world.Meshes)
-        {
-            var scaled = mesh.WorldBoundingRadius();
-
-            if (float.IsFinite(scaled))
-            {
-                radius = Math.Max(radius, mesh.WorldMatrix.Translation.Length() + scaled);
-            }
-        }
-
-        if (radius <= 0f)
-        {
-            radius = 1f;
-        }
-
-        var cameraPosition = new Vector3(0, 0, -radius * 3f);
-        var projection = new PerspectiveProjection(FieldOfView, .01f, Math.Max(500f, radius * 20f));
-
-        return new WorldSetup(world, cameraPosition, projection) { SkeletonTickSize = radius * 0.05f };
     }
 }

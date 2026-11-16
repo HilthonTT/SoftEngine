@@ -1,12 +1,12 @@
 ﻿using SoftEngine.Core.Geometry.Primitives;
 using SoftEngine.Core.Scenes;
 using SoftEngine.Core.Scenes.Graph;
-using SoftEngine.WinForms.Worlds;
+using SoftEngine.WinForms.Demos;
 using System.Numerics;
 
 namespace SoftEngine.WinForms.Tests.Worlds;
 
-public class DemoWorldsTests
+public class DemoCatalogTests
 {
     private static readonly HashSet<string> SlowImports = ["Juliet", "julietskin", "elefant"];
 
@@ -14,7 +14,7 @@ public class DemoWorldsTests
     {
         var ids = new TheoryData<string>();
 
-        foreach (var demo in DemoWorlds.Demos.Where(demo => !SlowImports.Contains(demo.Id)))
+        foreach (var demo in DemoCatalog.All.Where(demo => !SlowImports.Contains(demo.Id)))
         {
             ids.Add(demo.Id);
         }
@@ -28,6 +28,9 @@ public class DemoWorldsTests
     [InlineData("parrot.dae")]
     [InlineData("skull.dae")]
     [InlineData("teapot.dae")]
+    [InlineData("fox.glb")]
+    [InlineData("lantern.glb")]
+    [InlineData("waterbottle.glb")]
     public void BundledModels_AreCopiedNextToTheViewer(string fileName)
     {
         Assert.True(File.Exists(Path.Combine(AppContext.BaseDirectory, "Models", fileName)));
@@ -36,7 +39,7 @@ public class DemoWorldsTests
     [Fact]
     public void Demos_HaveUniqueIds()
     {
-        var ids = DemoWorlds.Demos.Select(demo => demo.Id).ToList();
+        var ids = DemoCatalog.All.Select(demo => demo.Id).ToList();
 
         Assert.Equal(ids.Count, ids.Distinct().Count());
     }
@@ -45,7 +48,7 @@ public class DemoWorldsTests
     [MemberData(nameof(DemoIds))]
     public void BuildWorld_ProducesTheDemoItIsCataloguedUnder(string id)
     {
-        var setup = DemoWorlds.BuildWorld(id, progress: null);
+        var setup = DemoCatalog.Build(id, progress: null);
 
         if (id == "empty")
         {
@@ -71,7 +74,7 @@ public class DemoWorldsTests
 
         var setup = new WorldSetup(world, new Vector3(0, 0, -5), null);
 
-        var projection = DemoWorlds.ProjectionFor(setup);
+        var projection = DemoCatalog.ProjectionFor(setup);
 
         Assert.True(projection.ZFar > 2005f, $"far plane {projection.ZFar}");
     }
@@ -82,7 +85,7 @@ public class DemoWorldsTests
         var world = new SimpleWorld();
         world.Meshes.Add(new Cube());
 
-        var projection = DemoWorlds.ProjectionFor(new WorldSetup(world, new Vector3(0, 0, -5), null));
+        var projection = DemoCatalog.ProjectionFor(new WorldSetup(world, new Vector3(0, 0, -5), null));
 
         Assert.Equal(500f, projection.ZFar);
     }
@@ -101,7 +104,7 @@ public class DemoWorldsTests
 
         try
         {
-            var setup = DemoWorlds.BuildWorldFromFile(path, progress: null);
+            var setup = DemoCatalog.BuildWorldFromFile(path, progress: null);
 
             Assert.Single(setup.World.Meshes);
             Assert.Single(setup.World.Lights);
@@ -117,6 +120,6 @@ public class DemoWorldsTests
     [Fact]
     public void BuildWorldFromFile_RejectsFormatsItCannotRead()
     {
-        Assert.Throws<NotSupportedException>(() => DemoWorlds.BuildWorldFromFile("model.fbx", progress: null));
+        Assert.Throws<NotSupportedException>(() => DemoCatalog.BuildWorldFromFile("model.fbx", progress: null));
     }
 }

@@ -491,7 +491,7 @@ public sealed partial class MainScreen : Form
         }
 
         scene.Shadows.Enabled = chkShadows.Checked;
-        scene.Shadows.Resolution = panel3D1.BufferSize.Width > 1280 ? 2048 : 1024;
+        scene.Shadows.Resolution = WorldScale.ShadowResolution(panel3D1.BufferSize.Width);
 
         if (cboCascades.SelectedItem is CascadeChoice cascades)
         {
@@ -513,10 +513,8 @@ public sealed partial class MainScreen : Form
 
         if (fog.Enabled)
         {
-            var distance = panel3D1.ReferenceDistance;
             fog.Mode = FogMode.Linear;
-            fog.Start = distance * 0.5f;
-            fog.End = distance * 4f;
+            (fog.Start, fog.End) = WorldScale.FogRange(panel3D1.ReferenceDistance);
             fog.Color = new ColorRGB(Theme.Viewport.R, Theme.Viewport.G, Theme.Viewport.B);
         }
 

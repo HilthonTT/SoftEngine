@@ -228,10 +228,7 @@ public sealed partial class MainScreen
             return;
         }
 
-        var reference = panel3D1.ReferenceDistance;
-
-        ssao.Radius = reference > 0f ? reference * 0.02f : 0.5f;
-        ssao.Bias = ssao.Radius * 0.04f;
+        (ssao.Radius, ssao.Bias) = WorldScale.AmbientOcclusion(panel3D1.ReferenceDistance);
     }
 
     private void ApplyReflections()
@@ -241,9 +238,6 @@ public sealed partial class MainScreen
             return;
         }
 
-        var reference = panel3D1.ReferenceDistance;
-
-        ssr.MaxDistance = reference > 0f ? reference : 40f;
-        ssr.Thickness = ssr.MaxDistance * 0.04f;
+        (ssr.MaxDistance, ssr.Thickness) = WorldScale.Reflections(panel3D1.ReferenceDistance);
     }
 }

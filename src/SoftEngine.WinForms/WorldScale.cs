@@ -1,5 +1,10 @@
-namespace SoftEngine.WinForms.Worlds;
+namespace SoftEngine.WinForms;
 
+/// <summary>
+/// How the viewer sizes the settings that are measured in world units — fog, shadow-map
+/// resolution, ambient occlusion, reflections, the snap step — from the distance the loaded world
+/// is framed at, so a model in millimetres and one in kilometres both get sensible values.
+/// </summary>
 internal static class WorldScale
 {
     public static (float Start, float End) FogRange(float reference) => (reference * 0.5f, reference * 4f);

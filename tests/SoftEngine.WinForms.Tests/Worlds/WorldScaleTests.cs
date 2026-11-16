@@ -1,4 +1,4 @@
-using SoftEngine.WinForms.Worlds;
+using SoftEngine.WinForms;
 
 namespace SoftEngine.WinForms.Tests.Worlds;
 
