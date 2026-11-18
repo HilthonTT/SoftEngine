@@ -25,7 +25,9 @@ public sealed class VertexBuffer : IDisposable
 
     public int Size { get; }
 
-    public Matrix4x4 WorldMatrix { get; set; }
+    // Identity until a pass sets it: a default Matrix4x4 is all zeros, and would flatten every
+    // tangent read through it to nothing.
+    public Matrix4x4 WorldMatrix { get; set; } = Matrix4x4.Identity;
 
     public void ResetClipped()
     {
@@ -73,10 +75,21 @@ public sealed class VertexBuffer : IDisposable
             ? Mesh?.TexCoords?[vertexIndex] ?? Vector2.Zero
             : _clippedTexCoords[vertexIndex - Size];
 
-    public Vector4 GetTangent(int vertexIndex) =>
-        vertexIndex < Size
+    /// <summary>
+    /// The vertex's tangent in world space, where the shaders hold the normal it is built
+    /// against — the mesh stores it, and the clipper interpolates it, in model space. The
+    /// handedness in W is carried over unchanged.
+    /// </summary>
+    public Vector4 GetTangent(int vertexIndex)
+    {
+        var tangent = vertexIndex < Size
             ? Mesh?.Tangents?[vertexIndex] ?? Vector4.Zero
             : _clippedTangents[vertexIndex - Size];
+
+        var direction = Vector3.TransformNormal(new Vector3(tangent.X, tangent.Y, tangent.Z), WorldMatrix);
+
+        return new Vector4(direction, tangent.W);
+    }
 
     public void Dispose()
     {

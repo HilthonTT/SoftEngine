@@ -40,7 +40,10 @@ public sealed class LiangBarskyClippingHomogeneous : IClippingHomogeneous
             return false;
         }
 
-        if (!Clip(p0.W + p0.Z, -delta.W - delta.Z, ref t0, ref t1))
+        // Near plane at z >= 0, not OpenGL's z >= -w: System.Numerics projections map depth to
+        // [0, w], as the frustum and the triangle clipper both assume. Clipping at -w would keep
+        // lines between about half the near distance and the near plane, drawn at depth 0.
+        if (!Clip(p0.Z, -delta.Z, ref t0, ref t1))
         {
             return false;
         }

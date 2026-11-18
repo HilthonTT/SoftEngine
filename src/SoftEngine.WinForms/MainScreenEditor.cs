@@ -573,6 +573,7 @@ public sealed partial class MainScreen
 
     private void SyncSelection()
     {
+        CancelFieldTyping();
         outliner.Select(panel3D1.Picked?.Mesh);
         UpdateObjectPanel();
         UpdateEditorStatus();
@@ -607,6 +608,17 @@ public sealed partial class MainScreen
         };
 
         UpdateObjectPanel();
+    }
+
+    /// <summary>
+    /// A number half-typed into a transform field belongs to the object it was typed against;
+    /// once the selection or the history moves on, committing it would land on the wrong one.
+    /// </summary>
+    private void CancelFieldTyping()
+    {
+        vecLocation.CancelTyping();
+        vecRotation.CancelTyping();
+        vecScale.CancelTyping();
     }
 
     private void BeginFieldEdit()
@@ -798,7 +810,9 @@ public sealed partial class MainScreen
 
         if (!timeline.IsScrubbing && players.Count > 0)
         {
-            timeline.Time = players[0].Time;
+            // Every clip plays at once and each wraps at its own length; the ruler spans the
+            // longest, so the playhead follows that one — the first could be shorter.
+            timeline.Time = players.MaxBy(player => player.Duration)!.Time;
         }
 
         var enabled = players.Count > 0;

@@ -20,6 +20,20 @@ internal static class RenderCommand
             return 1;
         }
 
+        // A scene saved with a panorama sky is lit by it, as the viewer shows it — unless the
+        // command line names an environment of its own, which wins.
+        if (options.EnvironmentPath is null && input.PanoramaPath is { } panorama)
+        {
+            if (File.Exists(panorama))
+            {
+                options.EnvironmentPath = panorama;
+            }
+            else
+            {
+                Console.Error.WriteLine($"softengine: the scene's panorama is not there, so the procedural sky lights it: {panorama}");
+            }
+        }
+
         var loadStart = Stopwatch.GetTimestamp();
         var loaded = WorldLoader.Load(input.ModelPath!);
         var loadTime = Stopwatch.GetElapsedTime(loadStart);

@@ -1,3 +1,4 @@
+using SoftEngine.Core.Animation;
 using SoftEngine.Core.Diagnostics;
 using SoftEngine.Core.Geometry;
 using SoftEngine.Core.Geometry.Import;
@@ -700,6 +701,60 @@ public class GltfImporterTests
               "buffers": [{"uri": "@BUFFER@", "byteLength": @LENGTH@}]
             }
             """);
+    }
+
+    [Fact]
+    public void Import_TwoAnimatedNodesWithOneName_EachKeepsItsOwnCurve()
+    {
+        // glTF lets names repeat; channels bind by name, so the two "Wheel"s must not merge.
+        var builder = Triangle()
+            .Floats("times", 0f, 1f)
+            .Floats("up", 0, 0, 0, 0, 10, 0)
+            .Floats("side", 0, 0, 0, 10, 0, 0);
+
+        var scene = Import(builder.Gltf("""
+            {
+              "asset": {"version": "2.0"},
+              "scene": 0,
+              "scenes": [{"nodes": [0, 1]}],
+              "nodes": [{"name": "Wheel", "mesh": 0}, {"name": "Wheel", "mesh": 0}],
+              "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1}]}],
+              "animations": [{
+                "channels": [
+                  {"sampler": 0, "target": {"node": 0, "path": "translation"}},
+                  {"sampler": 1, "target": {"node": 1, "path": "translation"}}
+                ],
+                "samplers": [{"input": 2, "output": 3}, {"input": 2, "output": 4}]
+              }],
+              "accessors": [
+                {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"},
+                {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"},
+                {"bufferView": 2, "componentType": 5126, "count": 2, "type": "SCALAR"},
+                {"bufferView": 3, "componentType": 5126, "count": 2, "type": "VEC3"},
+                {"bufferView": 4, "componentType": 5126, "count": 2, "type": "VEC3"}
+              ],
+              "bufferViews": [
+                {"buffer": 0, "byteOffset": @pos@, "byteLength": @posLength@},
+                {"buffer": 0, "byteOffset": @idx@, "byteLength": @idxLength@},
+                {"buffer": 0, "byteOffset": @times@, "byteLength": @timesLength@},
+                {"buffer": 0, "byteOffset": @up@, "byteLength": @upLength@},
+                {"buffer": 0, "byteOffset": @side@, "byteLength": @sideLength@}
+              ],
+              "buffers": [{"uri": "@BUFFER@", "byteLength": @LENGTH@}]
+            }
+            """));
+
+        var clip = Assert.Single(scene.Clips);
+        Assert.Equal(2, clip.Channels.Count);
+
+        var player = new AnimationPlayer(scene.Root, clip) { Time = 0.5f };
+        player.Apply();
+
+        var wheels = scene.Root.Children;
+        Assert.Equal(2, wheels.Count);
+        Assert.NotEqual(wheels[0].Name, wheels[1].Name);
+        Assert.True(Vector3.Distance(new Vector3(0, 5, 0), wheels[0].Position) < 1e-4f, $"{wheels[0].Position}");
+        Assert.True(Vector3.Distance(new Vector3(5, 0, 0), wheels[1].Position) < 1e-4f, $"{wheels[1].Position}");
     }
 
     [Fact]

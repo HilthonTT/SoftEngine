@@ -346,7 +346,9 @@ internal static class RenderOptionsParser
             return fallback;
         }
 
-        if (!float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+        // NaN and infinity parse, then slip past every range check — a comparison with NaN is
+        // always false — and reach the renderer.
+        if (!float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) || !float.IsFinite(value))
         {
             options.Errors.Add($"{flag} expects a number, got '{text}'");
             return fallback;

@@ -69,8 +69,8 @@ render it as a reference.
 ```bash
 dotnet build SoftEngine.slnx
 dotnet run --project src/SoftEngine.WinForms                  # interactive viewer
-dotnet test --project tests/SoftEngine.Core.Tests             # 973 tests
-dotnet test --project tests/SoftEngine.WinForms.Tests         # 109 viewer tests, Windows only
+dotnet test --project tests/SoftEngine.Core.Tests             # 979 tests
+dotnet test --project tests/SoftEngine.WinForms.Tests         # 113 viewer tests, Windows only
 dotnet run -c Release --project bench/SoftEngine.Benchmarks   # Release, or you measure the debugger
 ```
 
@@ -240,7 +240,7 @@ docs/screenshots/              # every image the docs show, the scenes they are 
 
 ## Testing
 
-`dotnet test --project tests/SoftEngine.Core.Tests` — **973 tests**. Alongside the unit tests, eighteen
+`dotnet test --project tests/SoftEngine.Core.Tests` — **979 tests**. Alongside the unit tests, eighteen
 generated scenes are rendered headless at 320×180 and compared against committed PNG baselines, so a
 change that alters the picture shows up in the diff as a picture. `SOFTENGINE_UPDATE_GOLDEN=1` is the
 only way to re-record one, and a failing run drops the actual frame and a diff image beside the

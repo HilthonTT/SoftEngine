@@ -86,6 +86,8 @@ public sealed partial class MainScreen
 
     private void StepHistory(IEditCommand? command)
     {
+        CancelFieldTyping();
+
         switch (command)
         {
             case null:

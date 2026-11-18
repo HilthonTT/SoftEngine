@@ -95,4 +95,41 @@ public class VertexBufferTests
         Assert.Equal(3, index);
         Assert.Equal(1, vbx.AddClippedTriangle(new Triangle(0, 1, 2), 0));
     }
+
+    [Fact]
+    public void GetTangent_IsInWorldSpace_LikeTheNormalItIsBuiltAgainst()
+    {
+        // A quarter turn about Y takes +X to -Z. Left in model space, the tangent of a mesh
+        // turned to face +X would lie along its world normal and the normal map would vanish.
+        var mesh = MakeMesh();
+        mesh.Tangents = [new Vector4(1, 0, 0, -1), new Vector4(1, 0, 0, -1), new Vector4(1, 0, 0, -1)];
+
+        using var vbx = new VertexBuffer(3)
+        {
+            Mesh = mesh,
+            WorldMatrix = Matrix4x4.CreateRotationY(MathF.PI / 2) * Matrix4x4.CreateTranslation(5, 0, 0),
+        };
+        var clipped = vbx.AddClippedVertex(new Vertices(), Vector2.Zero, new Vector4(1, 0, 0, 1));
+
+        var expected = new Vector3(0, 0, -1);
+        AssertDirection(expected, -1f, vbx.GetTangent(0));
+        AssertDirection(expected, 1f, vbx.GetTangent(clipped));
+
+        static void AssertDirection(Vector3 expected, float handedness, Vector4 actual)
+        {
+            Assert.True(Vector3.Distance(expected, new Vector3(actual.X, actual.Y, actual.Z)) < 1e-5f, $"{actual}");
+            Assert.Equal(handedness, actual.W);
+        }
+    }
+
+    [Fact]
+    public void GetTangent_BeforeAnyPassSetsTheWorld_IsUnchanged()
+    {
+        var mesh = MakeMesh();
+        mesh.Tangents = [new Vector4(0, 1, 0, 1), Vector4.Zero, Vector4.Zero];
+
+        using var vbx = new VertexBuffer(3) { Mesh = mesh };
+
+        Assert.Equal(new Vector4(0, 1, 0, 1), vbx.GetTangent(0));
+    }
 }

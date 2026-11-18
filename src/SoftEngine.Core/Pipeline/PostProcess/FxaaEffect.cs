@@ -52,7 +52,9 @@ public sealed class FxaaEffect : IPostEffect
                 var lumaMax = MathF.Max(lumaM, MathF.Max(MathF.Max(lumaN, lumaS), MathF.Max(lumaW, lumaE)));
                 var range = lumaMax - lumaMin;
 
-                if (range < MathF.Max(edgeThresholdMin, lumaMax * edgeThreshold))
+                // A flat neighbourhood is never an edge — and with both thresholds at 0, which a
+                // scene file can ask for, it would get here and divide 0 by 0 below.
+                if (range <= 0f || range < MathF.Max(edgeThresholdMin, lumaMax * edgeThreshold))
                 {
                     continue;
                 }

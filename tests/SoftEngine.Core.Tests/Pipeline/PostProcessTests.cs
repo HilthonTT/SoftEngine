@@ -17,6 +17,19 @@ public class PostProcessTests
         }
     }
 
+    /// <summary>Records whether the float colour it is handed is finite everywhere.</summary>
+    private sealed class FiniteProbe : IPostEffect
+    {
+        public string Name => "Finite probe";
+
+        public bool Enabled { get; set; } = true;
+
+        public bool AllFinite { get; private set; }
+
+        public void Apply(PostProcessTarget target) =>
+            AllFinite = Array.TrueForAll(target.Color[..target.Length], float.IsFinite);
+    }
+
     private static FrameBuffer Filled(int width, int height, ColorRGB color)
     {
         var surface = new FrameBuffer(width, height);
@@ -191,6 +204,27 @@ public class PostProcessTests
         {
             Assert.InRange(ColorRGB.FromPacked(surface.Screen[i]).R, 119, 121);
         }
+    }
+
+    [Fact]
+    public void Fxaa_FlatImage_WithZeroThresholds_IsLeftAlone()
+    {
+        // Both thresholds at 0 let a flat neighbourhood through the edge test; its contrast
+        // range of 0 must not then be divided by. Black, so the numerator is exactly 0 too —
+        // on grey, rounding leaves it a hair off and the 0/0 hides behind a clamp.
+        var surface = Filled(32, 32, new ColorRGB(0, 0, 0));
+
+        var stack = new PostProcessStack();
+        stack.Effects.Add(new FxaaEffect { Enabled = true, EdgeThreshold = 0f, EdgeThresholdMin = 0f });
+
+        // Read before the 8-bit pack, which would hide a NaN; it would not be hidden from the
+        // bloom or tone mapping that follow FXAA in a real stack.
+        var probe = new FiniteProbe();
+        stack.Effects.Add(probe);
+
+        stack.Apply(surface);
+
+        Assert.True(probe.AllFinite, "FXAA wrote a non-finite colour");
     }
 
     [Fact]

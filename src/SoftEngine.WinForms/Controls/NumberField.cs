@@ -26,6 +26,9 @@ internal sealed class NumberField : Control
     private float _pressValue;
     private TextBox? _editor;
 
+    /// <summary>Closes the open text box, committing or not; null when nothing is being typed.</summary>
+    private Action<bool>? _finishTyping;
+
     public NumberField()
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
@@ -89,6 +92,13 @@ internal sealed class NumberField : Control
     }
 
     public bool IsEditing => _dragging || _editor is not null;
+
+    /// <summary>
+    /// Drops what is being typed without committing it. For when what the field shows stops
+    /// being true underneath it — another object selected, an undo — since committing then
+    /// would write the typed number, and the stale numbers beside it, onto the wrong state.
+    /// </summary>
+    public void CancelTyping() => _finishTyping?.Invoke(false);
 
     private void SetFromUser(float value)
     {
@@ -271,11 +281,13 @@ internal sealed class NumberField : Control
             finished = true;
             var text = editor.Text;
             _editor = null;
+            _finishTyping = null;
             Controls.Remove(editor);
             editor.Dispose();
 
+            // A number too large for a float parses as infinity, which the value would turn into 0.
             if (commit && float.TryParse(text.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var typed)
-                       && !typed.Equals(_value))
+                       && float.IsFinite(typed) && !typed.Equals(_value))
             {
                 EditStarted?.Invoke(this, EventArgs.Empty);
                 SetFromUser(typed);
@@ -300,6 +312,7 @@ internal sealed class NumberField : Control
         };
 
         _editor.LostFocus += (s, e) => Finish(commit: true);
+        _finishTyping = Finish;
 
         Controls.Add(_editor);
         _editor.Focus();
@@ -417,6 +430,14 @@ internal sealed class VectorField : StackPanel
     public SubHeading Caption { get; }
 
     public NumberField[] Fields { get; }
+
+    public void CancelTyping()
+    {
+        foreach (var field in Fields)
+        {
+            field.CancelTyping();
+        }
+    }
 
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]

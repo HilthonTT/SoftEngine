@@ -70,10 +70,12 @@ internal sealed class TimelineRuler : Control
 
     private int LastFrame => Math.Max(1, (int)MathF.Ceiling(_duration * FramesPerSecond));
 
-    private float XOf(float frame) => Inset + frame / LastFrame * (Width - 2 * Inset);
+    internal float XOf(float frame) => Inset + frame / LastFrame * (Width - 2 * Inset);
 
-    private float TimeAt(int x) =>
-        Math.Clamp((x - Inset) / (float)Math.Max(1, Width - 2 * Inset), 0f, 1f) * _duration;
+    // The inverse of XOf, which spans whole frames up to LastFrame — not the clip's duration,
+    // which is rarely a whole number of frames — so a click lands on the tick under the cursor.
+    internal float TimeAt(int x) => MathF.Min(_duration,
+        Math.Clamp((x - Inset) / (float)Math.Max(1, Width - 2 * Inset), 0f, 1f) * LastFrame / FramesPerSecond);
 
     protected override void OnMouseDown(MouseEventArgs e)
     {

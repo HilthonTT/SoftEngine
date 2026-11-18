@@ -28,9 +28,12 @@ public static class ModelFileLoader
             world.Root = scene.Root;
             world.Meshes.AddRange(scene.Meshes);
 
-            foreach (var clip in scene.Clips)
+            // One clip, not all of them: players over one skeleton do not mix — each writes as it
+            // samples, so the last would overwrite the rest, or splice in where clips key
+            // different nodes. Blending several is the AnimationMixer's job.
+            if (scene.Clips.Count > 0)
             {
-                world.Players.Add(new AnimationPlayer(scene.Root, clip));
+                world.Players.Add(new AnimationPlayer(scene.Root, scene.Clips[0]));
             }
         }
         else

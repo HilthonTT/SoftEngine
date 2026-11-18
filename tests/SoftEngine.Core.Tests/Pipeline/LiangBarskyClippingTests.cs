@@ -77,6 +77,29 @@ public class LiangBarskyClippingTests
     }
 
     [Fact]
+    public void ALineInFrontOfTheNearPlaneIsRejected_ForTheProjectionsDepthRange()
+    {
+        // System.Numerics' perspective puts the near plane at z = 0, not z = -w.
+        var projection = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 3, 1f, 0.1f, 100f);
+        var p0 = Vector4.Transform(new Vector3(0f, 0f, -0.07f), projection);
+        var p1 = Vector4.Transform(new Vector3(0.01f, 0f, -0.07f), projection);
+
+        Assert.False(_clipper.Clip(ref p0, ref p1));
+    }
+
+    [Fact]
+    public void ALineThroughTheNearPlaneIsCutAtIt()
+    {
+        var projection = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 3, 1f, 0.1f, 100f);
+        var p0 = Vector4.Transform(new Vector3(0f, 0f, -0.05f), projection);
+        var p1 = Vector4.Transform(new Vector3(0f, 0f, -1f), projection);
+
+        Assert.True(_clipper.Clip(ref p0, ref p1));
+        Assert.Equal(0f, p0.Z, 4);
+        Assert.Equal(0.1f, p0.W, 4);
+    }
+
+    [Fact]
     public void ALineBehindTheEyeIsRejected()
     {
         var p0 = At(1f, 1f, 1f, -5f);

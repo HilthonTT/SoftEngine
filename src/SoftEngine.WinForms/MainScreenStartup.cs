@@ -17,7 +17,10 @@ public sealed partial class MainScreen
 
         if (_arguments.Path is { } path)
         {
-            await OpenPathAsync(path);
+            // A relative path means the shell's current directory, which the viewer does not keep:
+            // stored as given — in the recent files, or in a scene saved later — it would point
+            // somewhere else, or nowhere, the next time it is read.
+            await OpenPathAsync(FullPathOrSelf(path));
         }
         else
         {
@@ -51,6 +54,19 @@ public sealed partial class MainScreen
         if (_arguments.Screenshot is { } output)
         {
             await SaveScreenshotAndQuitAsync(output);
+        }
+    }
+
+    private static string FullPathOrSelf(string path)
+    {
+        try
+        {
+            return Path.GetFullPath(path);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            // Not a path at all: opening it will say so in its own words.
+            return path;
         }
     }
 

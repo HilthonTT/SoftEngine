@@ -121,8 +121,10 @@ public sealed partial class MainScreen
         {
             await PrepareWorldAsync(demo);
         }
-        else if (document.World is { File: { Length: > 0 } file })
+        else if (document.World is { File: { Length: > 0 } named })
         {
+            var file = RelativeToScene(path, named);
+
             if (!File.Exists(file))
             {
                 MessageBox.Show(this,
@@ -135,8 +137,10 @@ public sealed partial class MainScreen
             }
         }
 
-        if (document.Environment is { Panorama: { Length: > 0 } panorama })
+        if (document.Environment is { Panorama: { Length: > 0 } namedPanorama })
         {
+            var panorama = RelativeToScene(path, namedPanorama);
+
             if (File.Exists(panorama))
             {
                 await LoadPanoramaAsync(panorama, announceFailure: true);
@@ -155,6 +159,28 @@ public sealed partial class MainScreen
         lblCurrentModel.Text = Path.GetFileName(path);
 
         RememberRecentFile(path);
+    }
+
+    /// <summary>
+    /// A path a scene names, read from the scene's own folder when it is relative: the format
+    /// is written by hand, and "model.glb" beside the scene means that file, not one in
+    /// whatever folder the viewer happened to be started from.
+    /// </summary>
+    private static string RelativeToScene(string scenePath, string path)
+    {
+        try
+        {
+            if (Path.IsPathRooted(path) || Path.GetDirectoryName(Path.GetFullPath(scenePath)) is not { } folder)
+            {
+                return path;
+            }
+
+            return Path.GetFullPath(Path.Combine(folder, path));
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return path;
+        }
     }
 
     private void ApplyScene(SceneDocument document)

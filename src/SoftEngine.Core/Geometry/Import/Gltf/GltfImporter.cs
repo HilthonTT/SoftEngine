@@ -164,6 +164,33 @@ public static class GltfImporter
                     _root.Add(orphan);
                 }
             }
+
+            MakeNamesUnique();
+        }
+
+        /// <summary>
+        /// glTF addresses nodes by index and lets names repeat — two wheels both called "Wheel" —
+        /// but animation channels address them by name. Left alone, both wheels' curves would
+        /// merge into one channel that drives only the first.
+        /// </summary>
+        private void MakeNamesUnique()
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+
+            for (var i = 0; i < _nodes.Length; i++)
+            {
+                if (_nodes[i] is { Name.Length: > 0 } node && !seen.Add(node.Name))
+                {
+                    var unique = $"{node.Name}#{i}";
+
+                    for (var n = 2; !seen.Add(unique); n++)
+                    {
+                        unique = $"{node.Name}#{i}.{n}";
+                    }
+
+                    node.Name = unique;
+                }
+            }
         }
 
         private IEnumerable<int> RootNodeIndices()
